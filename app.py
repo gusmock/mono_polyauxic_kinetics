@@ -63,16 +63,33 @@ def polyauxic_model(t, theta, model_func, n_phases):
     return y_i + (y_f - y_i) * sum_phases
 
 # ==============================================================================
-# 2. FUNÇÕES DE PERDA E ESTATÍSTICAS
+# 2. FUNÇÕES DE PERDA (LORENTZIANA) E ESTATÍSTICAS
 # ==============================================================================
+
+def lorentzian_loss(theta, t, y, model_func, n_phases):
+    """
+    Função de Perda Robusta (Lorentziana).
+    Utilizada durante o ajuste para minimizar o impacto de outliers.
+    """
+    y_pred = polyauxic_model(t, theta, model_func, n_phases)
+    residuals = y - y_pred
+    
+    # Estimativa robusta da escala (MAD)
+    mad = np.median(np.abs(residuals - np.median(residuals)))
+    scale = 1.4826 * mad
+    if scale < 1e-6: scale = 1.0 # Evita divisão por zero
+    
+    # Perda log-Lorentziana: log(1 + (r/scale)^2)
+    loss = np.sum(np.log(1.0 + (residuals / scale)**2))
+    return loss
 
 def sse_loss(theta, t, y, model_func, n_phases):
     """
-    Objective Function: Sum of Squared Errors (SSE).
-    Usada pelo otimizador para maximizar o ajuste (R2).
+    Soma dos Erros Quadrados (SSE).
+    Usada APENAS para calcular a Hessiana (Erro Padrão) e métricas finais (R2, AIC).
     """
     y_pred = polyauxic_model(t, theta, model_func, n_phases)
-    if np.any(y_pred < -0.1 * np.max(np.abs(y))): # Penalidade física leve
+    if np.any(y_pred < -0.1 * np.max(np.abs(y))): 
         return 1e12
     return np.sum((y - y_pred)**2)
 
@@ -92,7 +109,7 @@ def numerical_hessian(func, theta, args, epsilon=1e-5):
     return hess
 
 def detect_outliers(y_true, y_pred):
-    """Método visual para marcar outliers (X vermelho)."""
+    """Método visual para marcar outliers (X vermelho) via ROUT."""
     residuals = y_true - y_pred
     median_res = np.median(residuals)
     mad = np.median(np.abs(residuals - median_res))
@@ -131,15 +148,15 @@ def smart_initial_guess(t, y, n_phases):
     return theta_guess
 
 # ==============================================================================
-# 3. MOTOR DE AJUSTE (MAXIMIZA R2)
+# 3. MOTOR DE AJUSTE (LORENTZIANA ROBUSTA)
 # ==============================================================================
 
 def fit_model_auto(t_data, y_data, model_func, n_phases):
     
-    # Validação de graus de liberdade
+    # Validação
     n_params = 2 + 3 * n_phases
     if len(t_data) <= n_params:
-        return None # Dados insuficientes para este número de fases
+        return None 
 
     # 1. Normalização
     t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
@@ -167,16 +184,20 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     for _ in range(n_phases): bounds.append((0.0, 500.0))
     for _ in range(n_phases): bounds.append((-0.1, 1.2))
 
-    # 3. Otimização Global (Foco em SSE/R2)
+    # 3. Otimização Global (Usando LORENTZIANA)
     res_de = differential_evolution(
-        sse_loss, bounds, args=(t_norm, y_norm, model_func, n_phases),
+        lorentzian_loss, # <--- Alterado para Lorentziana
+        bounds,
+        args=(t_norm, y_norm, model_func, n_phases),
         maxiter=3000, popsize=pop_size, init=init_pop, strategy='best1bin',
         seed=None, polish=True, tol=1e-6
     )
     
-    # 4. Refinamento Local
+    # 4. Refinamento Local (Usando LORENTZIANA)
     res_opt = minimize(
-        sse_loss, res_de.x, args=(t_norm, y_norm, model_func, n_phases),
+        lorentzian_loss, # <--- Alterado para Lorentziana
+        res_de.x,
+        args=(t_norm, y_norm, model_func, n_phases),
         method='L-BFGS-B', bounds=bounds, tol=1e-10
     )
     
@@ -195,14 +216,15 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     theta_real[2+2*n_phases:2+3*n_phases] = theta_norm[2+2*n_phases:2+3*n_phases] * scale_l
     
     try:
+        # Hessiana calculada com SSE para Erros Padrão (Convenção Estatística)
         H_norm = numerical_hessian(sse_loss, theta_norm, args=(t_norm, y_norm, model_func, n_phases))
         y_pred_norm = polyauxic_model(t_norm, theta_norm, model_func, n_phases)
         sse_val_norm = np.sum((y_norm - y_pred_norm)**2)
         
         n_obs = len(y_norm)
         n_p = len(theta_norm)
-        sigma2 = sse_val_norm / (n_obs - n_p) if n_obs > n_p else 1e-9
         
+        sigma2 = sse_val_norm / (n_obs - n_p) if n_obs > n_p else 1e-9
         cov_norm = sigma2 * np.linalg.pinv(H_norm)
         se_norm = np.sqrt(np.abs(np.diag(cov_norm)))
         
@@ -213,7 +235,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     except:
         se_real = np.full_like(theta_real, np.nan)
 
-    # 6. Cálculo dos Critérios de Informação (Tabela 1)
+    # 6. Cálculo dos Critérios (Baseados em SSE para comparabilidade Tabela 1)
     y_pred = polyauxic_model(t_data, theta_real, model_func, n_phases)
     outliers = detect_outliers(y_data, y_pred)
     
@@ -225,7 +247,6 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     k = len(theta_real)
     if sse <= 1e-12: sse = 1e-12
     
-    # Fórmulas de IC
     aic = n_len * np.log(sse/n_len) + 2*k
     bic = n_len * np.log(sse/n_len) + k * np.log(n_len)
     aicc = aic + (2*k*(k+1))/(n_len-k-1) if (n_len-k-1)>0 else np.inf
@@ -281,7 +302,7 @@ def display_single_fit(res, t, y, model_func, color_main):
         
         t_smooth = np.linspace(t.min(), t.max(), 300)
         y_smooth = polyauxic_model(t_smooth, theta, model_func, n)
-        ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label='Ajuste Global')
+        ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label='Ajuste Robusto (Lorentz)')
         
         colors = plt.cm.viridis(np.linspace(0, 0.9, n))
         for i, ph in enumerate(phases):
@@ -313,13 +334,13 @@ def display_single_fit(res, t, y, model_func, color_main):
         }), hide_index=True)
 
 def main():
-    st.set_page_config(layout="wide", page_title="Polyauxic Information Criteria")
-    st.title("Modelagem Poliauxica (Seleção por Critérios de Informação)")
+    st.set_page_config(layout="wide", page_title="Polyauxic Robust Criteria")
+    st.title("Modelagem Poliauxica Robusta (Lorentziana + Critérios)")
     st.markdown("""
     **Metodologia:**
-    1. Ajuste dos parâmetros visando maximizar o $R^2$ (SSE).
-    2. Comparação do número de fases (1 a 5) utilizando **AIC, AICc e BIC**.
-    3. O melhor modelo é aquele que minimiza os Critérios de Informação (Tabela 1).
+    1. Ajuste dos parâmetros utilizando **Perda Lorentziana** (Robustez a Outliers).
+    2. Comparação do número de fases (1 a 5) utilizando **AIC, AICc e BIC** (Baseados em SSE).
+    3. Seleção do modelo seguindo a Tabela 1.
     """)
     
     file = st.sidebar.file_uploader("Arquivo CSV/XLSX", type=["csv", "xlsx"])
@@ -341,26 +362,22 @@ def main():
         st.divider()
         tab_g, tab_b = st.tabs(["Gompertz (Eq. 32)", "Boltzmann (Eq. 31)"])
         
-        # Função helper para rodar loop e mostrar tabela comparativa
         def run_model_loop(model_name, model_func, color):
             results_list = []
             
-            # 1. Loop de Ajuste (1 a max_phases)
             for n in range(1, max_phases + 1):
-                with st.expander(f"{model_name}: Ajuste com {n} Fase(s)", expanded=False):
-                    with st.spinner(f"Otimizando {n} fases..."):
+                with st.expander(f"{model_name}: Ajuste Robusto com {n} Fase(s)", expanded=False):
+                    with st.spinner(f"Otimizando {n} fases (Lorentziana)..."):
                         res = fit_model_auto(t, y, model_func, n)
                         if res is None:
-                            st.warning("Dados insuficientes para este número de fases.")
+                            st.warning("Dados insuficientes.")
                             continue
                         display_single_fit(res, t, y, model_func, color)
                         results_list.append(res)
             
-            # 2. Tabela de Seleção (Tabela 1 do Artigo)
-            st.markdown("### Tabela de Seleção de Modelo (Critérios de Informação)")
+            st.markdown("### Tabela de Seleção de Modelo")
             summary_data = []
             best_aicc = np.inf
-            best_model_idx = -1
             
             for i, res in enumerate(results_list):
                 m = res['metrics']
@@ -372,28 +389,18 @@ def main():
                     "AICc": m['AICc'],
                     "BIC": m['BIC']
                 })
-                # Critério de escolha: Menor AICc
                 if m['AICc'] < best_aicc:
                     best_aicc = m['AICc']
-                    best_model_idx = i
+            
+            def highlight_best(row):
+                return ['background-color: #d4edda; font-weight: bold'] * len(row) if row['AICc'] == best_aicc else [''] * len(row)
             
             df_summary = pd.DataFrame(summary_data)
-            
-            # Highlight na melhor linha
-            def highlight_best(row):
-                if row['AICc'] == best_aicc:
-                    return ['background-color: #d4edda; font-weight: bold'] * len(row)
-                return [''] * len(row)
-            
             st.dataframe(df_summary.style.apply(highlight_best, axis=1).format({
                 "R²": "{:.4f}", "SSE": "{:.4f}", 
                 "AIC": "{:.4f}", "AICc": "{:.4f}", "BIC": "{:.4f}"
             }), hide_index=True)
-            
-            best_n = results_list[best_model_idx]['n_phases']
-            st.success(f"🏆 Melhor Modelo Sugerido: **{best_n} Fase(s)** (Baseado no menor AICc).")
 
-        # --- EXECUÇÃO ---
         with tab_g:
             run_model_loop("Gompertz", gompertz_term_eq32, "tab:blue")
             
