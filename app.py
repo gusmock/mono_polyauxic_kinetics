@@ -382,6 +382,7 @@ def display_full_analysis(res, n, t, y, model_func, color_main):
             "Critério": ["AICc", "AIC", "BIC", "R²", "SSE"],
             "Valor": [m['AICc'], m['AIC'], m['BIC'], m['R2'], m['SSE']]
         })
+        # CORREÇÃO: Formatando apenas a coluna numérica
         st.dataframe(df_met.style.format({"Valor": "{:.4f}"}), hide_index=True)
         
         # Tabela Global
@@ -391,7 +392,11 @@ def display_full_analysis(res, n, t, y, model_func, color_main):
             "Valor": [yi, yf],
             "SE (+/-)": [yi_se, yf_se]
         })
-        st.dataframe(df_glob.style.format("{:.4f}"), hide_index=True)
+        # CORREÇÃO: Formatando colunas específicas
+        st.dataframe(df_glob.style.format({
+            "Valor": "{:.4f}", 
+            "SE (+/-)": "{:.4f}"
+        }), hide_index=True)
         
         # Tabela Fases
         st.markdown("**Fases (Ordenadas por Tempo)**")
@@ -403,7 +408,13 @@ def display_full_analysis(res, n, t, y, model_func, color_main):
                 "µ_max": ph['rmax'], "SE µ": ph['rmax_se'],
                 "λ": ph['lam'], "SE λ": ph['lam_se']
             })
-        st.dataframe(pd.DataFrame(rows).style.format("{:.4f}"), hide_index=True)
+        
+        # CORREÇÃO: Formatando colunas numéricas
+        st.dataframe(pd.DataFrame(rows).style.format({
+            "p": "{:.4f}",
+            "µ_max": "{:.4f}", "SE µ": "{:.4f}",
+            "λ": "{:.4f}", "SE λ": "{:.4f}"
+        }), hide_index=True)
 
 def main():
     st.set_page_config(layout="wide", page_title="Polyauxic Auto-Robust")
