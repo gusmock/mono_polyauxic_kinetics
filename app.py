@@ -430,7 +430,12 @@ def main():
         "Valor Estimado": [yi, yf],
         "Erro Padrão": [yi_se, yf_se]
     })
-    st.table(df_global.style.format("{:.4f}"))
+    
+    # CORREÇÃO: Aplicar formato apenas nas colunas numéricas
+    st.table(df_global.style.format({
+        "Valor Estimado": "{:.4f}",
+        "Erro Padrão": "{:.4f}"
+    }))
 
     st.subheader(f"Parâmetros das Fases (Ordenados Cronologicamente)")
     rows_table = []
@@ -445,7 +450,15 @@ def main():
         })
     
     df_phases = pd.DataFrame(rows_table)
-    st.table(df_phases.style.format("{:.4f}"))
+    
+    # CORREÇÃO: Aplicar formato específico nas colunas de float (ignorar 'Fase' que é int)
+    st.table(df_phases.style.format({
+        "Fração (p)": "{:.4f}",
+        "Taxa Max (rmax)": "{:.4f}",
+        "SE rmax": "{:.4f}",
+        "Latência (λ)": "{:.4f}",
+        "SE λ": "{:.4f}"
+    }))
 
     # --- GRÁFICO FINAL (COM FASES ORDENADAS) ---
     st.subheader("Ajuste Gráfico")
