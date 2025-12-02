@@ -164,18 +164,15 @@ def smart_initial_guess(t, y, n_phases):
 
 def fit_model_auto(t_data, y_data, model_func, n_phases):
     
-    # Validação de graus de liberdade
     n_params = 2 + 3 * n_phases
     if len(t_data) <= n_params:
-        return None # Dados insuficientes para este número de fases
+        return None 
 
-    # 1. Normalização
     t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
     y_scale = np.max(y_data) if np.max(y_data) > 0 else 1.0
     t_norm = t_data / t_scale
     y_norm = y_data / y_scale
     
-    # 2. Inicialização
     theta_smart = smart_initial_guess(t_data, y_data, n_phases)
     theta0_norm = np.zeros_like(theta_smart)
     theta0_norm[0] = theta_smart[0] / y_scale
@@ -195,14 +192,12 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     for _ in range(n_phases): bounds.append((0.0, 500.0))
     for _ in range(n_phases): bounds.append((-0.1, 1.2))
 
-    # 3. Otimização Global (Foco em SSE/R2)
     res_de = differential_evolution(
         sse_loss, bounds, args=(t_norm, y_norm, model_func, n_phases),
         maxiter=3000, popsize=pop_size, init=init_pop, strategy='best1bin',
         seed=None, polish=True, tol=1e-6
     )
     
-    # 4. Refinamento Local
     res_opt = minimize(
         sse_loss, res_de.x, args=(t_norm, y_norm, model_func, n_phases),
         method='L-BFGS-B', bounds=bounds, tol=1e-10
@@ -210,7 +205,6 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     
     theta_norm = res_opt.x
     
-    # 5. Desnormalização e Erros
     theta_real = np.zeros_like(theta_norm)
     se_real = np.zeros_like(theta_norm)
 
@@ -241,7 +235,6 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     except:
         se_real = np.full_like(theta_real, np.nan)
 
-    # 6. Cálculo dos Critérios de Informação
     y_pred = polyauxic_model(t_data, theta_real, model_func, n_phases)
     outliers = detect_outliers(y_data, y_pred)
     
@@ -254,7 +247,6 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     if sse <= 1e-12: sse = 1e-12
     
     # R2 Ajustado
-    # R2_adj = 1 - (1-R2) * (n - 1) / (n - k - 1)
     if (n_len - k - 1) > 0:
         r2_adj = 1 - (1 - r2) * (n_len - 1) / (n_len - k - 1)
     else:
@@ -278,11 +270,6 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
 # ==============================================================================
 
 def process_data(df):
-    """
-    Processa o DataFrame detectando réplicas em pares de colunas (Tempo, Resposta).
-    Retorna arrays consolidados para o ajuste e dados estruturados para plotagem.
-    """
-    # Remove colunas vazias
     df = df.dropna(axis=1, how='all')
     cols = df.columns.tolist()
     
@@ -290,73 +277,55 @@ def process_data(df):
     all_y = []
     replicates = []
 
-    # Itera de 2 em 2 colunas
     num_replicates = len(cols) // 2
     
     for i in range(num_replicates):
         t_col = cols[2*i]
         y_col = cols[2*i+1]
         
-        # Limpa e converte
         t_vals = pd.to_numeric(df[t_col], errors='coerce').values
         y_vals = pd.to_numeric(df[y_col], errors='coerce').values
         
-        # Remove NaNs
         mask = ~np.isnan(t_vals) & ~np.isnan(y_vals)
         t_clean = t_vals[mask]
         y_clean = y_vals[mask]
         
         all_t.extend(t_clean)
         all_y.extend(y_clean)
-        
         replicates.append({'t': t_clean, 'y': y_clean, 'name': f'Réplica {i+1}'})
         
     t_flat = np.array(all_t)
     y_flat = np.array(all_y)
-    
-    # Ordena o array consolidado para o ajuste
     idx_sort = np.argsort(t_flat)
     
     return t_flat[idx_sort], y_flat[idx_sort], replicates
 
 def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
-    """
-    Calcula média e desvio padrão por ponto de tempo, excluindo outliers baseados no modelo.
-    (Assumindo tempos de amostragem similares entre réplicas, agrupamos por tempo arredondado)
-    """
-    # Consolida todos os dados
     all_data = []
     for rep in replicates:
         for t, y in zip(rep['t'], rep['y']):
             all_data.append({'t': t, 'y': y})
     df_all = pd.DataFrame(all_data)
     
-    # Predição do modelo para todos os pontos para detectar outliers
     y_pred_all = polyauxic_model(df_all['t'].values, theta, model_func, n_phases)
     outliers_mask = detect_outliers(df_all['y'].values, y_pred_all)
     df_all['is_outlier'] = outliers_mask
-    
-    # Agrupa por tempo (com tolerância para pequenos desvios experimentais)
     df_all['t_round'] = df_all['t'].round(4) 
     
-    # Calcula estatísticas apenas com os NÃO outliers
     grouped = df_all[~df_all['is_outlier']].groupby('t_round')['y'].agg(['mean', 'std']).reset_index()
-    
     return grouped, df_all
 
 # ==============================================================================
 # 5. INTERFACE E VISUALIZAÇÃO
 # ==============================================================================
 
-def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels):
+def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels, rate_label):
     n = res['n_phases']
     theta = res['theta']
     se = res['se']
     
-    # Rótulos dinâmicos
-    yi_label, yf_label = param_labels
+    yi_name, yf_name = param_labels
     
-    # Calcula estatísticas e outliers globais
     stats_df, raw_data_w_outliers = calculate_mean_with_outliers(replicates, model_func, theta, n)
     
     y_i, y_f = theta[0], theta[1]
@@ -384,28 +353,22 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
-        
-        # 1. Plota todos os pontos brutos (pequenos e transparentes)
         for rep in replicates:
             ax.scatter(rep['t'], rep['y'], color='gray', alpha=0.3, s=15, marker='o')
             
-        # 2. Plota Outliers (X Vermelho)
         outliers = raw_data_w_outliers[raw_data_w_outliers['is_outlier']]
         if not outliers.empty:
             ax.scatter(outliers['t'], outliers['y'], color='red', marker='x', s=50, label='Outliers', zorder=5)
             
-        # 3. Plota Média das Réplicas (com barra de erro, sem outliers)
         ax.errorbar(stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'], 
                     fmt='o', color='black', ecolor='black', capsize=3, label='Média (s/ Outliers)', zorder=4)
         
-        # 4. Ajuste Global
         t_max_val = raw_data_w_outliers['t'].max()
         t_smooth = np.linspace(0, t_max_val, 300)
         y_smooth = polyauxic_model(t_smooth, theta, model_func, n)
         
         ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label='Ajuste Global')
         
-        # 5. Fases
         colors = plt.cm.viridis(np.linspace(0, 0.9, n))
         for i, ph in enumerate(phases):
             y_ind = model_func(t_smooth, y_i, y_f, ph['p'], ph['r_max'], ph['lambda'])
@@ -420,7 +383,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
         
     with c_data:
         df_glob = pd.DataFrame({
-            "Param": [yi_label, yf_label], "Valor": [y_i, y_f], "SE": [y_i_se, y_f_se]
+            "Param": [yi_name, yf_name], "Valor": [y_i, y_f], "SE": [y_i_se, y_f_se]
         })
         st.dataframe(df_glob.style.format({"Valor": "{:.4f}", "SE": "{:.4f}"}), hide_index=True)
         
@@ -429,67 +392,60 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
             rows.append({
                 "F": i+1,
                 "p": ph['p'],
-                "r_max": ph['r_max'], "SE r_max": ph['r_max_se'],
+                rate_label: ph['r_max'], f"SE {rate_label}": ph['r_max_se'],
                 "λ": ph['lambda'], "SE λ": ph['lambda_se']
             })
         st.dataframe(pd.DataFrame(rows).style.format({
-            "p": "{:.4f}", "r_max": "{:.4f}", "SE r_max": "{:.4f}",
+            "p": "{:.4f}", rate_label: "{:.4f}", f"SE {rate_label}": "{:.4f}",
             "λ": "{:.4f}", "SE λ": "{:.4f}"
         }), hide_index=True)
         
-        # Tabela de métricas individuais
         m = res['metrics']
-        df_met_ind = pd.DataFrame({
-            "Métrica": ["R²", "R² Adj", "AICc"],
-            "Valor": [m['R2'], m['R2_adj'], m['AICc']]
+        df_met = pd.DataFrame({
+            "Métrica": ["R²", "R² Adj", "AICc", "BIC"],
+            "Valor": [m['R2'], m['R2_adj'], m['AICc'], m['BIC']]
         })
-        st.dataframe(df_met_ind.style.format({"Valor": "{:.4f}"}), hide_index=True)
+        st.dataframe(df_met.style.format({"Valor": "{:.4f}"}), hide_index=True)
 
 def main():
-    st.set_page_config(layout="wide", page_title="Polyauxic Information Criteria")
+    st.set_page_config(layout="wide", page_title="Polyauxic Analysis")
     st.title("Modelagem Poliauxica (Com Réplicas)")
     
-    # --- BARRA LATERAL ---
     st.sidebar.header("Configurações")
     
-    # Seleção do Tipo de Variável
     var_type = st.sidebar.selectbox(
         "Tipo de Resposta (Eixo Y)",
         options=["Genérico y(t)", "Produto P(t)", "Substrato S(t)", "Biomassa X(t)"]
     )
     
-    # Mapeamento para labels do gráfico e parâmetros
-    # Formato: Chave -> (Label Eixo Y, (Nome Parâmetro Inicial, Nome Parâmetro Final))
+    # Configuração de Nomenclatura: (Label Y, (Yi, Yf), RateLabel)
     config_map = {
-        "Genérico y(t)": ("Resposta (y)", ("y_i", "y_f")),
-        "Produto P(t)": ("Concentração de Produto (P)", ("P_i", "P_f")),
-        "Substrato S(t)": ("Concentração de Substrato (S)", ("S_i", "S_f")),
-        "Biomassa X(t)": ("Concentração Celular (X)", ("X_i", "X_f"))
+        "Genérico y(t)": ("Resposta (y)", ("y_i", "y_f"), "r_max"),
+        "Produto P(t)": ("Concentração de Produto (P)", ("P_i", "P_f"), "r_P,max"),
+        "Substrato S(t)": ("Concentração de Substrato (S)", ("S_i", "S_f"), "r_S,max"),
+        "Biomassa X(t)": ("Concentração Celular (X)", ("X_i", "X_f"), "µ_max")
     }
-    
-    y_label, param_labels = config_map[var_type]
+    y_label, param_labels, rate_label = config_map[var_type]
     
     file = st.sidebar.file_uploader("Arquivo CSV/XLSX (Pares de colunas: t1, y1, t2, y2...)", type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input("Máximo de Fases para testar", 1, 6, 5)
     
     if not file: 
-        st.info("Carregue um arquivo. Formato: Coluna A=Tempo1, B=Resp1, C=Tempo2, D=Resp2, etc.")
+        st.info("Carregue um arquivo.")
         st.stop()
     
     try:
         df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
-        
-        # Processa réplicas
         t_flat, y_flat, replicates = process_data(df)
         
         if len(replicates) == 0:
-            st.error("Não foi possível identificar pares de colunas. Verifique o arquivo.")
+            st.error("Erro na leitura das colunas.")
             st.stop()
             
         st.write(f"**Dados Carregados:** {len(replicates)} réplicas identificadas. Total de pontos: {len(t_flat)}")
         
     except Exception as e: 
-        st.error(f"Erro ao processar dados: {e}")
+        st.error(f"Erro: {e}")
         st.stop()
     
     if st.button("EXECUTAR ANÁLISE COMPARATIVA"):
@@ -504,16 +460,15 @@ def main():
                     with st.spinner(f"Otimizando {n} fases..."):
                         res = fit_model_auto(t_flat, y_flat, model_func, n)
                         if res is None:
-                            st.warning("Dados insuficientes para este número de fases.")
+                            st.warning("Dados insuficientes.")
                             continue
                         
-                        # Passa replicates, y_label e param_labels para a visualização
-                        display_single_fit(res, replicates, model_func, color, y_label, param_labels)
+                        display_single_fit(res, replicates, model_func, color, y_label, param_labels, rate_label)
                         results_list.append(res)
             
             if not results_list: return
 
-            st.markdown("### Tabela de Seleção de Modelo (Critérios de Informação)")
+            st.markdown("### Tabela de Seleção de Modelo")
             summary_data = []
             best_aicc = np.inf
             best_model_idx = -1
