@@ -56,26 +56,22 @@ def polyauxic_model(t, theta, model_func, n_phases):
     return yi + (yf - yi) * sum_phases
 
 # ==============================================================================
-# 2. FUNÇÕES DE SUPORTE E OTIMIZAÇÃO
+# 2. FUNÇÕES DE SUPORTE E OTIMIZAÇÃO (FOCADAS EM R2)
 # ==============================================================================
 
-def lorentzian_loss(theta, t, y, model_func, n_phases):
-    """Perda robusta (M-estimator)"""
-    y_pred = polyauxic_model(t, theta, model_func, n_phases)
-    residuals = y - y_pred
-    mad = np.median(np.abs(residuals - np.median(residuals)))
-    scale = 1.4826 * mad
-    if scale < 1e-6: scale = 1.0
-    loss = np.sum(np.log(1.0 + (residuals / scale)**2))
-    return loss
-
 def sse_loss(theta, t, y, model_func, n_phases):
-    """Perda SSE para Hessiana"""
+    """
+    Soma dos Erros Quadrados (SSE).
+    Minimizar isso garante o maior R² matematicamente possível.
+    """
     y_pred = polyauxic_model(t, theta, model_func, n_phases)
+    # Penalidade suave para valores negativos impossíveis biologicamente (opcional)
+    if np.any(y_pred < -0.1 * np.max(y)):
+        return 1e12
     return np.sum((y - y_pred)**2)
 
 def numerical_hessian(func, theta, args, epsilon=1e-5):
-    """Hessiana Numérica"""
+    """Hessiana Numérica para cálculo de erro."""
     k = len(theta)
     hess = np.zeros((k, k))
     for i in range(k):
@@ -90,6 +86,7 @@ def numerical_hessian(func, theta, args, epsilon=1e-5):
     return hess
 
 def detect_outliers(y_true, y_pred):
+    """Detecta outliers visualmente (ROUT method simplificado)."""
     residuals = y_true - y_pred
     median_res = np.median(residuals)
     mad = np.median(np.abs(residuals - median_res))
@@ -98,10 +95,14 @@ def detect_outliers(y_true, y_pred):
     return z_scores > 2.5
 
 def smart_initial_guess(t, y, n_phases):
+    """Heurística para encontrar onde as fases começam."""
     dy = np.gradient(y, t)
-    dy_smooth = np.convolve(dy, np.ones(3)/3, mode='same')
+    # Suaviza a derivada para evitar ruído
+    dy_smooth = np.convolve(dy, np.ones(5)/5, mode='same')
+    
+    # Procura picos na derivada (máxima taxa de crescimento)
     min_dist = max(1, len(t) // (n_phases * 4))
-    peaks, props = find_peaks(dy_smooth, height=np.max(dy_smooth)*0.02, distance=min_dist)
+    peaks, props = find_peaks(dy_smooth, height=np.max(dy_smooth)*0.1, distance=min_dist)
     
     guesses = []
     if len(peaks) > 0:
@@ -110,39 +111,43 @@ def smart_initial_guess(t, y, n_phases):
         for p_idx in best_peaks:
             guesses.append({'lam': t[p_idx], 'rmax': dy_smooth[p_idx]})
             
+    # Preenche o resto se não achou picos suficientes
     while len(guesses) < n_phases:
         t_span = t.max() - t.min()
         guesses.append({
             'lam': t.min() + t_span * (len(guesses)+1)/(n_phases+1),
-            'rmax': np.mean(dy_smooth[dy_smooth>0]) if np.any(dy_smooth>0) else 1.0
+            'rmax': (np.max(y)-np.min(y)) / (t_span/n_phases) # Estimativa linear grosseira
         })
     guesses.sort(key=lambda x: x['lam'])
     
+    # Monta o vetor theta inicial
     theta_guess = np.zeros(2 + 3*n_phases)
     theta_guess[0] = np.min(y)
     theta_guess[1] = np.max(y)
-    theta_guess[2:2+n_phases] = 0.0
+    theta_guess[2:2+n_phases] = 0.0 # Logits iguais (pesos iguais)
+    
     for i in range(n_phases):
         theta_guess[2+n_phases+i] = guesses[i]['rmax']
         theta_guess[2+2*n_phases+i] = guesses[i]['lam']
+        
     return theta_guess
 
 # ==============================================================================
-# 3. FIT ENGINE (MAX ITERATIONS INDETERMINADAS VIA HARD LIMIT ALTO)
+# 3. FIT ENGINE (SSE OPTIMIZATION)
 # ==============================================================================
 
 def fit_model_auto(t_data, y_data, model_func, n_phases):
-    # Configuração de "Iterações Indeterminadas" para o otimizador
-    # Usamos um limite muito alto e confiamos na tolerância de convergência interna
-    INTERNAL_MAX_ITER = 5000 
     
+    # 1. Normalização (Essencial para o solver)
     t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
     y_scale = np.max(y_data) if np.max(y_data) > 0 else 1.0
     t_norm = t_data / t_scale
     y_norm = y_data / y_scale
     
+    # 2. Inicialização Inteligente
     theta_smart = smart_initial_guess(t_data, y_data, n_phases)
     
+    # Converter para espaço normalizado
     theta0_norm = np.zeros_like(theta_smart)
     theta0_norm[0] = theta_smart[0] / y_scale
     theta0_norm[1] = theta_smart[1] / y_scale
@@ -150,43 +155,48 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     theta0_norm[2+n_phases:2+2*n_phases] = theta_smart[2+n_phases:2+2*n_phases] / (y_scale/t_scale)
     theta0_norm[2+2*n_phases:2+3*n_phases] = theta_smart[2+2*n_phases:2+3*n_phases] / t_scale
     
-    pop_size = 20
+    # Cria população inicial robusta
+    pop_size = 50 # AUMENTADO para garantir varredura global
     init_pop = np.tile(theta0_norm, (pop_size, 1))
-    init_pop *= np.random.uniform(0.85, 1.15, init_pop.shape)
+    # Variação de +/- 20% em torno do smart guess
+    init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
 
+    # Bounds mais permissivos para evitar travar no limite
     bounds = []
-    bounds.append((0.0, 1.3))
-    bounds.append((0.0, 1.5))
-    for _ in range(n_phases): bounds.append((-5, 5))
-    for _ in range(n_phases): bounds.append((0, 50.0))
-    for _ in range(n_phases): bounds.append((0, 1.1))
+    bounds.append((-0.2, 1.5)) # yi (permite leve negativo para ajuste)
+    bounds.append((0.0, 2.0))  # yf
+    for _ in range(n_phases): bounds.append((-10, 10))   # z (softmax logits)
+    for _ in range(n_phases): bounds.append((0.0, 500.0)) # rmax (pode ser muito alto se normalizado)
+    for _ in range(n_phases): bounds.append((-0.1, 1.2))  # lam (permite latência levemente negativa ou pós fim)
 
-    # Otimização Global (Differential Evolution)
+    # 3. Otimização Global (Focada em SSE para R2 máximo)
+    # differential_evolution é ótimo para fugir de mínimos locais
     res_de = differential_evolution(
-        lorentzian_loss,
+        sse_loss,
         bounds,
         args=(t_norm, y_norm, model_func, n_phases),
-        maxiter=INTERNAL_MAX_ITER, # "Indeterminado" / Alto
+        maxiter=3000,
         popsize=pop_size,
         init=init_pop,
         strategy='best1bin',
-        seed=42,
-        polish=False,
-        tol=1e-4 # Tolerância fina para convergência matemática
+        seed=None, # Seed aleatória para tentar caminhos novos
+        polish=True,
+        tol=1e-5
     )
     
-    # Refinamento Local
+    # 4. Refinamento Local Final
     res_opt = minimize(
-        lorentzian_loss,
+        sse_loss,
         res_de.x,
         args=(t_norm, y_norm, model_func, n_phases),
         method='L-BFGS-B',
-        bounds=bounds
+        bounds=bounds,
+        tol=1e-9
     )
     
     theta_norm = res_opt.x
     
-    # Desnormalização
+    # 5. Desnormalização
     theta_real = np.zeros_like(theta_norm)
     theta_real[0] = theta_norm[0] * y_scale
     theta_real[1] = theta_norm[1] * y_scale
@@ -194,13 +204,17 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     theta_real[2+n_phases:2+2*n_phases] = theta_norm[2+n_phases:2+2*n_phases] * (y_scale/t_scale)
     theta_real[2+2*n_phases:2+3*n_phases] = theta_norm[2+2*n_phases:2+3*n_phases] * t_scale
     
-    # Hessiana e Erros
+    # 6. Hessiana e Erros
     try:
         H_norm = numerical_hessian(sse_loss, theta_norm, args=(t_norm, y_norm, model_func, n_phases))
         y_pred_norm = polyauxic_model(t_norm, theta_norm, model_func, n_phases)
         sse_val_norm = np.sum((y_norm - y_pred_norm)**2)
-        sigma2 = sse_val_norm / (len(y_norm) - len(theta_norm)) if len(y_norm) > len(theta_norm) else 1e-9
-        cov_norm = sigma2 * np.linalg.inv(H_norm)
+        n_obs = len(y_norm)
+        n_p = len(theta_norm)
+        sigma2 = sse_val_norm / (n_obs - n_p) if n_obs > n_p else 1e-9
+        
+        # Inversão segura
+        cov_norm = sigma2 * np.linalg.pinv(H_norm) # pinv é mais estável que inv
         se_norm = np.sqrt(np.abs(np.diag(cov_norm)))
         
         se_real = np.zeros_like(se_norm)
@@ -213,6 +227,8 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
         se_real = np.full_like(theta_real, np.nan)
 
     y_pred = polyauxic_model(t_data, theta_real, model_func, n_phases)
+    
+    # Detecta outliers "post-hoc" apenas para visualização
     outliers = detect_outliers(y_data, y_pred)
     
     sse = np.sum((y_data - y_pred)**2)
@@ -221,7 +237,8 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     
     n = len(y_data)
     k = len(theta_real)
-    if sse <= 0: sse = 1e-9
+    if sse <= 1e-12: sse = 1e-12 # Evita log(0)
+    
     aic = n * np.log(sse/n) + 2*k
     bic = n * np.log(sse/n) + k * np.log(n)
     aicc = aic + (2*k*(k+1))/(n-k-1) if (n-k-1)>0 else np.inf
@@ -268,13 +285,16 @@ def display_analysis(res, n, t, y, model_func, color_main):
     
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
-        ax.scatter(t[~mask], y[~mask], color='black', alpha=0.6, s=40, label='Dados Válidos')
+        # Plota todos os pontos (inclusive outliers)
+        ax.scatter(t, y, color='black', alpha=0.3, s=30, label='Dados Totais')
+        
+        # Marca os outliers
         if np.any(mask):
-            ax.scatter(t[mask], y[mask], color='red', marker='x', s=60, linewidth=2, label='Outliers')
+            ax.scatter(t[mask], y[mask], color='red', marker='x', s=60, linewidth=2, label='Outliers (Estatístico)')
         
         t_smooth = np.linspace(t.min(), t.max(), 300)
         y_smooth = polyauxic_model(t_smooth, theta, model_func, n)
-        ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label='Ajuste')
+        ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label='Ajuste SSE (Max R²)')
         
         colors = plt.cm.viridis(np.linspace(0, 0.9, n))
         for i, ph in enumerate(phases):
@@ -313,10 +333,11 @@ def display_analysis(res, n, t, y, model_func, color_main):
         }), hide_index=True)
 
 def main():
-    st.set_page_config(layout="wide", page_title="Polyauxic Auto-Loop")
-    st.title("Modelagem Poliauxica: Loop Automático")
+    st.set_page_config(layout="wide", page_title="Polyauxic Max-R2")
+    st.title("Modelagem Poliauxica (Maximização de R²)")
     st.markdown("""
-    **Critério de Parada:** O algoritmo adiciona fases sucessivamente até que o ganho de **R² seja menor que 1% (0.01)**.
+    Esta versão utiliza **Soma dos Erros Quadrados (SSE)** para o ajuste, garantindo a curva mais próxima possível dos pontos.
+    Os outliers são identificados estatisticamente *após* o ajuste.
     """)
     
     file = st.sidebar.file_uploader("Arquivo CSV/XLSX", type=["csv", "xlsx"])
@@ -332,7 +353,7 @@ def main():
         idx = np.argsort(t); t=t[idx]; y=y[idx]
     except: st.error("Erro dados."); st.stop()
     
-    if st.button("INICIAR AJUSTE AUTOMÁTICO"):
+    if st.button("INICIAR AJUSTE"):
         st.divider()
         tab_g, tab_b = st.tabs(["Gompertz", "Boltzmann"])
         
@@ -340,9 +361,9 @@ def main():
         with tab_g:
             prev_r2 = -np.inf
             n = 1
-            while n <= 6: # Limite de segurança
+            while n <= 6:
                 with st.expander(f"Gompertz: Tentativa com {n} Fase(s)", expanded=True):
-                    with st.spinner(f"Otimizando {n} fases..."):
+                    with st.spinner(f"Maximizando R² para {n} fases..."):
                         res = fit_model_auto(t, y, gompertz_term_eq32, n)
                         curr_r2 = res['metrics']['R2']
                         delta_r2 = curr_r2 - prev_r2
@@ -351,10 +372,10 @@ def main():
                         
                         if n > 1:
                             if delta_r2 < 0.01:
-                                st.warning(f"⏹️ Parada Automática: Ganho de R² ({delta_r2:.4f}) foi inferior a 1%. O modelo recomendado é o anterior ({n-1} fases).")
+                                st.warning(f"⏹️ Parada: Ganho de R² ({delta_r2:.4f}) < 1%. Sugere-se {n-1} fases.")
                                 break
                             else:
-                                st.success(f"✅ Melhora significativa de R² ({delta_r2:.4f}). Continuando...")
+                                st.success(f"✅ R² melhorou {delta_r2:.4f}. Continuando...")
                         
                         prev_r2 = curr_r2
                         n += 1
@@ -365,7 +386,7 @@ def main():
             n = 1
             while n <= 6:
                 with st.expander(f"Boltzmann: Tentativa com {n} Fase(s)", expanded=True):
-                    with st.spinner(f"Otimizando {n} fases..."):
+                    with st.spinner(f"Maximizando R² para {n} fases..."):
                         res = fit_model_auto(t, y, boltzmann_term_eq31, n)
                         curr_r2 = res['metrics']['R2']
                         delta_r2 = curr_r2 - prev_r2
@@ -374,10 +395,10 @@ def main():
                         
                         if n > 1:
                             if delta_r2 < 0.01:
-                                st.warning(f"⏹️ Parada Automática: Ganho de R² ({delta_r2:.4f}) foi inferior a 1%. O modelo recomendado é o anterior ({n-1} fases).")
+                                st.warning(f"⏹️ Parada: Ganho de R² ({delta_r2:.4f}) < 1%. Sugere-se {n-1} fases.")
                                 break
                             else:
-                                st.success(f"✅ Melhora significativa de R² ({delta_r2:.4f}). Continuando...")
+                                st.success(f"✅ R² melhorou {delta_r2:.4f}. Continuando...")
                         
                         prev_r2 = curr_r2
                         n += 1
