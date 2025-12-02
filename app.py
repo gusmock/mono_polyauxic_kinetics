@@ -328,4 +328,231 @@ def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     all_data = []
     for rep in replicates:
         for t, y in zip(rep['t'], rep['y']):
-            all_
+            all_data.append({'t': t, 'y': y})
+    df_all = pd.DataFrame(all_data)
+    
+    # Predição do modelo para todos os pontos para detectar outliers
+    y_pred_all = polyauxic_model(df_all['t'].values, theta, model_func, n_phases)
+    outliers_mask = detect_outliers(df_all['y'].values, y_pred_all)
+    df_all['is_outlier'] = outliers_mask
+    
+    # Agrupa por tempo (com tolerância para pequenos desvios experimentais)
+    df_all['t_round'] = df_all['t'].round(4) 
+    
+    # Calcula estatísticas apenas com os NÃO outliers
+    grouped = df_all[~df_all['is_outlier']].groupby('t_round')['y'].agg(['mean', 'std']).reset_index()
+    
+    return grouped, df_all
+
+# ==============================================================================
+# 5. INTERFACE E VISUALIZAÇÃO
+# ==============================================================================
+
+def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels):
+    n = res['n_phases']
+    theta = res['theta']
+    se = res['se']
+    
+    # Rótulos dinâmicos
+    yi_label, yf_label = param_labels
+    
+    # Calcula estatísticas e outliers globais
+    stats_df, raw_data_w_outliers = calculate_mean_with_outliers(replicates, model_func, theta, n)
+    
+    y_i, y_f = theta[0], theta[1]
+    y_i_se, y_f_se = se[0], se[1]
+    
+    z = theta[2:2+n]
+    r_max = theta[2+n:2+2*n]
+    r_max_se = se[2+n:2+2*n]
+    lambda_ = theta[2+2*n:2+3*n]
+    lambda_se = se[2+2*n:2+3*n]
+    
+    p = np.exp(z - np.max(z))
+    p /= np.sum(p)
+    
+    phases = []
+    for i in range(n):
+        phases.append({
+            "p": p[i],
+            "r_max": r_max[i], "r_max_se": r_max_se[i],
+            "lambda": lambda_[i], "lambda_se": lambda_se[i]
+        })
+    phases.sort(key=lambda x: x['lambda'])
+    
+    c_plot, c_data = st.columns([1.5, 1])
+    
+    with c_plot:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        
+        # 1. Plota todos os pontos brutos (pequenos e transparentes)
+        for rep in replicates:
+            ax.scatter(rep['t'], rep['y'], color='gray', alpha=0.3, s=15, marker='o')
+            
+        # 2. Plota Outliers (X Vermelho)
+        outliers = raw_data_w_outliers[raw_data_w_outliers['is_outlier']]
+        if not outliers.empty:
+            ax.scatter(outliers['t'], outliers['y'], color='red', marker='x', s=50, label='Outliers', zorder=5)
+            
+        # 3. Plota Média das Réplicas (com barra de erro, sem outliers)
+        ax.errorbar(stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'], 
+                    fmt='o', color='black', ecolor='black', capsize=3, label='Média (s/ Outliers)', zorder=4)
+        
+        # 4. Ajuste Global
+        t_max_val = raw_data_w_outliers['t'].max()
+        t_smooth = np.linspace(0, t_max_val, 300)
+        y_smooth = polyauxic_model(t_smooth, theta, model_func, n)
+        
+        ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label='Ajuste Global')
+        
+        # 5. Fases
+        colors = plt.cm.viridis(np.linspace(0, 0.9, n))
+        for i, ph in enumerate(phases):
+            y_ind = model_func(t_smooth, y_i, y_f, ph['p'], ph['r_max'], ph['lambda'])
+            y_vis = y_i + (y_f - y_i) * y_ind
+            ax.plot(t_smooth, y_vis, '--', color=colors[i], alpha=0.6, label=f'Fase {i+1}')
+        
+        ax.set_xlabel("Tempo (h/d)")
+        ax.set_ylabel(y_label)
+        ax.legend(fontsize='small')
+        ax.grid(True, linestyle=':', alpha=0.3)
+        st.pyplot(fig)
+        
+    with c_data:
+        df_glob = pd.DataFrame({
+            "Param": [yi_label, yf_label], "Valor": [y_i, y_f], "SE": [y_i_se, y_f_se]
+        })
+        st.dataframe(df_glob.style.format({"Valor": "{:.4f}", "SE": "{:.4f}"}), hide_index=True)
+        
+        rows = []
+        for i, ph in enumerate(phases):
+            rows.append({
+                "F": i+1,
+                "p": ph['p'],
+                "r_max": ph['r_max'], "SE r_max": ph['r_max_se'],
+                "λ": ph['lambda'], "SE λ": ph['lambda_se']
+            })
+        st.dataframe(pd.DataFrame(rows).style.format({
+            "p": "{:.4f}", "r_max": "{:.4f}", "SE r_max": "{:.4f}",
+            "λ": "{:.4f}", "SE λ": "{:.4f}"
+        }), hide_index=True)
+        
+        # Tabela de métricas individuais
+        m = res['metrics']
+        df_met_ind = pd.DataFrame({
+            "Métrica": ["R²", "R² Adj", "AICc"],
+            "Valor": [m['R2'], m['R2_adj'], m['AICc']]
+        })
+        st.dataframe(df_met_ind.style.format({"Valor": "{:.4f}"}), hide_index=True)
+
+def main():
+    st.set_page_config(layout="wide", page_title="Polyauxic Information Criteria")
+    st.title("Modelagem Poliauxica (Com Réplicas)")
+    
+    # --- BARRA LATERAL ---
+    st.sidebar.header("Configurações")
+    
+    # Seleção do Tipo de Variável
+    var_type = st.sidebar.selectbox(
+        "Tipo de Resposta (Eixo Y)",
+        options=["Genérico y(t)", "Produto P(t)", "Substrato S(t)", "Biomassa X(t)"]
+    )
+    
+    # Mapeamento para labels do gráfico e parâmetros
+    # Formato: Chave -> (Label Eixo Y, (Nome Parâmetro Inicial, Nome Parâmetro Final))
+    config_map = {
+        "Genérico y(t)": ("Resposta (y)", ("y_i", "y_f")),
+        "Produto P(t)": ("Concentração de Produto (P)", ("P_i", "P_f")),
+        "Substrato S(t)": ("Concentração de Substrato (S)", ("S_i", "S_f")),
+        "Biomassa X(t)": ("Concentração Celular (X)", ("X_i", "X_f"))
+    }
+    
+    y_label, param_labels = config_map[var_type]
+    
+    file = st.sidebar.file_uploader("Arquivo CSV/XLSX (Pares de colunas: t1, y1, t2, y2...)", type=["csv", "xlsx"])
+    max_phases = st.sidebar.number_input("Máximo de Fases para testar", 1, 6, 5)
+    
+    if not file: 
+        st.info("Carregue um arquivo. Formato: Coluna A=Tempo1, B=Resp1, C=Tempo2, D=Resp2, etc.")
+        st.stop()
+    
+    try:
+        df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+        
+        # Processa réplicas
+        t_flat, y_flat, replicates = process_data(df)
+        
+        if len(replicates) == 0:
+            st.error("Não foi possível identificar pares de colunas. Verifique o arquivo.")
+            st.stop()
+            
+        st.write(f"**Dados Carregados:** {len(replicates)} réplicas identificadas. Total de pontos: {len(t_flat)}")
+        
+    except Exception as e: 
+        st.error(f"Erro ao processar dados: {e}")
+        st.stop()
+    
+    if st.button("EXECUTAR ANÁLISE COMPARATIVA"):
+        st.divider()
+        tab_g, tab_b = st.tabs(["Gompertz (Eq. 32)", "Boltzmann (Eq. 31)"])
+        
+        def run_model_loop(model_name, model_func, color):
+            results_list = []
+            
+            for n in range(1, max_phases + 1):
+                with st.expander(f"{model_name}: Ajuste com {n} Fase(s)", expanded=False):
+                    with st.spinner(f"Otimizando {n} fases..."):
+                        res = fit_model_auto(t_flat, y_flat, model_func, n)
+                        if res is None:
+                            st.warning("Dados insuficientes para este número de fases.")
+                            continue
+                        
+                        # Passa replicates, y_label e param_labels para a visualização
+                        display_single_fit(res, replicates, model_func, color, y_label, param_labels)
+                        results_list.append(res)
+            
+            if not results_list: return
+
+            st.markdown("### Tabela de Seleção de Modelo (Critérios de Informação)")
+            summary_data = []
+            best_aicc = np.inf
+            best_model_idx = -1
+            
+            for i, res in enumerate(results_list):
+                m = res['metrics']
+                summary_data.append({
+                    "Fases": res['n_phases'],
+                    "R²": m['R2'],
+                    "R² Adj": m['R2_adj'],
+                    "SSE": m['SSE'],
+                    "AIC": m['AIC'],
+                    "AICc": m['AICc'],
+                    "BIC": m['BIC']
+                })
+                if m['AICc'] < best_aicc:
+                    best_aicc = m['AICc']
+                    best_model_idx = i
+            
+            df_summary = pd.DataFrame(summary_data)
+            
+            def highlight_best(row):
+                if row['AICc'] == best_aicc:
+                    return ['background-color: #d4edda; font-weight: bold'] * len(row)
+                return [''] * len(row)
+            
+            st.dataframe(df_summary.style.apply(highlight_best, axis=1).format({
+                "R²": "{:.4f}", "R² Adj": "{:.4f}", "SSE": "{:.4f}", 
+                "AIC": "{:.4f}", "AICc": "{:.4f}", "BIC": "{:.4f}"
+            }), hide_index=True)
+            
+            best_n = results_list[best_model_idx]['n_phases']
+            st.success(f"🏆 Melhor Modelo Sugerido: **{best_n} Fase(s)** (Baseado no menor AICc).")
+
+        with tab_g:
+            run_model_loop("Gompertz", gompertz_term_eq32, "tab:blue")
+            
+        with tab_b:
+            run_model_loop("Boltzmann", boltzmann_term_eq31, "tab:orange")
+
+if __name__ == "__main__":
+    main()
