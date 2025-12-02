@@ -260,7 +260,11 @@ def display_result(res, t_data, y_data, model_func, n_phases, model_name):
             "Valor": [yi, yf],
             "Erro": [yi_se, yf_se]
         })
-        st.dataframe(df_glob.style.format("{:.4f}"), hide_index=True)
+        # CORREÇÃO: Formatação seletiva
+        st.dataframe(df_glob.style.format({
+            "Valor": "{:.4f}",
+            "Erro": "{:.4f}"
+        }), hide_index=True)
         
         st.caption("Parâmetros das Fases")
         rows = []
@@ -272,7 +276,14 @@ def display_result(res, t_data, y_data, model_func, n_phases, model_name):
                 "λ": ph['lam'], "Err λ": ph['lam_se']
             })
         df_ph = pd.DataFrame(rows)
-        st.dataframe(df_ph.style.format("{:.4f}"), hide_index=True)
+        # CORREÇÃO: Formatação seletiva
+        st.dataframe(df_ph.style.format({
+            "p": "{:.4f}",
+            "µ_max": "{:.4f}",
+            "Err µ": "{:.4f}",
+            "λ": "{:.4f}",
+            "Err λ": "{:.4f}"
+        }), hide_index=True)
 
 # ==============================================================================
 # 4. LOOP PRINCIPAL
