@@ -39,10 +39,10 @@ from scipy.signal import find_peaks
 import io
 
 # ==============================================================================
-# 0. CONFIGURATION & TRANSLATIONS
+# 0. CONFIGURATION & GLOBAL SETTINGS
 # ==============================================================================
 
-# Global Plot Style
+# Global Plot Style (Times New Roman, Size 11)
 plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.serif'] = ['Times New Roman']
 plt.rcParams['font.size'] = 11
@@ -52,12 +52,14 @@ plt.rcParams['ytick.labelsize'] = 11
 plt.rcParams['legend.fontsize'] = 11
 plt.rcParams['figure.titlesize'] = 12
 
+# Languages Configuration
 LANGUAGES = {
     "English": "en",
     "Português (BR)": "pt",
     "Français (CA)": "fr"
 }
 
+# UI Text Dictionary
 TEXTS = {
     "app_title": {
         "en": "Polyauxic Modeling Platform",
@@ -81,22 +83,46 @@ TEXTS = {
     },
     "instructions_list": {
         "en": """
-        * **File Format:** CSV or Excel (.xlsx).
-        * **Structure:** The first row must be the column header.
-        * **Columns:** Arrange data in pairs (Time, Response). Example: Col A (Time 1), Col B (Response 1)...
-        * **Replicates:** Accepts up to quintuplicates (5 replicates). The system automatically detects pairs.
+        **Data Preparation & Format:**
+        * **File Type:** Upload a `.csv` or `.xlsx` (Excel) file.
+        * **Column Structure (Crucial):** Organize your data in **pairs** of columns: Time followed by Response.
+        * **Headers:** The first row must contain the column names.
+        * **Replicates:** You can include up to **5 biological replicates**. The system automatically detects them based on the column pairs.
+        * **Decimals:** Both dot (`.`) and comma (`,`) are accepted.
+
+        **Example Layout:**
+        | A (Time 1) | B (Resp 1) | C (Time 2) | D (Resp 2) |
+        | :--- | :--- | :--- | :--- |
+        | 0.0 | 0.105 | 0.0 | 0.102 |
+        | 1.0 | 0.200 | 1.0 | 0.198 |
         """,
         "pt": """
-        * **Formato do Arquivo:** CSV ou Excel (.xlsx).
-        * **Estrutura:** A primeira linha deve ser o rótulo da coluna.
-        * **Colunas:** Organize os dados em pares (Tempo, Resposta). Exemplo: Col A (Tempo 1), Col B (Resposta 1)...
-        * **Réplicas:** Aceita até quintuplicatas (5 réplicas). O sistema detecta os pares automaticamente.
+        **Preparação e Formato dos Dados:**
+        * **Tipo de Arquivo:** Carregue um arquivo `.csv` ou `.xlsx` (Excel).
+        * **Estrutura das Colunas (Importante):** Organize seus dados estritamente em **pares**: Tempo seguido de Resposta.
+        * **Cabeçalho:** A primeira linha deve conter o nome das variáveis.
+        * **Réplicas:** O sistema aceita até **5 réplicas biológicas**. Basta adicionar os pares de colunas lado a lado; o sistema os agrupará automaticamente.
+        * **Decimais:** Tanto ponto (`.`) quanto vírgula (`,`) são aceitos.
+
+        **Exemplo de Layout:**
+        | A (Tempo 1) | B (Resp 1) | C (Tempo 2) | D (Resp 2) |
+        | :--- | :--- | :--- | :--- |
+        | 0.0 | 0.105 | 0.0 | 0.102 |
+        | 1.0 | 0.200 | 1.0 | 0.198 |
         """,
         "fr": """
-        * **Format de Fichier:** CSV ou Excel (.xlsx).
-        * **Structure:** La première ligne doit être l'en-tête de la colonne.
-        * **Colonnes:** Disposez les données par paires (Temps, Réponse). Exemple : Col A (Temps 1), Col B (Réponse 1)...
-        * **Réplicats:** Accepte jusqu'à cinq réplicats. Le système détecte automatiquement les paires.
+        **Préparation et Format des Données :**
+        * **Type de Fichier :** Téléchargez un fichier `.csv` ou `.xlsx` (Excel).
+        * **Structure des Colonnes (Important) :** Organisez vos données en **paires** : Temps suivi de Réponse.
+        * **En-têtes :** La première ligne doit contenir les noms des colonnes.
+        * **Réplicats :** Vous pouvez inclure jusqu'à **5 réplicats biologiques**. Le système les détecte automatiquement.
+        * **Décimales :** Les points (`.`) et les virgules (`,`) sont acceptés.
+
+        **Exemple de mise en page:**
+        | A (Temps 1) | B (Rep 1) | C (Temps 2) | D (Rep 2) |
+        | :--- | :--- | :--- | :--- |
+        | 0.0 | 0.105 | 0.0 | 0.102 |
+        | 1.0 | 0.200 | 1.0 | 0.198 |
         """
     },
     "sidebar_config": {"en": "Settings", "pt": "Configurações", "fr": "Paramètres"},
@@ -145,6 +171,7 @@ TEXTS = {
     "error_cols": {"en": "Column error.", "pt": "Erro nas colunas.", "fr": "Erreur de colonne."}
 }
 
+# Variable Labels Configuration
 VAR_LABELS = {
     "Genérico y(t)": {
         "en": ("Response (y)", ("y_i", "y_f"), "r_max"),
@@ -450,8 +477,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     stats_df, raw_data_w_outliers = calculate_mean_with_outliers(replicates, model_func, theta, n)
     y_i, y_f = theta[0], theta[1]; y_i_se, y_f_se = se[0], se[1]
     
-    z = theta[2:2+n]
-    r_max = theta[2+n:2+2*n]; r_max_se = se[2+n:2+2*n]
+    z = theta[2:2+n]; r_max = theta[2+n:2+2*n]; r_max_se = se[2+n:2+2*n]
     lambda_ = theta[2+2*n:2+3*n]; lambda_se = se[2+2*n:2+3*n]
     p = np.exp(z - np.max(z)); p /= np.sum(p)
     
