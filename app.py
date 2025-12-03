@@ -30,7 +30,7 @@
 """
 
 import streamlit as st
-import streamlit.components.v1 as components # Necessário para o Altmetric
+import streamlit.components.v1 as components  # Necessário para o Altmetric
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -179,7 +179,9 @@ TEXTS = {
     "legend_mean": {"en": "Mean (w/o Outliers)", "pt": "Média (s/ Outliers)", "fr": "Moyenne (sans Aberrants)"},
     "legend_outlier": {"en": "Outliers", "pt": "Outliers", "fr": "Valeurs Aberrantes"},
     "error_read": {"en": "Error processing data: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"},
-    "error_cols": {"en": "Column error.", "pt": "Erro nas colunas.", "fr": "Erreur de colonne."}
+    "error_cols": {"en": "Column error.", "pt": "Erro nas colunas.", "fr": "Erreur de colonne."},
+    # acrescentado para não quebrar no except
+    "error_proc": {"en": "Error processing data: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"}
 }
 
 # Variable Labels Configuration (Key -> Lang -> Data)
@@ -217,7 +219,8 @@ VAR_LABELS = {
 def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
     """Boltzmann model term (Eq. 31)."""
     delta_y = y_f - y_i
-    if abs(delta_y) < 1e-9: delta_y = 1e-9
+    if abs(delta_y) < 1e-9:
+        delta_y = 1e-9
     p_safe = max(p_j, 1e-12)
     numerator = 4.0 * r_max_j * (lambda_j - t)
     denominator = delta_y * p_safe
@@ -228,7 +231,8 @@ def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
 def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
     """Gompertz model term (Eq. 32)."""
     delta_y = y_f - y_i
-    if abs(delta_y) < 1e-9: delta_y = 1e-9
+    if abs(delta_y) < 1e-9:
+        delta_y = 1e-9
     p_safe = max(p_j, 1e-12)
     numerator = r_max_j * np.e * (lambda_j - t)
     denominator = delta_y * p_safe
@@ -241,9 +245,9 @@ def polyauxic_model(t, theta, model_func, n_phases):
     t = np.asarray(t, dtype=float)
     y_i = theta[0]
     y_f = theta[1]
-    z = theta[2 : 2+n_phases]
-    r_max = theta[2+n_phases : 2+2*n_phases]
-    lambda_ = theta[2+2*n_phases : 2+3*n_phases]
+    z = theta[2:2+n_phases]
+    r_max = theta[2+n_phases:2+2*n_phases]
+    lambda_ = theta[2+2*n_phases:2+3*n_phases]
     z_shift = z - np.max(z)
     exp_z = np.exp(z_shift)
     p = exp_z / np.sum(exp_z)
@@ -255,7 +259,8 @@ def polyauxic_model(t, theta, model_func, n_phases):
 def sse_loss(theta, t, y, model_func, n_phases):
     """Sum of Squared Errors Loss function."""
     y_pred = polyauxic_model(t, theta, model_func, n_phases)
-    if np.any(y_pred < -0.1 * np.max(np.abs(y))): return 1e12
+    if np.any(y_pred < -0.1 * np.max(np.abs(y))):
+        return 1e12
     return np.sum((y - y_pred)**2)
 
 def numerical_hessian(func, theta, args, epsilon=1e-5):
@@ -264,8 +269,10 @@ def numerical_hessian(func, theta, args, epsilon=1e-5):
     hess = np.zeros((k, k))
     for i in range(k):
         for j in range(k):
-            e_i = np.zeros(k); e_i[i] = epsilon
-            e_j = np.zeros(k); e_j[j] = epsilon
+            e_i = np.zeros(k)
+            e_i[i] = epsilon
+            e_j = np.zeros(k)
+            e_j[j] = epsilon
             f_pp = func(theta + e_i + e_j, *args)
             f_pm = func(theta + e_i - e_j, *args)
             f_mp = func(theta - e_i + e_j, *args)
@@ -318,8 +325,10 @@ def calculate_p_errors(z_vals, cov_z):
     J = np.zeros((n, n))
     for i in range(n):
         for j in range(n):
-            if i == j: J[i, j] = p[i] * (1 - p[i])
-            else: J[i, j] = -p[i] * p[j]
+            if i == j:
+                J[i, j] = p[i] * (1 - p[i])
+            else:
+                J[i, j] = -p[i] * p[j]
     try:
         cov_p = J @ cov_z @ J.T
         se_p = np.sqrt(np.abs(np.diag(cov_p)))
@@ -334,12 +343,13 @@ def calculate_p_errors(z_vals, cov_z):
 def fit_model_auto(t_data, y_data, model_func, n_phases):
     """Main fitting function."""
     n_params = 2 + 3 * n_phases
-    if len(t_data) <= n_params: return None 
+    if len(t_data) <= n_params:
+        return None
     t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
     y_scale = np.max(y_data) if np.max(y_data) > 0 else 1.0
     t_norm = t_data / t_scale
     y_norm = y_data / y_scale
-    
+
     theta_smart = smart_initial_guess(t_data, y_data, n_phases)
     theta0_norm = np.zeros_like(theta_smart)
     theta0_norm[0] = theta_smart[0] / y_scale
@@ -347,22 +357,31 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     theta0_norm[2:2+n_phases] = 0.0
     theta0_norm[2+n_phases:2+2*n_phases] = theta_smart[2+n_phases:2+2*n_phases] / (y_scale/t_scale)
     theta0_norm[2+2*n_phases:2+3*n_phases] = theta_smart[2+2*n_phases:2+3*n_phases] / t_scale
-    
-    pop_size = 50 
+
+    pop_size = 50
     init_pop = np.tile(theta0_norm, (pop_size, 1))
     init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
     bounds = []
-    bounds.append((-0.2, 1.5)) 
+    bounds.append((-0.2, 1.5))
     bounds.append((0.0, 2.0))
-    for _ in range(n_phases): bounds.append((-10, 10))
-    for _ in range(n_phases): bounds.append((0.0, 500.0))
-    for _ in range(n_phases): bounds.append((-0.1, 1.2))
+    for _ in range(n_phases):
+        bounds.append((-10, 10))
+    for _ in range(n_phases):
+        bounds.append((0.0, 500.0))
+    for _ in range(n_phases):
+        bounds.append((-0.1, 1.2))
 
-    res_de = differential_evolution(sse_loss, bounds, args=(t_norm, y_norm, model_func, n_phases),
-                                    maxiter=3000, popsize=pop_size, init=init_pop, strategy='best1bin',
-                                    seed=None, polish=True, tol=1e-6)
-    res_opt = minimize(sse_loss, res_de.x, args=(t_norm, y_norm, model_func, n_phases),
-                       method='L-BFGS-B', bounds=bounds, tol=1e-10)
+    res_de = differential_evolution(
+        sse_loss, bounds,
+        args=(t_norm, y_norm, model_func, n_phases),
+        maxiter=3000, popsize=pop_size, init=init_pop,
+        strategy='best1bin', seed=None, polish=True, tol=1e-6
+    )
+    res_opt = minimize(
+        sse_loss, res_de.x,
+        args=(t_norm, y_norm, model_func, n_phases),
+        method='L-BFGS-B', bounds=bounds, tol=1e-10
+    )
     theta_norm = res_opt.x
     theta_real = np.zeros_like(theta_norm)
     se_real = np.zeros_like(theta_norm)
@@ -375,20 +394,22 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     theta_real[2+n_phases:2+2*n_phases] = theta_norm[2+n_phases:2+2*n_phases] * scale_r
     scale_l = t_scale
     theta_real[2+2*n_phases:2+3*n_phases] = theta_norm[2+2*n_phases:2+3*n_phases] * scale_l
-    
+
     try:
         H_norm = numerical_hessian(sse_loss, theta_norm, args=(t_norm, y_norm, model_func, n_phases))
         y_pred_norm = polyauxic_model(t_norm, theta_norm, model_func, n_phases)
         sse_val_norm = np.sum((y_norm - y_pred_norm)**2)
-        n_obs = len(y_norm); n_p = len(theta_norm)
+        n_obs = len(y_norm)
+        n_p = len(theta_norm)
         sigma2 = sse_val_norm / (n_obs - n_p) if n_obs > n_p else 1e-9
         cov_norm = sigma2 * np.linalg.pinv(H_norm)
         se_norm = np.sqrt(np.abs(np.diag(cov_norm)))
         se_real[0:2] = se_norm[0:2] * scale_y
-        se_real[2:2+n_phases] = se_norm[2:2+n_phases] 
+        se_real[2:2+n_phases] = se_norm[2:2+n_phases]
         se_real[2+n_phases:2+2*n_phases] = se_norm[2+n_phases:2+2*n_phases] * scale_r
         se_real[2+2*n_phases:2+3*n_phases] = se_norm[2+2*n_phases:2+3*n_phases] * scale_l
-        idx_z_start = 2; idx_z_end = 2 + n_phases
+        idx_z_start = 2
+        idx_z_end = 2 + n_phases
         cov_z = cov_norm[idx_z_start:idx_z_end, idx_z_start:idx_z_end]
         z_vals = theta_norm[idx_z_start:idx_z_end]
         se_p = calculate_p_errors(z_vals, cov_z)
@@ -400,17 +421,34 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     sse = np.sum((y_data - y_pred)**2)
     sst = np.sum((y_data - np.mean(y_data))**2)
     r2 = 1 - sse/sst
-    n_len = len(y_data); k = len(theta_real)
-    if sse <= 1e-12: sse = 1e-12
-    if (n_len - k - 1) > 0: r2_adj = 1 - (1 - r2) * (n_len - 1) / (n_len - k - 1)
-    else: r2_adj = np.nan
+    n_len = len(y_data)
+    k = len(theta_real)
+    if sse <= 1e-12:
+        sse = 1e-12
+    if (n_len - k - 1) > 0:
+        r2_adj = 1 - (1 - r2) * (n_len - 1) / (n_len - k - 1)
+    else:
+        r2_adj = np.nan
     aic = n_len * np.log(sse/n_len) + 2*k
     bic = n_len * np.log(sse/n_len) + k * np.log(n_len)
-    aicc = aic + (2*k*(k+1))/(n_len-k-1) if (n_len-k-1)>0 else np.inf
-    
-    return {"n_phases": n_phases, "theta": theta_real, "se": se_real, "se_p": se_p,
-            "metrics": {"R2": r2, "R2_adj": r2_adj, "SSE": sse, "AIC": aic, "BIC": bic, "AICc": aicc},
-            "outliers": outliers, "y_pred": y_pred}
+    aicc = aic + (2*k*(k+1))/(n_len-k-1) if (n_len-k-1) > 0 else np.inf
+
+    return {
+        "n_phases": n_phases,
+        "theta": theta_real,
+        "se": se_real,
+        "se_p": se_p,
+        "metrics": {
+            "R2": r2,
+            "R2_adj": r2_adj,
+            "SSE": sse,
+            "AIC": aic,
+            "BIC": bic,
+            "AICc": aicc
+        },
+        "outliers": outliers,
+        "y_pred": y_pred
+    }
 
 # ==============================================================================
 # 3. DATA PROCESSING
@@ -420,17 +458,23 @@ def process_data(df):
     """Processes DataFrame detecting replicates in pairs of columns."""
     df = df.dropna(axis=1, how='all')
     cols = df.columns.tolist()
-    all_t = []; all_y = []; replicates = []
+    all_t = []
+    all_y = []
+    replicates = []
     num_replicates = len(cols) // 2
     for i in range(num_replicates):
-        t_col = cols[2*i]; y_col = cols[2*i+1]
+        t_col = cols[2*i]
+        y_col = cols[2*i+1]
         t_vals = pd.to_numeric(df[t_col], errors='coerce').values
         y_vals = pd.to_numeric(df[y_col], errors='coerce').values
         mask = ~np.isnan(t_vals) & ~np.isnan(y_vals)
-        t_clean = t_vals[mask]; y_clean = y_vals[mask]
-        all_t.extend(t_clean); all_y.extend(y_clean)
+        t_clean = t_vals[mask]
+        y_clean = y_vals[mask]
+        all_t.extend(t_clean)
+        all_y.extend(y_clean)
         replicates.append({'t': t_clean, 'y': y_clean, 'name': f'Replica {i+1}'})
-    t_flat = np.array(all_t); y_flat = np.array(all_y)
+    t_flat = np.array(all_t)
+    y_flat = np.array(all_y)
     idx_sort = np.argsort(t_flat)
     return t_flat[idx_sort], y_flat[idx_sort], replicates
 
@@ -444,7 +488,7 @@ def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     y_pred_all = polyauxic_model(df_all['t'].values, theta, model_func, n_phases)
     outliers_mask = detect_outliers(df_all['y'].values, y_pred_all)
     df_all['is_outlier'] = outliers_mask
-    df_all['t_round'] = df_all['t'].round(4) 
+    df_all['t_round'] = df_all['t'].round(4)
     grouped = df_all[~df_all['is_outlier']].groupby('t_round')['y'].agg(['mean', 'std']).reset_index()
     return grouped, df_all
 
@@ -461,7 +505,7 @@ def plot_metrics_summary(results_list, model_name, lang):
     r2_adj = [r['metrics']['R2_adj'] for r in results_list]
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
-    
+
     ax1.plot(phases, aic, 'o--', label='AIC')
     ax1.plot(phases, aicc, 's-', label='AICc')
     ax1.plot(phases, bic, '^:', label='BIC')
@@ -470,7 +514,7 @@ def plot_metrics_summary(results_list, model_name, lang):
     ax1.set_title('Information Criteria')
     ax1.legend()
     ax1.grid(True, alpha=0.3)
-    
+
     ax2.plot(phases, r2_adj, 'o-', color='purple', label='Adjusted R²')
     ax2.set_xlabel('Number of Phases')
     ax2.set_ylabel('Adjusted R²')
@@ -478,33 +522,48 @@ def plot_metrics_summary(results_list, model_name, lang):
     ax2.legend()
     ax2.grid(True, alpha=0.3)
     plt.tight_layout()
-    
+
     buf = io.BytesIO()
     fig.savefig(buf, format="svg")
-    st.download_button(label=TEXTS['download_summary'][lang], data=buf.getvalue(),
-                       file_name=f"metrics_summary_{model_name}.svg", mime="image/svg+xml",
-                       key=f"dl_summary_{model_name}")
+    st.download_button(
+        label=TEXTS['download_summary'][lang],
+        data=buf.getvalue(),
+        file_name=f"metrics_summary_{model_name}.svg",
+        mime="image/svg+xml",
+        key=f"dl_summary_{model_name}"
+    )
     st.pyplot(fig)
 
 def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels, rate_label, lang):
-    n = res['n_phases']; theta = res['theta']; se = res['se']; se_p = res['se_p']
+    n = res['n_phases']
+    theta = res['theta']
+    se = res['se']
+    se_p = res['se_p']
     yi_name, yf_name = param_labels
     stats_df, raw_data_w_outliers = calculate_mean_with_outliers(replicates, model_func, theta, n)
-    y_i, y_f = theta[0], theta[1]; y_i_se, y_f_se = se[0], se[1]
-    
-    z = theta[2:2+n]; r_max = theta[2+n:2+2*n]; r_max_se = se[2+n:2+2*n]
-    lambda_ = theta[2+2*n:2+3*n]; lambda_se = se[2+2*n:2+3*n]
-    p = np.exp(z - np.max(z)); p /= np.sum(p)
-    
+    y_i, y_f = theta[0], theta[1]
+    y_i_se, y_f_se = se[0], se[1]
+
+    z = theta[2:2+n]
+    r_max = theta[2+n:2+2*n]
+    r_max_se = se[2+n:2+2*n]
+    lambda_ = theta[2+2*n:2+3*n]
+    lambda_se = se[2+2*n:2+3*n]
+    p = np.exp(z - np.max(z))
+    p /= np.sum(p)
+
     phases = []
     for i in range(n):
         phases.append({
-            "p": p[i], "SE p": se_p[i],
-            "r_max": r_max[i], "r_max_se": r_max_se[i],
-            "lambda": lambda_[i], "lambda_se": lambda_se[i]
+            "p": p[i],
+            "SE p": se_p[i],
+            "r_max": r_max[i],
+            "r_max_se": r_max_se[i],
+            "lambda": lambda_[i],
+            "lambda_se": lambda_se[i]
         })
     phases.sort(key=lambda x: x['lambda'])
-    
+
     c_plot, c_data = st.columns([1.5, 1])
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
@@ -512,106 +571,144 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
             ax.scatter(rep['t'], rep['y'], color='gray', alpha=0.3, s=15, marker='o')
         outliers = raw_data_w_outliers[raw_data_w_outliers['is_outlier']]
         if not outliers.empty:
-            ax.scatter(outliers['t'], outliers['y'], color='red', marker='x', s=50, label=TEXTS['legend_outlier'][lang], zorder=5)
-        ax.errorbar(stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'], 
-                    fmt='o', color='black', ecolor='black', capsize=3, label=TEXTS['legend_mean'][lang], zorder=4)
-        
+            ax.scatter(
+                outliers['t'], outliers['y'],
+                color='red', marker='x', s=50,
+                label=TEXTS['legend_outlier'][lang], zorder=5
+            )
+        ax.errorbar(
+            stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'],
+            fmt='o', color='black', ecolor='black', capsize=3,
+            label=TEXTS['legend_mean'][lang], zorder=4
+        )
+
         t_max_val = raw_data_w_outliers['t'].max()
         t_smooth = np.linspace(0, t_max_val, 300)
         y_smooth = polyauxic_model(t_smooth, theta, model_func, n)
         ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label=TEXTS['legend_global'][lang])
-        
+
         colors = plt.cm.viridis(np.linspace(0, 0.9, n))
         for i, ph in enumerate(phases):
             y_ind = model_func(t_smooth, y_i, y_f, ph['p'], ph['r_max'], ph['lambda'])
             y_vis = y_i + (y_f - y_i) * y_ind
-            ax.plot(t_smooth, y_vis, '--', color=colors[i], alpha=0.6, label=TEXTS['legend_phase'][lang].format(i+1))
-        
-        ax.set_xlabel(TEXTS['axis_time'][lang]); ax.set_ylabel(y_label)
-        ax.legend(fontsize='small'); ax.grid(True, linestyle=':', alpha=0.3)
-        
-        buf = io.BytesIO(); fig.savefig(buf, format="svg")
-        st.download_button(label=TEXTS['download_plot'][lang], data=buf.getvalue(),
-                           file_name=f"plot_{n}_phases.svg", mime="image/svg+xml", key=f"dl_btn_{model_func.__name__}_{n}")
+            ax.plot(
+                t_smooth, y_vis, '--',
+                color=colors[i], alpha=0.6,
+                label=TEXTS['legend_phase'][lang].format(i+1)
+            )
+
+        ax.set_xlabel(TEXTS['axis_time'][lang])
+        ax.set_ylabel(y_label)
+        ax.legend(fontsize='small')
+        ax.grid(True, linestyle=':', alpha=0.3)
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="svg")
+        st.download_button(
+            label=TEXTS['download_plot'][lang],
+            data=buf.getvalue(),
+            file_name=f"plot_{n}_phases.svg",
+            mime="image/svg+xml",
+            key=f"dl_btn_{model_func.__name__}_{n}"
+        )
         st.pyplot(fig)
-        
+
     with c_data:
-        df_glob = pd.DataFrame({"Param": [yi_name, yf_name], "Val": [y_i, y_f], "SE": [y_i_se, y_f_se]})
+        df_glob = pd.DataFrame({
+            "Param": [yi_name, yf_name],
+            "Val": [y_i, y_f],
+            "SE": [y_i_se, y_f_se]
+        })
         st.dataframe(df_glob.style.format({"Val": "{:.4f}", "SE": "{:.4f}"}), hide_index=True)
+
         rows = []
         for i, ph in enumerate(phases):
             rows.append({
-                "F": i+1, "p": ph['p'], "SE p": ph['SE p'],
-                rate_label: ph['r_max'], f"SE {rate_label}": ph['r_max_se'],
-                "λ": ph['lambda'], "SE λ": ph['lambda_se']
+                "F": i+1,
+                "p": ph['p'],
+                "SE p": ph['SE p'],
+                rate_label: ph['r_max'],
+                f"SE {rate_label}": ph['r_max_se'],
+                "λ": ph['lambda'],
+                "SE λ": ph['lambda_se']
             })
-        st.dataframe(pd.DataFrame(rows).style.format({
-            "p": "{:.4f}", "SE p": "{:.4f}", rate_label: "{:.4f}", f"SE {rate_label}": "{:.4f}",
-            "λ": "{:.4f}", "SE λ": "{:.4f}"
-        }), hide_index=True)
+        st.dataframe(
+            pd.DataFrame(rows).style.format({
+                "p": "{:.4f}",
+                "SE p": "{:.4f}",
+                rate_label: "{:.4f}",
+                f"SE {rate_label}": "{:.4f}",
+                "λ": "{:.4f}",
+                "SE λ": "{:.4f}"
+            }),
+            hide_index=True
+        )
         m = res['metrics']
-        df_met = pd.DataFrame({"Metric": ["R²", "R² Adj", "AICc", "BIC"], "Value": [m['R2'], m['R2_adj'], m['AICc'], m['BIC']]})
+        df_met = pd.DataFrame({
+            "Metric": ["R²", "R² Adj", "AICc", "BIC"],
+            "Value": [m['R2'], m['R2_adj'], m['AICc'], m['BIC']]
+        })
         st.dataframe(df_met.style.format({"Value": "{:.4f}"}), hide_index=True)
 
 def main():
     st.set_page_config(layout="wide", page_title="Polyauxic Analysis")
-    
+
     # Sidebar for settings
     st.sidebar.header("Language / Idioma / Langue")
     lang_key = st.sidebar.selectbox("Select Language", list(LANGUAGES.keys()))
     lang = LANGUAGES[lang_key]
-    
+
     st.title(TEXTS['app_title'][lang])
-    
+
     # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
-    
-    # References with Badges
-   cols = st.columns(2)
 
-with cols[0]:
-    # 1ª linha: arXiv + GitHub
-    st.markdown(f"""
-    **{TEXTS['paper_ref'][lang]}**  
-    [![arXiv](https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg)](https://doi.org/10.48550/arXiv.2507.05960)
-    [![GitHub](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/gusmock/mono_polyauxic_kinetics/)
-    """)
+    # References with Badges (NOVO BLOCO)
+    cols = st.columns(2)
+    with cols[0]:
+        st.markdown(f"""
+        **{TEXTS['paper_ref'][lang]}**  
+        [![arXiv](https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg)](https://doi.org/10.48550/arXiv.2507.05960)
+        [![GitHub](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/gusmock/mono_polyauxic_kinetics/)
+        """)
 
-    altmetric_html = """
-    <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
-      <a href="https://www.altmetric.com/details.php?arxiv=2507.05960" target="_blank" rel="noopener">
+        altmetric_html = """
         <script type="text/javascript" src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script>
-        <div class="altmetric-embed" data-badge-type="donut" data-arxiv-id="2507.05960"></div>
-      </a>
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 0.9rem;">
-        Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
-      </div>
-    </div>
-    """
-    components.html(altmetric_html, height=110)
-    
+        <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+          <a href="https://www.altmetric.com/details.php?arxiv=2507.05960" target="_blank" rel="noopener">
+            <div class="altmetric-embed" data-badge-type="donut" data-arxiv-id="2507.05960"></div>
+          </a>
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 0.9rem;">
+            Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
+          </div>
+        </div>
+        """
+        components.html(altmetric_html, height=110)
+
+    # Coluna 2 está livre para uso futuro, se quiser algo ali
+    # with cols[1]:
+    #     ...
+
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
     st.markdown("---")
 
     # Main Analysis Interface
     st.sidebar.header(TEXTS['sidebar_config'][lang])
-    
-    # Use internal keys for logic, but display localized text
+
     selected_var_key = st.sidebar.selectbox(
-        TEXTS['var_type'][lang], 
+        TEXTS['var_type'][lang],
         options=list(VAR_LABELS.keys()),
-        format_func=lambda x: VAR_LABELS[x]['name'][lang] # Shows translated label
+        format_func=lambda x: VAR_LABELS[x]['name'][lang]
     )
-    # Retrieve config based on key and lang
     config = VAR_LABELS[selected_var_key]
     y_label = config['axis'][lang]
     param_labels = config['params']
     rate_label = config['rate']
-    
+
     file = st.sidebar.file_uploader(TEXTS['upload_label'][lang], type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5)
-    
+
     if file:
         try:
             df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
@@ -641,18 +738,33 @@ with cols[0]:
                             if results_list:
                                 st.markdown(f"### {TEXTS['table_title'][lang]}")
                                 summary_data = []
-                                best_aicc = np.inf; best_idx = 0
+                                best_aicc = np.inf
+                                best_idx = 0
                                 for i, r in enumerate(results_list):
                                     m = r['metrics']
                                     summary_data.append({
-                                        "F": r['n_phases'], "R²": m['R2'], "R² Adj": m['R2_adj'],
-                                        "SSE": m['SSE'], "AIC": m['AIC'], "AICc": m['AICc'], "BIC": m['BIC']
+                                        "F": r['n_phases'],
+                                        "R²": m['R2'],
+                                        "R² Adj": m['R2_adj'],
+                                        "SSE": m['SSE'],
+                                        "AIC": m['AIC'],
+                                        "AICc": m['AICc'],
+                                        "BIC": m['BIC']
                                     })
                                     if m['AICc'] < best_aicc:
-                                        best_aicc = m['AICc']; best_idx = i
-                                st.dataframe(pd.DataFrame(summary_data).style.apply(
-                                    lambda x: ['background-color: #d4edda; font-weight: bold' if x['AICc'] == best_aicc else '' for _ in x], 
-                                    axis=1).format("{:.4f}"), hide_index=True)
+                                        best_aicc = m['AICc']
+                                        best_idx = i
+                                st.dataframe(
+                                    pd.DataFrame(summary_data).style.apply(
+                                        lambda x: [
+                                            'background-color: #d4edda; font-weight: bold'
+                                            if x['AICc'] == best_aicc else ''
+                                            for _ in x
+                                        ],
+                                        axis=1
+                                    ).format("{:.4f}"),
+                                    hide_index=True
+                                )
                                 st.success(TEXTS['best_model_msg'][lang].format(results_list[best_idx]['n_phases']))
                                 st.markdown(f"### {TEXTS['graph_summary_title'][lang]}")
                                 plot_metrics_summary(results_list, model_name, lang)
@@ -663,3 +775,4 @@ with cols[0]:
 
 if __name__ == "__main__":
     main()
+
