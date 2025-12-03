@@ -1,4 +1,4 @@
-"""
+e"""
                                                                                                @@@@                      
                     ::++        ++..                                       ######  ########  @@@@@@@@                   
                     ++++      ..++++                                     ##########  ########  @@@@                    
@@ -27,10 +27,10 @@
                     ++++        ++++                                                   @@@@@@@                          
                                                                                         @@@@@ 
 
-
 """
 
 import streamlit as st
+import streamlit.components.v1 as components # Necessário para o Altmetric
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -574,8 +574,16 @@ def main():
     [![GitHub](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/gusmock/mono_polyauxic_kinetics/)
     """)
     
+    # Badge Altmetric
+    with cols[0]:
+        altmetric_html = """
+        <script type="text/javascript" src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script>
+        <div class="altmetric-embed" data-badge-type="donut" data-arxiv-id="2507.05960"></div>
+        """
+        components.html(altmetric_html, height=100)
+
     with cols[1]:
-        citation_text = "Kovacs, G., et al. (2025). A Universal Model for Mono- and Polyauxic Growth Kinetics. arXiv preprint arXiv:2507.05960."
+        citation_text = "Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p."
         st.code(citation_text, language="text")
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
