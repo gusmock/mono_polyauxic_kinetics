@@ -29,6 +29,7 @@
 
 
 """
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -45,8 +46,6 @@ from datetime import datetime
 # ==============================================================================
 
 # Global Plot Style - Times New Roman 11
-# Note: On Linux servers (Streamlit Cloud), standard Times New Roman might be missing.
-# We prioritise it, but fallback to generic 'serif' which looks similar.
 plt.rcParams.update({
     'font.family': 'serif',
     'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif'],
@@ -56,7 +55,7 @@ plt.rcParams.update({
     'ytick.labelsize': 11,
     'legend.fontsize': 11,
     'figure.titlesize': 12,
-    'mathtext.fontset': 'stix' # Better math font rendering
+    'mathtext.fontset': 'stix'
 })
 
 # Languages Configuration
@@ -65,9 +64,6 @@ LANGUAGES = {
     "Português (BR)": "pt",
     "Français (CA)": "fr"
 }
-
-# Internal keys for response types
-RESPONSE_KEYS = ["generic", "product", "substrate", "biomass"]
 
 # UI Text Dictionary
 TEXTS = {
@@ -81,10 +77,15 @@ TEXTS = {
         "pt": "Este aplicativo realiza regressão não-linear avançada para cinética microbiana. Identifica comportamentos mono e poliauxicos usando métodos estatísticos robustos (perda Lorentziana, outliers ROUT) e seleciona modelos via Critérios de Informação (AIC, BIC).",
         "fr": "Cette application effectue une régression non linéaire avancée pour la cinétique microbienne. Elle identifie les comportements mono- et polyauxiques à l'aide de méthodes robustes (perte Lorentzienne, ROUT) et sélectionne les modèles via Critères d'Information (AIC, BIC)."
     },
-    "citation_label": {
-        "en": "Citation:",
-        "pt": "Citação:",
-        "fr": "Citation :"
+    "paper_ref": {
+        "en": "Reference Paper:",
+        "pt": "Artigo de Referência:",
+        "fr": "Article de Référence :"
+    },
+    "github_ref": {
+        "en": "Source Code:",
+        "pt": "Código Fonte:",
+        "fr": "Code Source :"
     },
     "instructions_header": {
         "en": "Instructions & File Format",
