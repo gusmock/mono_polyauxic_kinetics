@@ -29,7 +29,6 @@
 
 
 """
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -37,20 +36,28 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize, differential_evolution
 from scipy.signal import find_peaks
 import io
+import re
+import os
+from datetime import datetime
 
 # ==============================================================================
 # 0. CONFIGURATION & GLOBAL SETTINGS
 # ==============================================================================
 
-# Global Plot Style (Times New Roman, Size 11)
-plt.rcParams['font.family'] = 'serif'
-plt.rcParams['font.serif'] = ['Times New Roman']
-plt.rcParams['font.size'] = 11
-plt.rcParams['axes.labelsize'] = 11
-plt.rcParams['xtick.labelsize'] = 11
-plt.rcParams['ytick.labelsize'] = 11
-plt.rcParams['legend.fontsize'] = 11
-plt.rcParams['figure.titlesize'] = 12
+# Global Plot Style - Times New Roman 11
+# Note: On Linux servers (Streamlit Cloud), standard Times New Roman might be missing.
+# We prioritise it, but fallback to generic 'serif' which looks similar.
+plt.rcParams.update({
+    'font.family': 'serif',
+    'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif'],
+    'font.size': 11,
+    'axes.labelsize': 11,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'legend.fontsize': 11,
+    'figure.titlesize': 12,
+    'mathtext.fontset': 'stix' # Better math font rendering
+})
 
 # Languages Configuration
 LANGUAGES = {
@@ -58,6 +65,9 @@ LANGUAGES = {
     "Português (BR)": "pt",
     "Français (CA)": "fr"
 }
+
+# Internal keys for response types
+RESPONSE_KEYS = ["generic", "product", "substrate", "biomass"]
 
 # UI Text Dictionary
 TEXTS = {
@@ -71,10 +81,10 @@ TEXTS = {
         "pt": "Este aplicativo realiza regressão não-linear avançada para cinética microbiana. Identifica comportamentos mono e poliauxicos usando métodos estatísticos robustos (perda Lorentziana, outliers ROUT) e seleciona modelos via Critérios de Informação (AIC, BIC).",
         "fr": "Cette application effectue une régression non linéaire avancée pour la cinétique microbienne. Elle identifie les comportements mono- et polyauxiques à l'aide de méthodes robustes (perte Lorentzienne, ROUT) et sélectionne les modèles via Critères d'Information (AIC, BIC)."
     },
-    "paper_ref": {
-        "en": "Reference Paper:",
-        "pt": "Artigo de Referência:",
-        "fr": "Article de Référence :"
+    "citation_label": {
+        "en": "Citation:",
+        "pt": "Citação:",
+        "fr": "Citation :"
     },
     "instructions_header": {
         "en": "Instructions & File Format",
@@ -171,27 +181,31 @@ TEXTS = {
     "error_cols": {"en": "Column error.", "pt": "Erro nas colunas.", "fr": "Erreur de colonne."}
 }
 
-# Variable Labels Configuration
+# Variable Labels Configuration (Key -> Lang -> Data)
 VAR_LABELS = {
-    "Genérico y(t)": {
-        "en": ("Response (y)", ("y_i", "y_f"), "r_max"),
-        "pt": ("Resposta (y)", ("y_i", "y_f"), "r_max"),
-        "fr": ("Réponse (y)", ("y_i", "y_f"), "r_max")
+    "generic": {
+        "name": {"en": "Generic y(t)", "pt": "Genérico y(t)", "fr": "Générique y(t)"},
+        "axis": {"en": "Response (y)", "pt": "Resposta (y)", "fr": "Réponse (y)"},
+        "params": ("y_i", "y_f"),
+        "rate": "r_max"
     },
-    "Produto P(t)": {
-        "en": ("Product Conc. (P)", ("P_i", "P_f"), "r_P,max"),
-        "pt": ("Concentração de Produto (P)", ("P_i", "P_f"), "r_P,max"),
-        "fr": ("Concentration en Produit (P)", ("P_i", "P_f"), "r_P,max")
+    "product": {
+        "name": {"en": "Product P(t)", "pt": "Produto P(t)", "fr": "Produit P(t)"},
+        "axis": {"en": "Product Conc. (P)", "pt": "Concentração de Produto (P)", "fr": "Concentration en Produit (P)"},
+        "params": ("P_i", "P_f"),
+        "rate": "r_P,max"
     },
-    "Substrato S(t)": {
-        "en": ("Substrate Conc. (S)", ("S_i", "S_f"), "r_S,max"),
-        "pt": ("Concentração de Substrato (S)", ("S_i", "S_f"), "r_S,max"),
-        "fr": ("Concentration en Substrat (S)", ("S_i", "S_f"), "r_S,max")
+    "substrate": {
+        "name": {"en": "Substrate S(t)", "pt": "Substrato S(t)", "fr": "Substrat S(t)"},
+        "axis": {"en": "Substrate Conc. (S)", "pt": "Concentração de Substrato (S)", "fr": "Concentration en Substrat (S)"},
+        "params": ("S_i", "S_f"),
+        "rate": "r_S,max"
     },
-    "Biomassa X(t)": {
-        "en": ("Biomass Conc. (X)", ("X_i", "X_f"), "µ_max"),
-        "pt": ("Concentração Celular (X)", ("X_i", "X_f"), "µ_max"),
-        "fr": ("Concentration Cellulaire (X)", ("X_i", "X_f"), "µ_max")
+    "biomass": {
+        "name": {"en": "Biomass X(t)", "pt": "Biomassa X(t)", "fr": "Biomasse X(t)"},
+        "axis": {"en": "Biomass Conc. (X)", "pt": "Concentração Celular (X)", "fr": "Concentration Cellulaire (X)"},
+        "params": ("X_i", "X_f"),
+        "rate": "µ_max"
     }
 }
 
@@ -550,16 +564,38 @@ def main():
     
     # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
-    st.markdown(f"**{TEXTS['paper_ref'][lang]}** [https://doi.org/10.48550/arXiv.2507.05960](https://doi.org/10.48550/arXiv.2507.05960)")
+    
+    # References with Badges
+    cols = st.columns(2)
+    cols[0].markdown(f"""
+    **{TEXTS['paper_ref'][lang]}**
+    [![arXiv](https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg)](https://doi.org/10.48550/arXiv.2507.05960)
+    [![GitHub](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/gusmock/mono_polyauxic_kinetics/)
+    """)
+    
+    with cols[1]:
+        citation_text = "Kovacs, G., et al. (2025). A Universal Model for Mono- and Polyauxic Growth Kinetics. arXiv preprint arXiv:2507.05960."
+        st.code(citation_text, language="text")
+    
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
     st.markdown("---")
 
     # Main Analysis Interface
     st.sidebar.header(TEXTS['sidebar_config'][lang])
-    var_type_opts = list(VAR_LABELS.keys())
-    var_type = st.sidebar.selectbox(TEXTS['var_type'][lang], var_type_opts)
-    y_label, param_labels, rate_label = VAR_LABELS[var_type][lang]
+    
+    # Use internal keys for logic, but display localized text
+    selected_var_key = st.sidebar.selectbox(
+        TEXTS['var_type'][lang], 
+        options=list(VAR_LABELS.keys()),
+        format_func=lambda x: VAR_LABELS[x]['name'][lang] # Shows translated label
+    )
+    # Retrieve config based on key and lang
+    config = VAR_LABELS[selected_var_key]
+    y_label = config['axis'][lang]
+    param_labels = config['params']
+    rate_label = config['rate']
+    
     file = st.sidebar.file_uploader(TEXTS['upload_label'][lang], type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5)
     
