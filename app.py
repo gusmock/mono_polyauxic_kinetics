@@ -28,18 +28,6 @@
 
 
 """
-"""
-================================================================================
-      .---.                  
-    / .-. \                 &
-   | (   ) |               &&&
-    \ `-' /               &&&
-      `---'              &&&
-                        &   
-     [UNICAMP]         [GBMA]
-================================================================================
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -65,6 +53,7 @@ plt.rcParams['ytick.labelsize'] = 11
 plt.rcParams['legend.fontsize'] = 11
 plt.rcParams['figure.titlesize'] = 12
 
+# English is the first key, making it the default in streamlit selectbox
 LANGUAGES = {
     "English": "en",
     "Português (BR)": "pt",
@@ -212,6 +201,7 @@ def log_user_access(name, email, inst, desc):
 # ==============================================================================
 
 def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
+    """Boltzmann model term (Eq. 31)."""
     delta_y = y_f - y_i
     if abs(delta_y) < 1e-9: delta_y = 1e-9
     p_safe = max(p_j, 1e-12)
@@ -222,6 +212,7 @@ def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
     return p_safe / (1.0 + np.exp(exponent))
 
 def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
+    """Gompertz model term (Eq. 32)."""
     delta_y = y_f - y_i
     if abs(delta_y) < 1e-9: delta_y = 1e-9
     p_safe = max(p_j, 1e-12)
@@ -232,6 +223,7 @@ def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
     return p_safe * np.exp(-np.exp(exponent))
 
 def polyauxic_model(t, theta, model_func, n_phases):
+    """Global polyauxic model summation."""
     t = np.asarray(t, dtype=float)
     y_i = theta[0]
     y_f = theta[1]
@@ -247,11 +239,13 @@ def polyauxic_model(t, theta, model_func, n_phases):
     return y_i + (y_f - y_i) * sum_phases
 
 def sse_loss(theta, t, y, model_func, n_phases):
+    """Sum of Squared Errors Loss function."""
     y_pred = polyauxic_model(t, theta, model_func, n_phases)
     if np.any(y_pred < -0.1 * np.max(np.abs(y))): return 1e12
     return np.sum((y - y_pred)**2)
 
 def numerical_hessian(func, theta, args, epsilon=1e-5):
+    """Numerical Hessian calculation."""
     k = len(theta)
     hess = np.zeros((k, k))
     for i in range(k):
@@ -266,6 +260,7 @@ def numerical_hessian(func, theta, args, epsilon=1e-5):
     return hess
 
 def detect_outliers(y_true, y_pred):
+    """ROUT-based outlier detection."""
     residuals = y_true - y_pred
     median_res = np.median(residuals)
     mad = np.median(np.abs(residuals - median_res))
@@ -274,6 +269,7 @@ def detect_outliers(y_true, y_pred):
     return z_scores > 2.5
 
 def smart_initial_guess(t, y, n_phases):
+    """Initial parameter guessing based on derivatives."""
     dy = np.gradient(y, t)
     dy_smooth = np.convolve(dy, np.ones(5)/5, mode='same')
     min_dist = max(1, len(t) // (n_phases * 4))
@@ -301,6 +297,7 @@ def smart_initial_guess(t, y, n_phases):
     return theta_guess
 
 def calculate_p_errors(z_vals, cov_z):
+    """Standard error calculation for p (Softmax)."""
     exps = np.exp(z_vals - np.max(z_vals))
     p = exps / np.sum(exps)
     n = len(p)
@@ -317,6 +314,7 @@ def calculate_p_errors(z_vals, cov_z):
         return np.full(n, np.nan)
 
 def fit_model_auto(t_data, y_data, model_func, n_phases):
+    """Main fitting function."""
     n_params = 2 + 3 * n_phases
     if len(t_data) <= n_params: return None 
     t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
@@ -396,8 +394,12 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
             "metrics": {"R2": r2, "R2_adj": r2_adj, "SSE": sse, "AIC": aic, "BIC": bic, "AICc": aicc},
             "outliers": outliers, "y_pred": y_pred}
 
+# ==============================================================================
+# 4. DATA PROCESSING
+# ==============================================================================
+
 def process_data(df):
-    """Processes DataFrame detecting replicates in pairs of columns."""
+    """Processes replicate columns."""
     df = df.dropna(axis=1, how='all')
     cols = df.columns.tolist()
     all_t = []; all_y = []; replicates = []
@@ -415,7 +417,7 @@ def process_data(df):
     return t_flat[idx_sort], y_flat[idx_sort], replicates
 
 def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
-    """Calculates mean excluding outliers based on the model fit."""
+    """Calculate statistics excluding outliers."""
     all_data = []
     for rep in replicates:
         for t, y in zip(rep['t'], rep['y']):
@@ -429,11 +431,11 @@ def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     return grouped, df_all
 
 # ==============================================================================
-# 5. VIEW COMPONENTS (CHARTS & TABLES)
+# 5. VIEW COMPONENTS
 # ==============================================================================
 
 def plot_metrics_summary(results_list, model_name, lang):
-    """Generates a summary chart of metrics vs phases."""
+    """Summary chart."""
     phases = [r['n_phases'] for r in results_list]
     aic = [r['metrics']['AIC'] for r in results_list]
     aicc = [r['metrics']['AICc'] for r in results_list]
@@ -535,35 +537,25 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
         st.dataframe(df_met.style.format({"Value": "{:.4f}"}), hide_index=True)
 
 # ==============================================================================
-# 5. APP STRUCTURE
+# 6. APP STRUCTURE
 # ==============================================================================
 
 def show_home_page(lang):
-    """Render Home/Login Page."""
-    img_path = "kinetics_flowchart.png"
-    if os.path.exists(img_path):
-        st.image(img_path, use_column_width=True)
-    
     st.markdown(f"### {TEXTS['app_title'][lang]}")
     st.info(TEXTS['intro_desc'][lang])
     st.markdown(f"**{TEXTS['paper_ref'][lang]}** [https://doi.org/10.48550/arXiv.2507.05960](https://doi.org/10.48550/arXiv.2507.05960)")
     st.warning(TEXTS['db_notice'][lang])
-    
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
-    
     st.markdown("---")
     st.subheader(TEXTS['form_header'][lang])
-    
     with st.form("user_login_form"):
         c1, c2 = st.columns(2)
         name = c1.text_input(TEXTS['lbl_name'][lang])
         email = c2.text_input(TEXTS['lbl_email'][lang])
         inst = st.text_input(TEXTS['lbl_inst'][lang])
         desc = st.text_area(TEXTS['lbl_desc'][lang])
-        
         submitted = st.form_submit_button(TEXTS['btn_start'][lang])
-        
         if submitted:
             if not name or not email or not inst or not desc:
                 st.error(TEXTS['err_fields'][lang])
@@ -575,15 +567,11 @@ def show_home_page(lang):
                 st.rerun()
 
 def show_analysis_page(lang):
-    """Render Analysis Page."""
     st.markdown(f"## {TEXTS['app_title'][lang]}")
-    
-    # Configuration Sidebar
     st.sidebar.header(TEXTS['sidebar_config'][lang])
     var_type_opts = list(VAR_LABELS.keys())
     var_type = st.sidebar.selectbox(TEXTS['var_type'][lang], var_type_opts)
     y_label, param_labels, rate_label = VAR_LABELS[var_type][lang]
-    
     file = st.sidebar.file_uploader(TEXTS['upload'][lang], type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5)
     
@@ -595,12 +583,9 @@ def show_analysis_page(lang):
                 st.error(TEXTS['error_cols'][lang])
             else:
                 st.success(TEXTS['data_loaded'][lang].format(len(replicates), len(t_flat)))
-                
                 if st.button(TEXTS['run_fit'][lang]):
                     st.divider()
                     tab1, tab2 = st.tabs([TEXTS['tab_gompertz'][lang], TEXTS['tab_boltzmann'][lang]])
-                    
-                    # Logic for Tabs
                     for tab, model_name, func, color in [
                         (tab1, "Gompertz", gompertz_term_eq32, "tab:blue"),
                         (tab2, "Boltzmann", boltzmann_term_eq31, "tab:orange")
@@ -616,13 +601,10 @@ def show_analysis_page(lang):
                                             results_list.append(res)
                                         else:
                                             st.warning(TEXTS['warning_insufficient'][lang])
-                            
                             if results_list:
                                 st.markdown(f"### {TEXTS['table_title'][lang]}")
                                 summary_data = []
-                                best_aicc = np.inf
-                                best_idx = 0
-                                
+                                best_aicc = np.inf; best_idx = 0
                                 for i, r in enumerate(results_list):
                                     m = r['metrics']
                                     summary_data.append({
@@ -631,15 +613,12 @@ def show_analysis_page(lang):
                                     })
                                     if m['AICc'] < best_aicc:
                                         best_aicc = m['AICc']; best_idx = i
-                                
                                 st.dataframe(pd.DataFrame(summary_data).style.apply(
                                     lambda x: ['background-color: #d4edda; font-weight: bold' if x['AICc'] == best_aicc else '' for _ in x], 
                                     axis=1).format("{:.4f}"), hide_index=True)
-                                
                                 st.success(TEXTS['best_model'][lang].format(results_list[best_idx]['n_phases']))
                                 st.markdown(f"### {TEXTS['summary_title'][lang]}")
                                 plot_metrics_summary(results_list, model_name, lang)
-
         except Exception as e:
             st.error(TEXTS['error_proc'][lang].format(e))
     else:
@@ -647,16 +626,10 @@ def show_analysis_page(lang):
 
 def main():
     if 'page' not in st.session_state: st.session_state.page = 'home'
-    
-    # Language Selector (Persistent in Sidebar)
-    st.sidebar.image("https://img.icons8.com/ios-filled/50/000000/globe.png", width=30)
-    lang_key = st.sidebar.selectbox("Language / Idioma", list(LANGUAGES.keys()))
+    lang_key = st.sidebar.selectbox("Language / Idioma / Langue", list(LANGUAGES.keys()))
     lang = LANGUAGES[lang_key]
-    
-    if st.session_state.page == 'home':
-        show_home_page(lang)
-    else:
-        show_analysis_page(lang)
+    if st.session_state.page == 'home': show_home_page(lang)
+    else: show_analysis_page(lang)
 
 if __name__ == "__main__":
     main()
