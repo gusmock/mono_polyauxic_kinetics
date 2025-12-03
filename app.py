@@ -28,6 +28,18 @@
 
 
 """
+"""
+================================================================================
+      .---.                  
+    / .-. \                 &
+   | (   ) |               &&&
+    \ `-' /               &&&
+      `---'              &&&
+                        &   
+     [UNICAMP]         [GBMA]
+================================================================================
+"""
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -40,12 +52,10 @@ import os
 from datetime import datetime
 
 # ==============================================================================
-# 0. CONFIGURAÇÃO GLOBAL
+# 0. CONFIGURATION & TRANSLATIONS
 # ==============================================================================
 
-st.set_page_config(layout="wide", page_title="Polyauxic Modeling Platform")
-
-# Configuração de Fonte (Times New Roman)
+# Global Plot Style
 plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.serif'] = ['Times New Roman']
 plt.rcParams['font.size'] = 11
@@ -55,22 +65,17 @@ plt.rcParams['ytick.labelsize'] = 11
 plt.rcParams['legend.fontsize'] = 11
 plt.rcParams['figure.titlesize'] = 12
 
-# ==============================================================================
-# 1. SISTEMA DE TRADUÇÃO E TEXTOS
-# ==============================================================================
-
 LANGUAGES = {
-    "English (Default)": "en",
+    "English": "en",
     "Português (BR)": "pt",
     "Français (CA)": "fr"
 }
 
 TEXTS = {
-    # --- HOME PAGE ---
     "app_title": {
-        "en": "Polyauxic Kinetic Modeling Platform",
-        "pt": "Plataforma de Modelagem Cinética Poliauxica",
-        "fr": "Plateforme de Modélisation Cinétique Polyauxique"
+        "en": "Polyauxic Modeling Platform",
+        "pt": "Plataforma de Modelagem Poliauxica",
+        "fr": "Plateforme de Modélisation Polyauxique"
     },
     "intro_desc": {
         "en": "This application performs advanced non-linear regression for microbial growth kinetics. It is designed to identify and fit mono- and polyauxic behaviors using robust statistical methods (Lorentzian loss, ROUT outlier detection) and provides model selection based on Information Criteria (AIC, BIC).",
@@ -392,6 +397,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
             "outliers": outliers, "y_pred": y_pred}
 
 def process_data(df):
+    """Processes DataFrame detecting replicates in pairs of columns."""
     df = df.dropna(axis=1, how='all')
     cols = df.columns.tolist()
     all_t = []; all_y = []; replicates = []
@@ -409,6 +415,7 @@ def process_data(df):
     return t_flat[idx_sort], y_flat[idx_sort], replicates
 
 def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
+    """Calculates mean excluding outliers based on the model fit."""
     all_data = []
     for rep in replicates:
         for t, y in zip(rep['t'], rep['y']):
@@ -422,10 +429,11 @@ def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     return grouped, df_all
 
 # ==============================================================================
-# 4. VIEW COMPONENTS (CHARTS & TABLES)
+# 5. VIEW COMPONENTS (CHARTS & TABLES)
 # ==============================================================================
 
 def plot_metrics_summary(results_list, model_name, lang):
+    """Generates a summary chart of metrics vs phases."""
     phases = [r['n_phases'] for r in results_list]
     aic = [r['metrics']['AIC'] for r in results_list]
     aicc = [r['metrics']['AICc'] for r in results_list]
@@ -532,7 +540,9 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
 
 def show_home_page(lang):
     """Render Home/Login Page."""
-    st.image("kinetics_flowchart.png", use_column_width=True) # Placeholder if image exists
+    img_path = "kinetics_flowchart.png"
+    if os.path.exists(img_path):
+        st.image(img_path, use_column_width=True)
     
     st.markdown(f"### {TEXTS['app_title'][lang]}")
     st.info(TEXTS['intro_desc'][lang])
