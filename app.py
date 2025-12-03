@@ -25,143 +25,35 @@
                     ++++++    ++++++                                    ##################    ####                      
                     ++++      ::++++                                    ##############  @@@@                          
                     ++++        ++++                                                    --..    @@@@                          
+
 """
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize, differential_evolution
 from scipy.signal import find_peaks
-import re
-import os
-from datetime import datetime
+import io
 
 # ==============================================================================
-# 0. MULTILINGUAL DICTIONARY & CONFIG
+# CONFIGURAÇÃO GLOBAL DE PLOTAGEM (Times New Roman 11)
 # ==============================================================================
-
-LANGUAGES = {
-    "English": "en",
-    "Português (BR)": "pt",
-    "Français (CA)": "fr"
-}
-
-TEXTS = {
-    "title": {
-        "en": "Polyauxic Modeling (Replicates & Metadata)",
-        "pt": "Modelagem Poliauxica (Réplicas e Metadados)",
-        "fr": "Modélisation Polyauxique (Réplicats et Métadonnées)"
-    },
-    "sidebar_user": {
-        "en": "User Information",
-        "pt": "Informações do Usuário",
-        "fr": "Informations de l'Utilisateur"
-    },
-    "name": {"en": "Full Name", "pt": "Nome Completo", "fr": "Nom Complet"},
-    "institution": {"en": "Institution", "pt": "Instituição", "fr": "Institution"},
-    "email": {"en": "E-mail", "pt": "E-mail", "fr": "Courriel"},
-    "desc": {"en": "Data Description", "pt": "Descrição dos Dados", "fr": "Description des Données"},
-    "invalid_email": {
-        "en": "Please enter a valid email.",
-        "pt": "Por favor, insira um e-mail válido.",
-        "fr": "Veuillez entrer un courriel valide."
-    },
-    "sidebar_config": {"en": "Settings", "pt": "Configurações", "fr": "Paramètres"},
-    "var_type": {"en": "Response Type (Y Axis)", "pt": "Tipo de Resposta (Eixo Y)", "fr": "Type de Réponse (Axe Y)"},
-    "upload": {
-        "en": "Upload CSV/XLSX (Pairs: t1, y1, t2, y2...)",
-        "pt": "Arquivo CSV/XLSX (Pares: t1, y1, t2, y2...)",
-        "fr": "Télécharger CSV/XLSX (Paires: t1, y1, t2, y2...)"
-    },
-    "max_phases": {
-        "en": "Max Phases to Test",
-        "pt": "Máximo de Fases para testar",
-        "fr": "Phases Max à Tester"
-    },
-    "info_upload": {
-        "en": "Load a file. Format: Col A=Time1, B=Resp1, C=Time2, D=Resp2, etc.",
-        "pt": "Carregue um arquivo. Formato: Col A=Tempo1, B=Resp1, C=Tempo2, D=Resp2, etc.",
-        "fr": "Chargez un fichier. Format: Col A=Temps1, B=Resp1, C=Temps2, D=Resp2, etc."
-    },
-    "data_loaded": {
-        "en": "Data Loaded: {0} replicates identified. Total points: {1}",
-        "pt": "Dados Carregados: {0} réplicas identificadas. Total de pontos: {1}",
-        "fr": "Données Chargées: {0} réplicats identifiés. Points totaux: {1}"
-    },
-    "run_btn": {"en": "RUN COMPARATIVE ANALYSIS", "pt": "EXECUTAR ANÁLISE COMPARATIVA", "fr": "LANCER L'ANALYSE COMPARATIVE"},
-    "error_cols": {
-        "en": "Could not identify column pairs. Check file format.",
-        "pt": "Não foi possível identificar pares de colunas. Verifique o arquivo.",
-        "fr": "Impossible d'identifier les paires de colonnes. Vérifiez le fichier."
-    },
-    "error_proc": {"en": "Processing error: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"},
-    "tab_gompertz": {"en": "Gompertz (Eq. 32)", "pt": "Gompertz (Eq. 32)", "fr": "Gompertz (Eq. 32)"},
-    "tab_boltzmann": {"en": "Boltzmann (Eq. 31)", "pt": "Boltzmann (Eq. 31)", "fr": "Boltzmann (Eq. 31)"},
-    "expanding": {
-        "en": "{0}: Fitting {1} Phase(s)",
-        "pt": "{0}: Ajuste com {1} Fase(s)",
-        "fr": "{0}: Ajustement avec {1} Phase(s)"
-    },
-    "optimizing": {
-        "en": "Optimizing {0} phases...",
-        "pt": "Otimizando {0} fases...",
-        "fr": "Optimisation de {0} phases..."
-    },
-    "warning_insufficient": {
-        "en": "Insufficient data for this number of phases.",
-        "pt": "Dados insuficientes para este número de fases.",
-        "fr": "Données insuffisantes pour ce nombre de phases."
-    },
-    "table_title": {
-        "en": "Model Selection Table (Information Criteria)",
-        "pt": "Tabela de Seleção de Modelo (Critérios de Informação)",
-        "fr": "Tableau de Sélection du Modèle (Critères d'Information)"
-    },
-    "best_model": {
-        "en": "🏆 Best Suggested Model: **{0} Phase(s)** (Based on lowest AICc).",
-        "pt": "🏆 Melhor Modelo Sugerido: **{0} Fase(s)** (Baseado no menor AICc).",
-        "fr": "🏆 Meilleur Modèle Suggéré: **{0} Phase(s)** (Basé sur le plus bas AICc)."
-    },
-    "graph_legend_valid": {"en": "Valid Data", "pt": "Dados Válidos", "fr": "Données Valides"},
-    "graph_legend_outlier": {"en": "Outliers", "pt": "Outliers", "fr": "Valeurs Aberrantes"},
-    "graph_legend_mean": {"en": "Mean (w/o Outliers)", "pt": "Média (s/ Outliers)", "fr": "Moyenne (sans Aberrants)"},
-    "graph_legend_global": {"en": "Global Fit", "pt": "Ajuste Global", "fr": "Ajustement Global"},
-    "graph_legend_phase": {"en": "Phase {0}", "pt": "Fase {0}", "fr": "Phase {0}"},
-    "axis_time": {"en": "Time (h/d)", "pt": "Tempo (h/d)", "fr": "Temps (h/j)"},
-    "db_saved": {"en": "Data saved to database.", "pt": "Dados salvos no banco de dados.", "fr": "Données enregistrées dans la base."}
-}
-
-LABELS_MAP = {
-    "Genérico y(t)": {
-        "en": "Response (y)", "pt": "Resposta (y)", "fr": "Réponse (y)",
-        "params": ("y_i", "y_f"), "rate": "r_max"
-    },
-    "Produto P(t)": {
-        "en": "Product Concentration (P)", "pt": "Concentração de Produto (P)", "fr": "Concentration en Produit (P)",
-        "params": ("P_i", "P_f"), "rate": "r_P,max"
-    },
-    "Substrato S(t)": {
-        "en": "Substrate Concentration (S)", "pt": "Concentração de Substrato (S)", "fr": "Concentration en Substrat (S)",
-        "params": ("S_i", "S_f"), "rate": "r_S,max"
-    },
-    "Biomassa X(t)": {
-        "en": "Cell Concentration (X)", "pt": "Concentração Celular (X)", "fr": "Concentration Cellulaire (X)",
-        "params": ("X_i", "X_f"), "rate": "µ_max"
-    }
-}
-
-def get_text(key, lang_code):
-    """Helper to retrieve text based on language code."""
-    return TEXTS[key][lang_code].format() if key in TEXTS else key
+plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.serif'] = ['Times New Roman']
+plt.rcParams['font.size'] = 11
+plt.rcParams['axes.labelsize'] = 11
+plt.rcParams['xtick.labelsize'] = 11
+plt.rcParams['ytick.labelsize'] = 11
+plt.rcParams['legend.fontsize'] = 11
+plt.rcParams['figure.titlesize'] = 12
 
 # ==============================================================================
-# 1. MATHEMATICAL MODELS (EXACT NOTATION EQS. 31 & 32)
+# 1. MODELOS MATEMÁTICOS (NOTAÇÃO EXATA EQS. 31 E 32)
 # ==============================================================================
 
 def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
-    """
-    Phase j term for the Boltzmann model (Eq. 31).
-    """
+    """Termo da fase j para o modelo Boltzmann (Eq. 31)."""
     delta_y = y_f - y_i
     if abs(delta_y) < 1e-9: delta_y = 1e-9
     p_safe = max(p_j, 1e-12)
@@ -174,9 +66,7 @@ def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
     return p_safe / (1.0 + np.exp(exponent))
 
 def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
-    """
-    Phase j term for the Gompertz model (Eq. 32).
-    """
+    """Termo da fase j para o modelo Gompertz (Eq. 32)."""
     delta_y = y_f - y_i
     if abs(delta_y) < 1e-9: delta_y = 1e-9
     p_safe = max(p_j, 1e-12)
@@ -189,9 +79,7 @@ def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
     return p_safe * np.exp(-np.exp(exponent))
 
 def polyauxic_model(t, theta, model_func, n_phases):
-    """
-    Global Model: Weighted sum of sigmoidal phases.
-    """
+    """Modelo Global: Soma ponderada das fases sigmoidais."""
     t = np.asarray(t, dtype=float)
     y_i = theta[0]
     y_f = theta[1]
@@ -200,7 +88,7 @@ def polyauxic_model(t, theta, model_func, n_phases):
     r_max = theta[2+n_phases : 2+2*n_phases]
     lambda_ = theta[2+2*n_phases : 2+3*n_phases]
 
-    # Softmax for weights
+    # Softmax
     z_shift = z - np.max(z)
     exp_z = np.exp(z_shift)
     p = exp_z / np.sum(exp_z)
@@ -212,21 +100,18 @@ def polyauxic_model(t, theta, model_func, n_phases):
     return y_i + (y_f - y_i) * sum_phases
 
 # ==============================================================================
-# 2. LOSS FUNCTIONS AND STATISTICS
+# 2. FUNÇÕES DE PERDA E ESTATÍSTICAS
 # ==============================================================================
 
 def sse_loss(theta, t, y, model_func, n_phases):
-    """
-    Objective Function: Sum of Squared Errors (SSE).
-    """
+    """Objective Function: Sum of Squared Errors (SSE)."""
     y_pred = polyauxic_model(t, theta, model_func, n_phases)
-    # Slight physical penalty for negative values if not expected
-    if np.any(y_pred < -0.1 * np.max(np.abs(y))): 
+    if np.any(y_pred < -0.1 * np.max(np.abs(y))): # Penalidade física leve
         return 1e12
     return np.sum((y - y_pred)**2)
 
 def numerical_hessian(func, theta, args, epsilon=1e-5):
-    """Numerical Hessian for error estimation."""
+    """Hessiana Numérica para estimativa de erros."""
     k = len(theta)
     hess = np.zeros((k, k))
     for i in range(k):
@@ -241,7 +126,7 @@ def numerical_hessian(func, theta, args, epsilon=1e-5):
     return hess
 
 def detect_outliers(y_true, y_pred):
-    """Visual method to mark outliers (ROUT-like)."""
+    """Método visual para marcar outliers (X vermelho)."""
     residuals = y_true - y_pred
     median_res = np.median(residuals)
     mad = np.median(np.abs(residuals - median_res))
@@ -250,7 +135,6 @@ def detect_outliers(y_true, y_pred):
     return z_scores > 2.5
 
 def smart_initial_guess(t, y, n_phases):
-    """Heuristic to find initial r_max and lambda."""
     dy = np.gradient(y, t)
     dy_smooth = np.convolve(dy, np.ones(5)/5, mode='same')
     min_dist = max(1, len(t) // (n_phases * 4))
@@ -281,23 +165,48 @@ def smart_initial_guess(t, y, n_phases):
     return theta_guess
 
 # ==============================================================================
-# 3. FITTING ENGINE
+# 3. MOTOR DE AJUSTE
 # ==============================================================================
+
+def calculate_p_errors(z_vals, cov_z):
+    """
+    Calcula o erro padrão de p usando o Método Delta.
+    p = softmax(z). J_ij = p_i * (delta_ij - p_j)
+    Cov(p) = J * Cov(z) * J.T
+    """
+    # Softmax
+    exps = np.exp(z_vals - np.max(z_vals))
+    p = exps / np.sum(exps)
+    
+    n = len(p)
+    # Matriz Jacobiana
+    J = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                J[i, j] = p[i] * (1 - p[i])
+            else:
+                J[i, j] = -p[i] * p[j]
+    
+    # Propagação de erro
+    try:
+        cov_p = J @ cov_z @ J.T
+        se_p = np.sqrt(np.abs(np.diag(cov_p)))
+        return se_p
+    except:
+        return np.full(n, np.nan)
 
 def fit_model_auto(t_data, y_data, model_func, n_phases):
     
-    # Degrees of freedom validation
     n_params = 2 + 3 * n_phases
     if len(t_data) <= n_params:
         return None 
 
-    # 1. Normalization
     t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
     y_scale = np.max(y_data) if np.max(y_data) > 0 else 1.0
     t_norm = t_data / t_scale
     y_norm = y_data / y_scale
     
-    # 2. Initialization
     theta_smart = smart_initial_guess(t_data, y_data, n_phases)
     theta0_norm = np.zeros_like(theta_smart)
     theta0_norm[0] = theta_smart[0] / y_scale
@@ -317,14 +226,12 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     for _ in range(n_phases): bounds.append((0.0, 500.0))
     for _ in range(n_phases): bounds.append((-0.1, 1.2))
 
-    # 3. Global Optimization (SSE/R2 focused)
     res_de = differential_evolution(
         sse_loss, bounds, args=(t_norm, y_norm, model_func, n_phases),
         maxiter=3000, popsize=pop_size, init=init_pop, strategy='best1bin',
         seed=None, polish=True, tol=1e-6
     )
     
-    # 4. Local Refinement
     res_opt = minimize(
         sse_loss, res_de.x, args=(t_norm, y_norm, model_func, n_phases),
         method='L-BFGS-B', bounds=bounds, tol=1e-10
@@ -332,9 +239,9 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     
     theta_norm = res_opt.x
     
-    # 5. Denormalization and Errors
     theta_real = np.zeros_like(theta_norm)
     se_real = np.zeros_like(theta_norm)
+    se_p = np.full(n_phases, np.nan)
 
     scale_y = np.array([y_scale, y_scale])
     theta_real[0:2] = theta_norm[0:2] * scale_y
@@ -357,13 +264,20 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
         se_norm = np.sqrt(np.abs(np.diag(cov_norm)))
         
         se_real[0:2] = se_norm[0:2] * scale_y
-        se_real[2:2+n_phases] = se_norm[2:2+n_phases]
+        se_real[2:2+n_phases] = se_norm[2:2+n_phases] # Erro do Z
         se_real[2+n_phases:2+2*n_phases] = se_norm[2+n_phases:2+2*n_phases] * scale_r
         se_real[2+2*n_phases:2+3*n_phases] = se_norm[2+2*n_phases:2+3*n_phases] * scale_l
+        
+        # Calcular erro de p usando a covariância de z
+        idx_z_start = 2
+        idx_z_end = 2 + n_phases
+        cov_z = cov_norm[idx_z_start:idx_z_end, idx_z_start:idx_z_end]
+        z_vals = theta_norm[idx_z_start:idx_z_end]
+        se_p = calculate_p_errors(z_vals, cov_z)
+        
     except:
         se_real = np.full_like(theta_real, np.nan)
 
-    # 6. Calculate Information Criteria
     y_pred = polyauxic_model(t_data, theta_real, model_func, n_phases)
     outliers = detect_outliers(y_data, y_pred)
     
@@ -375,7 +289,6 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     k = len(theta_real)
     if sse <= 1e-12: sse = 1e-12
     
-    # Adjusted R2
     if (n_len - k - 1) > 0:
         r2_adj = 1 - (1 - r2) * (n_len - 1) / (n_len - k - 1)
     else:
@@ -389,43 +302,17 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
         "n_phases": n_phases,
         "theta": theta_real,
         "se": se_real,
+        "se_p": se_p,
         "metrics": {"R2": r2, "R2_adj": r2_adj, "SSE": sse, "AIC": aic, "BIC": bic, "AICc": aicc},
         "outliers": outliers,
         "y_pred": y_pred
     }
 
 # ==============================================================================
-# 4. DATA PROCESSING (REPLICATES & STORAGE)
+# 4. PROCESSAMENTO DE DADOS
 # ==============================================================================
 
-def validate_email(email):
-    """Simple regex email validation."""
-    regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(regex, email) is not None
-
-def save_user_data(name, inst, email, desc, filename):
-    """Saves user metadata to a local CSV file."""
-    db_file = "polyauxic_user_database.csv"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    new_data = pd.DataFrame([{
-        "Timestamp": timestamp,
-        "Name": name,
-        "Institution": inst,
-        "Email": email,
-        "Description": desc,
-        "UploadedFile": filename
-    }])
-    
-    if os.path.exists(db_file):
-        new_data.to_csv(db_file, mode='a', header=False, index=False)
-    else:
-        new_data.to_csv(db_file, mode='w', header=True, index=False)
-
 def process_data(df):
-    """
-    Processes DataFrame detecting replicates in pairs of columns.
-    """
     df = df.dropna(axis=1, how='all')
     cols = df.columns.tolist()
     
@@ -448,7 +335,7 @@ def process_data(df):
         
         all_t.extend(t_clean)
         all_y.extend(y_clean)
-        replicates.append({'t': t_clean, 'y': y_clean, 'name': f'Replica {i+1}'})
+        replicates.append({'t': t_clean, 'y': y_clean, 'name': f'Réplica {i+1}'})
         
     t_flat = np.array(all_t)
     y_flat = np.array(all_y)
@@ -472,13 +359,55 @@ def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     return grouped, df_all
 
 # ==============================================================================
-# 5. INTERFACE AND VISUALIZATION
+# 5. INTERFACE E VISUALIZAÇÃO
 # ==============================================================================
 
-def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels, rate_label, lang):
+def plot_metrics_summary(results_list):
+    """Gera gráfico resumindo o efeito do número de fases nos critérios."""
+    phases = [r['n_phases'] for r in results_list]
+    aic = [r['metrics']['AIC'] for r in results_list]
+    aicc = [r['metrics']['AICc'] for r in results_list]
+    bic = [r['metrics']['BIC'] for r in results_list]
+    r2_adj = [r['metrics']['R2_adj'] for r in results_list]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+    
+    # Plot Critérios
+    ax1.plot(phases, aic, 'o--', label='AIC')
+    ax1.plot(phases, aicc, 's-', label='AICc')
+    ax1.plot(phases, bic, '^:', label='BIC')
+    ax1.set_xlabel('Number of Phases')
+    ax1.set_ylabel('Information Criteria Value')
+    ax1.set_title('Information Criteria vs Phases')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot R2
+    ax2.plot(phases, r2_adj, 'o-', color='purple', label='Adjusted R²')
+    ax2.set_xlabel('Number of Phases')
+    ax2.set_ylabel('Adjusted R²')
+    ax2.set_title('Adjusted R² vs Phases')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Botão download
+    buf = io.BytesIO()
+    fig.savefig(buf, format="svg")
+    st.download_button(
+        label="Download Summary Charts (SVG)",
+        data=buf.getvalue(),
+        file_name="metrics_summary.svg",
+        mime="image/svg+xml"
+    )
+    st.pyplot(fig)
+
+def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels, rate_label):
     n = res['n_phases']
     theta = res['theta']
     se = res['se']
+    se_p = res['se_p']
     
     yi_name, yf_name = param_labels
     
@@ -499,7 +428,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     phases = []
     for i in range(n):
         phases.append({
-            "p": p[i],
+            "p": p[i], "SE p": se_p[i],
             "r_max": r_max[i], "r_max_se": r_max_se[i],
             "lambda": lambda_[i], "lambda_se": lambda_se[i]
         })
@@ -514,118 +443,92 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
             
         outliers = raw_data_w_outliers[raw_data_w_outliers['is_outlier']]
         if not outliers.empty:
-            ax.scatter(outliers['t'], outliers['y'], color='red', marker='x', s=50, label=TEXTS['graph_legend_outlier'][lang], zorder=5)
+            ax.scatter(outliers['t'], outliers['y'], color='red', marker='x', s=50, label='Outliers', zorder=5)
             
         ax.errorbar(stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'], 
-                    fmt='o', color='black', ecolor='black', capsize=3, label=TEXTS['graph_legend_mean'][lang], zorder=4)
+                    fmt='o', color='black', ecolor='black', capsize=3, label='Mean (w/o Outliers)', zorder=4)
         
         t_max_val = raw_data_w_outliers['t'].max()
         t_smooth = np.linspace(0, t_max_val, 300)
         y_smooth = polyauxic_model(t_smooth, theta, model_func, n)
         
-        # No error shading as requested
-        ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label=TEXTS['graph_legend_global'][lang])
+        ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label='Global Fit')
         
         colors = plt.cm.viridis(np.linspace(0, 0.9, n))
         for i, ph in enumerate(phases):
             y_ind = model_func(t_smooth, y_i, y_f, ph['p'], ph['r_max'], ph['lambda'])
             y_vis = y_i + (y_f - y_i) * y_ind
-            ax.plot(t_smooth, y_vis, '--', color=colors[i], alpha=0.6, label=TEXTS['graph_legend_phase'][lang].format(i+1))
+            ax.plot(t_smooth, y_vis, '--', color=colors[i], alpha=0.6, label=f'Phase {i+1}')
         
-        ax.set_xlabel(TEXTS['axis_time'][lang])
+        ax.set_xlabel("Time (h/d)")
         ax.set_ylabel(y_label)
         ax.legend(fontsize='small')
         ax.grid(True, linestyle=':', alpha=0.3)
+        
+        # Botão de Download do Gráfico
+        buf = io.BytesIO()
+        fig.savefig(buf, format="svg")
+        st.download_button(
+            label=f"Download Plot {n} Phases (SVG)",
+            data=buf.getvalue(),
+            file_name=f"plot_{n}_phases.svg",
+            mime="image/svg+xml",
+            key=f"dl_btn_{model_func.__name__}_{n}"
+        )
         st.pyplot(fig)
         
     with c_data:
         df_glob = pd.DataFrame({
-            "Param": [yi_name, yf_name], "Val": [y_i, y_f], "SE": [y_i_se, y_f_se]
+            "Param": [yi_name, yf_name], "Valor": [y_i, y_f], "SE": [y_i_se, y_f_se]
         })
-        st.dataframe(df_glob.style.format({"Val": "{:.4f}", "SE": "{:.4f}"}), hide_index=True)
+        st.dataframe(df_glob.style.format({"Valor": "{:.4f}", "SE": "{:.4f}"}), hide_index=True)
         
         rows = []
         for i, ph in enumerate(phases):
             rows.append({
                 "F": i+1,
-                "p": ph['p'],
+                "p": ph['p'], "SE p": ph['SE p'],
                 rate_label: ph['r_max'], f"SE {rate_label}": ph['r_max_se'],
                 "λ": ph['lambda'], "SE λ": ph['lambda_se']
             })
         st.dataframe(pd.DataFrame(rows).style.format({
-            "p": "{:.4f}", rate_label: "{:.4f}", f"SE {rate_label}": "{:.4f}",
+            "p": "{:.4f}", "SE p": "{:.4f}",
+            rate_label: "{:.4f}", f"SE {rate_label}": "{:.4f}",
             "λ": "{:.4f}", "SE λ": "{:.4f}"
         }), hide_index=True)
         
         m = res['metrics']
         df_met = pd.DataFrame({
-            "Metric": ["R²", "R² Adj", "AICc", "BIC"],
-            "Value": [m['R2'], m['R2_adj'], m['AICc'], m['BIC']]
+            "Métrica": ["R²", "R² Adj", "AICc", "BIC"],
+            "Valor": [m['R2'], m['R2_adj'], m['AICc'], m['BIC']]
         })
-        st.dataframe(df_met.style.format({"Value": "{:.4f}"}), hide_index=True)
+        st.dataframe(df_met.style.format({"Valor": "{:.4f}"}), hide_index=True)
 
 def main():
-    st.set_page_config(layout="wide", page_title="Polyauxic Modeling")
+    st.set_page_config(layout="wide", page_title="Polyauxic Analysis")
+    st.title("Modelagem Poliauxica (Com Réplicas e Erro de p)")
     
-    # --- LANGUAGE SELECTION ---
-    lang_name = st.sidebar.selectbox("Language / Idioma / Langue", list(LANGUAGES.keys()))
-    lang = LANGUAGES[lang_name]
+    st.sidebar.header("Configurações")
     
-    st.title(TEXTS['title'][lang])
+    var_type = st.sidebar.selectbox(
+        "Tipo de Resposta (Eixo Y)",
+        options=["Genérico y(t)", "Produto P(t)", "Substrato S(t)", "Biomassa X(t)"]
+    )
     
-    # --- USER INFO FORM ---
-    st.sidebar.header(TEXTS['sidebar_user'][lang])
-    
-    with st.sidebar.form("user_form"):
-        u_name = st.text_input(TEXTS['name'][lang])
-        u_inst = st.text_input(TEXTS['institution'][lang])
-        u_email = st.text_input(TEXTS['email'][lang])
-        u_desc = st.text_area(TEXTS['desc'][lang])
-        submitted = st.form_submit_button("Save User Info")
-    
-    if submitted:
-        if validate_email(u_email):
-            st.sidebar.success("OK")
-        else:
-            st.sidebar.error(TEXTS['invalid_email'][lang])
-
-    # --- CONFIGURATION ---
-    st.sidebar.header(TEXTS['sidebar_config'][lang])
-    
-    var_type_options = ["Genérico y(t)", "Produto P(t)", "Substrato S(t)", "Biomassa X(t)"]
-    var_type = st.sidebar.selectbox(TEXTS['var_type'][lang], var_type_options)
-    
-    # Translations for Y-axis labels and parameters
-    labels_db = {
-        "Genérico y(t)": {
-            "en": ("Response (y)", ("y_i", "y_f"), "r_max"),
-            "pt": ("Resposta (y)", ("y_i", "y_f"), "r_max"),
-            "fr": ("Réponse (y)", ("y_i", "y_f"), "r_max")
-        },
-        "Produto P(t)": {
-            "en": ("Product Concentration (P)", ("P_i", "P_f"), "r_P,max"),
-            "pt": ("Concentração de Produto (P)", ("P_i", "P_f"), "r_P,max"),
-            "fr": ("Concentration en Produit (P)", ("P_i", "P_f"), "r_P,max")
-        },
-        "Substrato S(t)": {
-            "en": ("Substrate Concentration (S)", ("S_i", "S_f"), "r_S,max"),
-            "pt": ("Concentração de Substrato (S)", ("S_i", "S_f"), "r_S,max"),
-            "fr": ("Concentration en Substrat (S)", ("S_i", "S_f"), "r_S,max")
-        },
-        "Biomassa X(t)": {
-            "en": ("Cell Concentration (X)", ("X_i", "X_f"), "µ_max"),
-            "pt": ("Concentração Celular (X)", ("X_i", "X_f"), "µ_max"),
-            "fr": ("Concentration Cellulaire (X)", ("X_i", "X_f"), "µ_max")
-        }
+    config_map = {
+        "Genérico y(t)": ("Response (y)", ("y_i", "y_f"), "r_max"),
+        "Produto P(t)": ("Product Conc. (P)", ("P_i", "P_f"), "r_P,max"),
+        "Substrato S(t)": ("Substrate Conc. (S)", ("S_i", "S_f"), "r_S,max"),
+        "Biomassa X(t)": ("Biomass Conc. (X)", ("X_i", "X_f"), "µ_max")
     }
+    y_label, param_labels, rate_label = config_map[var_type]
     
-    y_label, param_labels, rate_label = labels_db[var_type][lang]
-    
-    file = st.sidebar.file_uploader(TEXTS['upload'][lang], type=["csv", "xlsx"])
-    max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 6, 5)
+    file = st.sidebar.file_uploader("Arquivo CSV/XLSX (Pares de colunas: t1, y1, t2, y2...)", type=["csv", "xlsx"])
+    # Ajuste para até 10 fases
+    max_phases = st.sidebar.number_input("Máximo de Fases para testar", 1, 10, 5)
     
     if not file: 
-        st.info(TEXTS['info_upload'][lang])
+        st.info("Carregue um arquivo.")
         st.stop()
     
     try:
@@ -633,45 +536,36 @@ def main():
         t_flat, y_flat, replicates = process_data(df)
         
         if len(replicates) == 0:
-            st.error(TEXTS['error_cols'][lang])
+            st.error("Erro na leitura das colunas.")
             st.stop()
             
-        st.write(TEXTS['data_loaded'][lang].format(len(replicates), len(t_flat)))
+        st.write(f"**Dados Carregados:** {len(replicates)} réplicas identificadas. Total de pontos: {len(t_flat)}")
         
     except Exception as e: 
-        st.error(TEXTS['error_proc'][lang].format(e))
+        st.error(f"Erro: {e}")
         st.stop()
     
-    if st.button(TEXTS['run_btn'][lang]):
-        
-        # Save data if email is valid
-        if validate_email(u_email):
-            save_user_data(u_name, u_inst, u_email, u_desc, file.name)
-            st.toast(TEXTS['db_saved'][lang])
-        elif u_email:
-            st.error(TEXTS['invalid_email'][lang])
-            st.stop()
-
+    if st.button("EXECUTAR ANÁLISE COMPARATIVA"):
         st.divider()
-        tab_g, tab_b = st.tabs([TEXTS['tab_gompertz'][lang], TEXTS['tab_boltzmann'][lang]])
+        tab_g, tab_b = st.tabs(["Gompertz (Eq. 32)", "Boltzmann (Eq. 31)"])
         
         def run_model_loop(model_name, model_func, color):
             results_list = []
             
             for n in range(1, max_phases + 1):
-                with st.expander(TEXTS['expanding'][lang].format(model_name, n), expanded=False):
-                    with st.spinner(TEXTS['optimizing'][lang].format(n)):
+                with st.expander(f"{model_name}: Ajuste com {n} Fase(s)", expanded=False):
+                    with st.spinner(f"Otimizando {n} fases..."):
                         res = fit_model_auto(t_flat, y_flat, model_func, n)
                         if res is None:
-                            st.warning(TEXTS['warning_insufficient'][lang])
+                            st.warning("Dados insuficientes.")
                             continue
                         
-                        display_single_fit(res, replicates, model_func, color, y_label, param_labels, rate_label, lang)
+                        display_single_fit(res, replicates, model_func, color, y_label, param_labels, rate_label)
                         results_list.append(res)
             
             if not results_list: return
 
-            st.markdown(f"### {TEXTS['table_title'][lang]}")
+            st.markdown("### Tabela de Seleção de Modelo")
             summary_data = []
             best_aicc = np.inf
             best_model_idx = -1
@@ -679,7 +573,7 @@ def main():
             for i, res in enumerate(results_list):
                 m = res['metrics']
                 summary_data.append({
-                    "F": res['n_phases'],
+                    "Fases": res['n_phases'],
                     "R²": m['R2'],
                     "R² Adj": m['R2_adj'],
                     "SSE": m['SSE'],
@@ -704,7 +598,11 @@ def main():
             }), hide_index=True)
             
             best_n = results_list[best_model_idx]['n_phases']
-            st.success(TEXTS['best_model'][lang].format(best_n))
+            st.success(f"🏆 Melhor Modelo Sugerido: **{best_n} Fase(s)** (Baseado no menor AICc).")
+            
+            # --- GRÁFICO DE RESUMO DAS MÉTRICAS ---
+            st.markdown("### Efeito do Número de Fases nos Critérios")
+            plot_metrics_summary(results_list)
 
         with tab_g:
             run_model_loop("Gompertz", gompertz_term_eq32, "tab:blue")
