@@ -1,7 +1,7 @@
 """
-                                                                                 @@                      
-                    ::++        ++..                                ..######  ########  @@@@                    
-                    ++++      ..++++                                ##########  ########  @@@                    
+                                                                                               @@@@                      
+                    ::++        ++..                                     ..######  ########  @@@@@@@@                   
+                    ++++      ..++++                                     ##########  ########  @@@@                    
                     ++++++    ++++++                                ..####  ########  ##########  ..##                  
           ++        ++++++++++++++++      ++++                    ########  ########  ########  ########                
         ++++++mm::++++++++++++++++++++  ++++++--                ##########@@########  ########  ##########              
@@ -28,6 +28,7 @@
 
 
 """
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -53,7 +54,7 @@ plt.rcParams['ytick.labelsize'] = 11
 plt.rcParams['legend.fontsize'] = 11
 plt.rcParams['figure.titlesize'] = 12
 
-# English is the first key, making it the default in streamlit selectbox
+# English is the first key (Default)
 LANGUAGES = {
     "English": "en",
     "Português (BR)": "pt",
@@ -61,6 +62,7 @@ LANGUAGES = {
 }
 
 TEXTS = {
+    # --- HEADER & HOME ---
     "app_title": {
         "en": "Polyauxic Modeling Platform",
         "pt": "Plataforma de Modelagem Poliauxica",
@@ -118,32 +120,89 @@ TEXTS = {
     # --- ANALYSIS PAGE ---
     "sidebar_config": {"en": "Settings", "pt": "Configurações", "fr": "Paramètres"},
     "var_type": {"en": "Response Type (Y Axis)", "pt": "Tipo de Resposta (Eixo Y)", "fr": "Type de Réponse (Axe Y)"},
-    "upload": {"en": "Upload Data File", "pt": "Carregar Arquivo de Dados", "fr": "Télécharger le Fichier de Données"},
-    "max_phases": {"en": "Max Phases", "pt": "Máximo de Fases", "fr": "Phases Max"},
-    "run_fit": {"en": "RUN MODEL FITTING", "pt": "EXECUTAR AJUSTE DO MODELO", "fr": "LANCER L'AJUSTEMENT DU MODÈLE"},
+    
+    "upload_label": {
+        "en": "Upload CSV/XLSX (Col pairs: t1, y1, t2, y2...)",
+        "pt": "Arquivo CSV/XLSX (Pares colunas: t1, y1, t2, y2...)",
+        "fr": "Télécharger CSV/XLSX (Paires col: t1, y1, t2, y2...)"
+    },
+    "max_phases": {
+        "en": "Max Phases to Test",
+        "pt": "Máximo de Fases para testar",
+        "fr": "Phases Max à Tester"
+    },
+    "info_upload": { # THIS WAS MISSING OR MISNAMED BEFORE
+        "en": "Load a file. Format: Col A=Time1, B=Resp1, C=Time2, D=Resp2, etc.",
+        "pt": "Carregue um arquivo. Formato: Col A=Tempo1, B=Resp1, C=Tempo2, D=Resp2, etc.",
+        "fr": "Chargez un fichier. Format: Col A=Temps1, B=Resp1, C=Temps2, D=Resp2, etc."
+    },
+    "data_loaded": {
+        "en": "Data Loaded: {0} replicates identified. Total points: {1}",
+        "pt": "Dados Carregados: {0} réplicas identificadas. Total de pontos: {1}",
+        "fr": "Données Chargées: {0} réplicats identifiés. Points totaux: {1}"
+    },
+    "run_button": {
+        "en": "RUN COMPARATIVE ANALYSIS",
+        "pt": "EXECUTAR ANÁLISE COMPARATIVA",
+        "fr": "LANCER L'ANALYSE COMPARATIVE"
+    },
     "tab_gompertz": {"en": "Gompertz (Eq. 32)", "pt": "Gompertz (Eq. 32)", "fr": "Gompertz (Eq. 32)"},
     "tab_boltzmann": {"en": "Boltzmann (Eq. 31)", "pt": "Boltzmann (Eq. 31)", "fr": "Boltzmann (Eq. 31)"},
-    "legend_outlier": {"en": "Outliers", "pt": "Outliers", "fr": "Valeurs Aberrantes"},
-    "legend_mean": {"en": "Mean (w/o Outliers)", "pt": "Média (s/ Outliers)", "fr": "Moyenne (sans Aberrants)"},
-    "legend_global": {"en": "Global Fit", "pt": "Ajuste Global", "fr": "Ajustement Global"},
-    "legend_phase": {"en": "Phase {0}", "pt": "Fase {0}", "fr": "Phase {0}"},
-    "axis_time": {"en": "Time (h/d)", "pt": "Tempo (h/d)", "fr": "Temps (h/j)"},
-    "download_plot": {"en": "Download Plot (SVG)", "pt": "Baixar Gráfico (SVG)", "fr": "Télécharger le Graphique (SVG)"},
-    "download_summary": {"en": "Download Summary (SVG)", "pt": "Baixar Resumo (SVG)", "fr": "Télécharger le Résumé (SVG)"},
-    "best_model": {
+    "expanding": {
+        "en": "{0}: Fitting {1} Phase(s)",
+        "pt": "{0}: Ajuste com {1} Fase(s)",
+        "fr": "{0}: Ajustement avec {1} Phase(s)"
+    },
+    "optimizing": {
+        "en": "Optimizing {0} phases...",
+        "pt": "Otimizando {0} fases...",
+        "fr": "Optimisation de {0} phases..."
+    },
+    "warning_insufficient": {
+        "en": "Insufficient data.",
+        "pt": "Dados insuficientes.",
+        "fr": "Données insuffisantes."
+    },
+    "table_title": {
+        "en": "Model Selection Table",
+        "pt": "Tabela de Seleção de Modelo",
+        "fr": "Tableau de Sélection du Modèle"
+    },
+    "best_model_msg": {
         "en": "🏆 Best Suggested Model: **{0} Phase(s)** (Based on lowest AICc).",
         "pt": "🏆 Melhor Modelo Sugerido: **{0} Fase(s)** (Baseado no menor AICc).",
         "fr": "🏆 Meilleur Modèle Suggéré: **{0} Phase(s)** (Basé sur le plus bas AICc)."
     },
-    "summary_title": {"en": "Effect of Phase Count on Criteria", "pt": "Efeito do Número de Fases nos Critérios", "fr": "Effet du Nombre de Phases sur les Critères"},
-    "table_title": {"en": "Model Selection Table", "pt": "Tabela de Seleção de Modelo", "fr": "Tableau de Sélection du Modèle"},
-    "data_loaded": {
-        "en": "**Data Loaded:** {0} replicates identified. Total points: {1}",
-        "pt": "**Dados Carregados:** {0} réplicas identificadas. Total de pontos: {1}",
-        "fr": "**Données Chargées:** {0} réplicats identifiés. Points totaux: {1}"
+    "graph_summary_title": {
+        "en": "Effect of Phase Count on Criteria",
+        "pt": "Efeito do Número de Fases nos Critérios",
+        "fr": "Effet du Nombre de Phases sur les Critères"
     },
-    "error_proc": {"en": "Error processing data: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"},
-    "warning_insuf": {"en": "Insufficient data.", "pt": "Dados insuficientes.", "fr": "Données insuffisantes."}
+    "download_plot": {
+        "en": "Download Plot (SVG)",
+        "pt": "Baixar Gráfico (SVG)",
+        "fr": "Télécharger le Graphique (SVG)"
+    },
+    "download_summary": {
+        "en": "Download Summary (SVG)",
+        "pt": "Baixar Resumo (SVG)",
+        "fr": "Télécharger le Résumé (SVG)"
+    },
+    "axis_time": {"en": "Time (h/d)", "pt": "Tempo (h/d)", "fr": "Temps (h/j)"},
+    "legend_global": {"en": "Global Fit", "pt": "Ajuste Global", "fr": "Ajustement Global"},
+    "legend_phase": {"en": "Phase {0}", "pt": "Fase {0}", "fr": "Phase {0}"},
+    "legend_mean": {"en": "Mean (w/o Outliers)", "pt": "Média (s/ Outliers)", "fr": "Moyenne (sans Aberrants)"},
+    "legend_outlier": {"en": "Outliers", "pt": "Outliers", "fr": "Valeurs Aberrantes"},
+    "error_read": {
+        "en": "Error processing data: {0}",
+        "pt": "Erro ao processar dados: {0}",
+        "fr": "Erreur de traitement: {0}"
+    },
+    "error_cols": {
+        "en": "Column error.",
+        "pt": "Erro nas colunas.",
+        "fr": "Erreur de colonne."
+    }
 }
 
 # --- Variable Labels Configuration ---
@@ -399,7 +458,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
 # ==============================================================================
 
 def process_data(df):
-    """Processes replicate columns."""
+    """Processes DataFrame detecting replicates in pairs of columns."""
     df = df.dropna(axis=1, how='all')
     cols = df.columns.tolist()
     all_t = []; all_y = []; replicates = []
@@ -417,7 +476,7 @@ def process_data(df):
     return t_flat[idx_sort], y_flat[idx_sort], replicates
 
 def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
-    """Calculate statistics excluding outliers."""
+    """Calculates mean excluding outliers based on the model fit."""
     all_data = []
     for rep in replicates:
         for t, y in zip(rep['t'], rep['y']):
@@ -431,11 +490,11 @@ def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     return grouped, df_all
 
 # ==============================================================================
-# 5. VIEW COMPONENTS
+# 5. VIEW COMPONENTS (CHARTS & TABLES)
 # ==============================================================================
 
 def plot_metrics_summary(results_list, model_name, lang):
-    """Summary chart."""
+    """Generates a summary chart of metrics vs phases."""
     phases = [r['n_phases'] for r in results_list]
     aic = [r['metrics']['AIC'] for r in results_list]
     aicc = [r['metrics']['AICc'] for r in results_list]
@@ -572,7 +631,7 @@ def show_analysis_page(lang):
     var_type_opts = list(VAR_LABELS.keys())
     var_type = st.sidebar.selectbox(TEXTS['var_type'][lang], var_type_opts)
     y_label, param_labels, rate_label = VAR_LABELS[var_type][lang]
-    file = st.sidebar.file_uploader(TEXTS['upload'][lang], type=["csv", "xlsx"])
+    file = st.sidebar.file_uploader(TEXTS['upload_label'][lang], type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5)
     
     if file:
@@ -583,7 +642,7 @@ def show_analysis_page(lang):
                 st.error(TEXTS['error_cols'][lang])
             else:
                 st.success(TEXTS['data_loaded'][lang].format(len(replicates), len(t_flat)))
-                if st.button(TEXTS['run_fit'][lang]):
+                if st.button(TEXTS['run_button'][lang]):
                     st.divider()
                     tab1, tab2 = st.tabs([TEXTS['tab_gompertz'][lang], TEXTS['tab_boltzmann'][lang]])
                     for tab, model_name, func, color in [
@@ -616,8 +675,8 @@ def show_analysis_page(lang):
                                 st.dataframe(pd.DataFrame(summary_data).style.apply(
                                     lambda x: ['background-color: #d4edda; font-weight: bold' if x['AICc'] == best_aicc else '' for _ in x], 
                                     axis=1).format("{:.4f}"), hide_index=True)
-                                st.success(TEXTS['best_model'][lang].format(results_list[best_idx]['n_phases']))
-                                st.markdown(f"### {TEXTS['summary_title'][lang]}")
+                                st.success(TEXTS['best_model_msg'][lang].format(results_list[best_idx]['n_phases']))
+                                st.markdown(f"### {TEXTS['graph_summary_title'][lang]}")
                                 plot_metrics_summary(results_list, model_name, lang)
         except Exception as e:
             st.error(TEXTS['error_proc'][lang].format(e))
