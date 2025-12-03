@@ -567,24 +567,28 @@ def main():
     st.info(TEXTS['intro_desc'][lang])
     
     # References with Badges
-    cols = st.columns(2)
-    cols[0].markdown(f"""
-    **{TEXTS['paper_ref'][lang]}**
+   cols = st.columns(2)
+
+with cols[0]:
+    # 1ª linha: arXiv + GitHub
+    st.markdown(f"""
+    **{TEXTS['paper_ref'][lang]}**  
     [![arXiv](https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg)](https://doi.org/10.48550/arXiv.2507.05960)
     [![GitHub](https://img.shields.io/badge/GitHub-Repo-blue?logo=github)](https://github.com/gusmock/mono_polyauxic_kinetics/)
     """)
-    
-    # Badge Altmetric
-    with cols[0]:
-        altmetric_html = """
+
+    altmetric_html = """
+    <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+      <a href="https://www.altmetric.com/details.php?arxiv=2507.05960" target="_blank" rel="noopener">
         <script type="text/javascript" src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script>
         <div class="altmetric-embed" data-badge-type="donut" data-arxiv-id="2507.05960"></div>
-        """
-        components.html(altmetric_html, height=100)
-
-    with cols[1]:
-        citation_text = "Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p."
-        st.code(citation_text, language="text")
+      </a>
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 0.9rem;">
+        Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
+      </div>
+    </div>
+    """
+    components.html(altmetric_html, height=110)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
