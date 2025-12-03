@@ -1,30 +1,31 @@
 """
                                                                                                @@@@                      
-                    ::++        ++..                                     ..######  ########  @@@@@@@@                   
+                    ::++        ++..                                       ######  ########  @@@@@@@@                   
                     ++++      ..++++                                     ##########  ########  @@@@                    
-                    ++++++    ++++++                                ..####  ########  ##########  ..##                  
-          ++        ++++++++++++++++      ++++                    ########  ########  ########  ########                
-        ++++++mm::++++++++++++++++++++  ++++++--                ##########@@########  ########  ##########              
-          ++++++++++mm::########::++++++++++++                ##  ##########  ######  ######  ##########  ##            
-            ++++++::####        ####++++++++                  ####  ########  ######  ######  ########  ####            
-          --++++MM##      ####      ##::++++                ########  ########  ####  ####++########  ########          
-    ++--  ++++::##    ##    ##  ..MM  ##++++++  ::++        ##########  ######  ####  ####  ######  ##########          
-  --++++++++++##    ##          @@::  mm##++++++++++      ##############  ######MM##  ####MM####  ##############        
-    ++++++++::##    ##          ##      ##++++++++++      ++  ::##########  ####  ##  ##  ####  ############            
-        ++++@@++              --        ##++++++          ######    ########  ##          ##  ########    ######--      
-        ++++##..      MM  ..######--    ##::++++          ##########    @@####              ######    ############      
-        ++++@@++    ####  ##########    ##++++++          ################                  @@################      
-    ++++++++::##          ##########    ##++++++++++      ##################                  ####################  @@  
-  ::++++++++++##    ##      ######    mm##++++++++++                                                                #@@@@#
-    mm++::++++++##  ##++              ##++++++++++mm        ################                  ####################  @@  
-          ++++++####                ##::++++                ############--                    ##################        
-            ++++++MM##@@        ####::++++++                  ######    ######              ##################          
-          ++++++++++++@@########++++++++++++mm                mm  ::########  ##          ##  ##############            
+                    ++++++    ++++++                                 #####  ########  ##########  ####                  
+          ++        ++++++++++++++++      ++++                    ########  ########  ########   ########                
+        ++++++mm::++++++++++++++++++++  ++++++--                ##########  ########  ########  ##########              
+          ++++++++++mm::########::++++++++++++                ##  ##########  ######  ######   ##########  ##            
+            ++++++::####        ####++++++++                 #####  ########  ######  ######  ########  #######            
+          --++++MM##      ####      ##::++++                ########  ########  ####  ####   ########  ##########          
+    ++--  ++++::##    ##    ##  ..MM  ##++++++  ::++       ###########  ######  ####  ####  ######  ##############         
+  --++++++++++##    ##          @@::  mm##++++++++++          ###########  ###### ##  ####  ####  ##############        
+    ++++++++::##    ##          ##      ##++++++++++      ###   ###########  ####  ##  ##  ####  ############    ##        
+        ++++@@++              --        ##++++++          ######    ########  ##          ##  ########    #########      
+        ++++##..      MM  ..######--    ##::++++          ##########      ####              ######    #############      
+        ++++@@++    ####  ##########    ##++++++          ################                  ######################      
+    ++++++++::##          ##########    ##++++++++++      ##################                  #################  @@@@@  
+  ::++++++++++##    ##      ######    mm##++++++++++                                                            @@@@@@@
+    mm++::++++++##  ##++              ##++++++++++mm        ################                  #################  @@@@@  
+          ++++++####                ##::++++                ##############                    ##################        
+            ++++++MM##@@        ####::++++++                 #######    ######              ##################          
+          ++++++++++++@@########++++++++++++mm                #     ########  ##          ##  ##############            
         mm++++++++++++++++++++++++++++--++++++                  ##########  ############  ####  ########                
           ++::      ++++++++++++++++      ++++                    ######  ######################  ####                  
                     ++++++    ++++++                                    ##################    ####                      
-                    ++++      ::++++                                    ##############  @@@@                          
-                    ++++        ++++                                                    --..    @@@@                          
+                    ++++      ::++++                                    ##############  @@@@@                         
+                    ++++        ++++                                                   @@@@@@@                          
+                                                                                        @@@@@ 
 
 
 """
@@ -36,9 +37,6 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize, differential_evolution
 from scipy.signal import find_peaks
 import io
-import re
-import os
-from datetime import datetime
 
 # ==============================================================================
 # 0. CONFIGURATION & TRANSLATIONS
@@ -54,7 +52,6 @@ plt.rcParams['ytick.labelsize'] = 11
 plt.rcParams['legend.fontsize'] = 11
 plt.rcParams['figure.titlesize'] = 12
 
-# English is the first key (Default)
 LANGUAGES = {
     "English": "en",
     "Português (BR)": "pt",
@@ -62,31 +59,25 @@ LANGUAGES = {
 }
 
 TEXTS = {
-    # --- HEADER & HOME ---
     "app_title": {
         "en": "Polyauxic Modeling Platform",
         "pt": "Plataforma de Modelagem Poliauxica",
         "fr": "Plateforme de Modélisation Polyauxique"
     },
     "intro_desc": {
-        "en": "This application performs advanced non-linear regression for microbial growth kinetics. It is designed to identify and fit mono- and polyauxic behaviors using robust statistical methods (Lorentzian loss, ROUT outlier detection) and provides model selection based on Information Criteria (AIC, BIC).",
-        "pt": "Este aplicativo realiza regressão não-linear avançada para cinética de crescimento microbiano. Ele foi projetado para identificar e ajustar comportamentos mono e poliauxicos usando métodos estatísticos robustos (perda Lorentziana, detecção de outliers ROUT) e fornece seleção de modelos baseada em Critérios de Informação (AIC, BIC).",
-        "fr": "Cette application effectue une régression non linéaire avancée pour la cinétique de croissance microbienne. Elle est conçue pour identifier et ajuster les comportements mono- et polyauxiques à l'aide de méthodes statistiques robustes (perte Lorentzienne, détection de valeurs aberrantes ROUT) et fournit une sélection de modèles basée sur les critères d'information (AIC, BIC)."
+        "en": "This application performs advanced non-linear regression for microbial growth kinetics. It identifies mono- and polyauxic behaviors using robust statistical methods (Lorentzian loss, ROUT outlier detection) and selects models via Information Criteria (AIC, BIC).",
+        "pt": "Este aplicativo realiza regressão não-linear avançada para cinética microbiana. Identifica comportamentos mono e poliauxicos usando métodos estatísticos robustos (perda Lorentziana, outliers ROUT) e seleciona modelos via Critérios de Informação (AIC, BIC).",
+        "fr": "Cette application effectue une régression non linéaire avancée pour la cinétique microbienne. Elle identifie les comportements mono- et polyauxiques à l'aide de méthodes robustes (perte Lorentzienne, ROUT) et sélectionne les modèles via Critères d'Information (AIC, BIC)."
     },
     "paper_ref": {
         "en": "Reference Paper:",
         "pt": "Artigo de Referência:",
         "fr": "Article de Référence :"
     },
-    "db_notice": {
-        "en": "⚠️ Note: This program logs usage data to build a database for future reference and improvement. Your personal data is stored securely.",
-        "pt": "⚠️ Nota: Este programa registra dados de uso para formar um banco de dados para referência futura e melhorias. Seus dados pessoais são armazenados com segurança.",
-        "fr": "⚠️ Remarque : Ce programme enregistre les données d'utilisation pour constituer une base de données pour référence future. Vos données personnelles sont stockées en toute sécurité."
-    },
     "instructions_header": {
-        "en": "General Instructions",
-        "pt": "Instruções Gerais",
-        "fr": "Instructions Générales"
+        "en": "Instructions & File Format",
+        "pt": "Instruções e Formato do Arquivo",
+        "fr": "Instructions et Format de Fichier"
     },
     "instructions_list": {
         "en": """
@@ -108,66 +99,31 @@ TEXTS = {
         * **Réplicats:** Accepte jusqu'à cinq réplicats. Le système détecte automatiquement les paires.
         """
     },
-    "form_header": {"en": "User Identification (Mandatory)", "pt": "Identificação do Usuário (Obrigatório)", "fr": "Identification de l'Utilisateur (Obligatoire)"},
-    "lbl_name": {"en": "Full Name", "pt": "Nome Completo", "fr": "Nom Complet"},
-    "lbl_email": {"en": "E-mail", "pt": "E-mail", "fr": "Courriel"},
-    "lbl_inst": {"en": "Institution", "pt": "Instituição de Origem", "fr": "Institution d'Origine"},
-    "lbl_desc": {"en": "Description of Data to be Fitted", "pt": "Descrição dos Dados a serem Ajustados", "fr": "Description des Données à Ajuster"},
-    "btn_start": {"en": "START ANALYSIS", "pt": "INICIAR ANÁLISE", "fr": "LANCER L'ANALYSE"},
-    "err_fields": {"en": "Please fill in all fields.", "pt": "Por favor, preencha todos os campos.", "fr": "Veuillez remplir tous les champs."},
-    "err_email": {"en": "Invalid e-mail format.", "pt": "Formato de e-mail inválido.", "fr": "Format d'e-mail invalide."},
-    
-    # --- ANALYSIS PAGE ---
     "sidebar_config": {"en": "Settings", "pt": "Configurações", "fr": "Paramètres"},
     "var_type": {"en": "Response Type (Y Axis)", "pt": "Tipo de Resposta (Eixo Y)", "fr": "Type de Réponse (Axe Y)"},
-    
     "upload_label": {
         "en": "Upload CSV/XLSX (Col pairs: t1, y1, t2, y2...)",
         "pt": "Arquivo CSV/XLSX (Pares colunas: t1, y1, t2, y2...)",
         "fr": "Télécharger CSV/XLSX (Paires col: t1, y1, t2, y2...)"
     },
-    "max_phases": {
-        "en": "Max Phases to Test",
-        "pt": "Máximo de Fases para testar",
-        "fr": "Phases Max à Tester"
-    },
-    "info_upload": { # THIS WAS MISSING OR MISNAMED BEFORE
-        "en": "Load a file. Format: Col A=Time1, B=Resp1, C=Time2, D=Resp2, etc.",
-        "pt": "Carregue um arquivo. Formato: Col A=Tempo1, B=Resp1, C=Tempo2, D=Resp2, etc.",
-        "fr": "Chargez un fichier. Format: Col A=Temps1, B=Resp1, C=Temps2, D=Resp2, etc."
+    "max_phases": {"en": "Max Phases to Test", "pt": "Máximo de Fases para testar", "fr": "Phases Max à Tester"},
+    "info_upload": {
+        "en": "Please upload a file to start.",
+        "pt": "Por favor, carregue um arquivo para começar.",
+        "fr": "Veuillez télécharger un fichier pour commencer."
     },
     "data_loaded": {
         "en": "Data Loaded: {0} replicates identified. Total points: {1}",
         "pt": "Dados Carregados: {0} réplicas identificadas. Total de pontos: {1}",
         "fr": "Données Chargées: {0} réplicats identifiés. Points totaux: {1}"
     },
-    "run_button": {
-        "en": "RUN COMPARATIVE ANALYSIS",
-        "pt": "EXECUTAR ANÁLISE COMPARATIVA",
-        "fr": "LANCER L'ANALYSE COMPARATIVE"
-    },
+    "run_button": {"en": "RUN ANALYSIS", "pt": "EXECUTAR ANÁLISE", "fr": "LANCER L'ANALYSE"},
     "tab_gompertz": {"en": "Gompertz (Eq. 32)", "pt": "Gompertz (Eq. 32)", "fr": "Gompertz (Eq. 32)"},
     "tab_boltzmann": {"en": "Boltzmann (Eq. 31)", "pt": "Boltzmann (Eq. 31)", "fr": "Boltzmann (Eq. 31)"},
-    "expanding": {
-        "en": "{0}: Fitting {1} Phase(s)",
-        "pt": "{0}: Ajuste com {1} Fase(s)",
-        "fr": "{0}: Ajustement avec {1} Phase(s)"
-    },
-    "optimizing": {
-        "en": "Optimizing {0} phases...",
-        "pt": "Otimizando {0} fases...",
-        "fr": "Optimisation de {0} phases..."
-    },
-    "warning_insufficient": {
-        "en": "Insufficient data.",
-        "pt": "Dados insuficientes.",
-        "fr": "Données insuffisantes."
-    },
-    "table_title": {
-        "en": "Model Selection Table",
-        "pt": "Tabela de Seleção de Modelo",
-        "fr": "Tableau de Sélection du Modèle"
-    },
+    "expanding": {"en": "{0}: Fitting {1} Phase(s)", "pt": "{0}: Ajuste com {1} Fase(s)", "fr": "{0}: Ajustement avec {1} Phase(s)"},
+    "optimizing": {"en": "Optimizing {0} phases...", "pt": "Otimizando {0} fases...", "fr": "Optimisation de {0} phases..."},
+    "warning_insufficient": {"en": "Insufficient data.", "pt": "Dados insuficientes.", "fr": "Données insuffisantes."},
+    "table_title": {"en": "Model Selection Table", "pt": "Tabela de Seleção de Modelo", "fr": "Tableau de Sélection du Modèle"},
     "best_model_msg": {
         "en": "🏆 Best Suggested Model: **{0} Phase(s)** (Based on lowest AICc).",
         "pt": "🏆 Melhor Modelo Sugerido: **{0} Fase(s)** (Baseado no menor AICc).",
@@ -178,34 +134,17 @@ TEXTS = {
         "pt": "Efeito do Número de Fases nos Critérios",
         "fr": "Effet du Nombre de Phases sur les Critères"
     },
-    "download_plot": {
-        "en": "Download Plot (SVG)",
-        "pt": "Baixar Gráfico (SVG)",
-        "fr": "Télécharger le Graphique (SVG)"
-    },
-    "download_summary": {
-        "en": "Download Summary (SVG)",
-        "pt": "Baixar Resumo (SVG)",
-        "fr": "Télécharger le Résumé (SVG)"
-    },
+    "download_plot": {"en": "Download Plot (SVG)", "pt": "Baixar Gráfico (SVG)", "fr": "Télécharger le Graphique (SVG)"},
+    "download_summary": {"en": "Download Summary (SVG)", "pt": "Baixar Resumo (SVG)", "fr": "Télécharger le Résumé (SVG)"},
     "axis_time": {"en": "Time (h/d)", "pt": "Tempo (h/d)", "fr": "Temps (h/j)"},
     "legend_global": {"en": "Global Fit", "pt": "Ajuste Global", "fr": "Ajustement Global"},
     "legend_phase": {"en": "Phase {0}", "pt": "Fase {0}", "fr": "Phase {0}"},
     "legend_mean": {"en": "Mean (w/o Outliers)", "pt": "Média (s/ Outliers)", "fr": "Moyenne (sans Aberrants)"},
     "legend_outlier": {"en": "Outliers", "pt": "Outliers", "fr": "Valeurs Aberrantes"},
-    "error_read": {
-        "en": "Error processing data: {0}",
-        "pt": "Erro ao processar dados: {0}",
-        "fr": "Erreur de traitement: {0}"
-    },
-    "error_cols": {
-        "en": "Column error.",
-        "pt": "Erro nas colunas.",
-        "fr": "Erreur de colonne."
-    }
+    "error_read": {"en": "Error processing data: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"},
+    "error_cols": {"en": "Column error.", "pt": "Erro nas colunas.", "fr": "Erreur de colonne."}
 }
 
-# --- Variable Labels Configuration ---
 VAR_LABELS = {
     "Genérico y(t)": {
         "en": ("Response (y)", ("y_i", "y_f"), "r_max"),
@@ -230,33 +169,7 @@ VAR_LABELS = {
 }
 
 # ==============================================================================
-# 2. LOGIC FOR DATA STORAGE & VALIDATION
-# ==============================================================================
-
-def validate_email(email):
-    """Regex validation for email."""
-    regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(regex, email) is not None
-
-def log_user_access(name, email, inst, desc):
-    """Saves user info to a local CSV."""
-    file_path = "user_log.csv"
-    data = {
-        "Timestamp": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
-        "Name": [name],
-        "Email": [email],
-        "Institution": [inst],
-        "DataDescription": [desc]
-    }
-    df_new = pd.DataFrame(data)
-    
-    if not os.path.isfile(file_path):
-        df_new.to_csv(file_path, index=False)
-    else:
-        df_new.to_csv(file_path, mode='a', header=False, index=False)
-
-# ==============================================================================
-# 3. MATHEMATICAL CORE (UNCHANGED LOGIC)
+# 1. MATHEMATICAL MODELS
 # ==============================================================================
 
 def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
@@ -372,6 +285,10 @@ def calculate_p_errors(z_vals, cov_z):
     except:
         return np.full(n, np.nan)
 
+# ==============================================================================
+# 2. FITTING ENGINE
+# ==============================================================================
+
 def fit_model_auto(t_data, y_data, model_func, n_phases):
     """Main fitting function."""
     n_params = 2 + 3 * n_phases
@@ -454,7 +371,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
             "outliers": outliers, "y_pred": y_pred}
 
 # ==============================================================================
-# 4. DATA PROCESSING
+# 3. DATA PROCESSING
 # ==============================================================================
 
 def process_data(df):
@@ -490,7 +407,7 @@ def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     return grouped, df_all
 
 # ==============================================================================
-# 5. VIEW COMPONENTS (CHARTS & TABLES)
+# 4. VISUALIZATION & APP STRUCTURE
 # ==============================================================================
 
 def plot_metrics_summary(results_list, model_name, lang):
@@ -595,38 +512,24 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
         df_met = pd.DataFrame({"Metric": ["R²", "R² Adj", "AICc", "BIC"], "Value": [m['R2'], m['R2_adj'], m['AICc'], m['BIC']]})
         st.dataframe(df_met.style.format({"Value": "{:.4f}"}), hide_index=True)
 
-# ==============================================================================
-# 6. APP STRUCTURE
-# ==============================================================================
-
-def show_home_page(lang):
-    st.markdown(f"### {TEXTS['app_title'][lang]}")
+def main():
+    st.set_page_config(layout="wide", page_title="Polyauxic Analysis")
+    
+    # Sidebar for settings
+    st.sidebar.header("Language / Idioma / Langue")
+    lang_key = st.sidebar.selectbox("Select Language", list(LANGUAGES.keys()))
+    lang = LANGUAGES[lang_key]
+    
+    st.title(TEXTS['app_title'][lang])
+    
+    # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
     st.markdown(f"**{TEXTS['paper_ref'][lang]}** [https://doi.org/10.48550/arXiv.2507.05960](https://doi.org/10.48550/arXiv.2507.05960)")
-    st.warning(TEXTS['db_notice'][lang])
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
     st.markdown("---")
-    st.subheader(TEXTS['form_header'][lang])
-    with st.form("user_login_form"):
-        c1, c2 = st.columns(2)
-        name = c1.text_input(TEXTS['lbl_name'][lang])
-        email = c2.text_input(TEXTS['lbl_email'][lang])
-        inst = st.text_input(TEXTS['lbl_inst'][lang])
-        desc = st.text_area(TEXTS['lbl_desc'][lang])
-        submitted = st.form_submit_button(TEXTS['btn_start'][lang])
-        if submitted:
-            if not name or not email or not inst or not desc:
-                st.error(TEXTS['err_fields'][lang])
-            elif not validate_email(email):
-                st.error(TEXTS['err_email'][lang])
-            else:
-                log_user_access(name, email, inst, desc)
-                st.session_state.page = 'analysis'
-                st.rerun()
 
-def show_analysis_page(lang):
-    st.markdown(f"## {TEXTS['app_title'][lang]}")
+    # Main Analysis Interface
     st.sidebar.header(TEXTS['sidebar_config'][lang])
     var_type_opts = list(VAR_LABELS.keys())
     var_type = st.sidebar.selectbox(TEXTS['var_type'][lang], var_type_opts)
@@ -682,13 +585,6 @@ def show_analysis_page(lang):
             st.error(TEXTS['error_proc'][lang].format(e))
     else:
         st.info(TEXTS['info_upload'][lang])
-
-def main():
-    if 'page' not in st.session_state: st.session_state.page = 'home'
-    lang_key = st.sidebar.selectbox("Language / Idioma / Langue", list(LANGUAGES.keys()))
-    lang = LANGUAGES[lang_key]
-    if st.session_state.page == 'home': show_home_page(lang)
-    else: show_analysis_page(lang)
 
 if __name__ == "__main__":
     main()
