@@ -324,7 +324,7 @@ def calculate_p_errors(z_vals, cov_z):
         return np.full(n, np.nan)
 
 # ==============================================================================
-# 2. FITTING ENGINE (CORRIGIDO PARA REPRODUTIBILIDADE)
+# 2. FITTING ENGINE
 # ==============================================================================
 
 def fit_model_auto(t_data, y_data, model_func, n_phases):
