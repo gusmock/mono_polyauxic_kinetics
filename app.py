@@ -28,6 +28,7 @@
                                                                                         @@@@@ 
 
 """
+
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -77,9 +78,9 @@ TEXTS = {
         "fr": "Cette application effectue une régression non linéaire avancée pour la cinétique microbienne. Elle identifie les comportements mono- et polyauxiques à l'aide de méthodes robustes (perte Lorentzienne, ROUT) et sélectionne les modèles via Critères d'Information (AIC, BIC)."
     },
     "paper_ref": {
-        "en": "Reference Paper:",
-        "pt": "Artigo de Referência:",
-        "fr": "Article de Référence :"
+        "en": "Reference Paper & Source:",
+        "pt": "Artigo de Referência e Fonte:",
+        "fr": "Article de Référence et Source :"
     },
     "instructions_header": {
         "en": "Instructions & File Format",
@@ -177,27 +178,31 @@ TEXTS = {
     "error_proc": {"en": "Error processing data: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"}
 }
 
-# Variable Labels Configuration
+# Variable Labels Configuration (Using neutral keys)
 VAR_LABELS = {
-    "Genérico y(t)": {
-        "en": ("Response (y)", ("y_i", "y_f"), "r_max"),
-        "pt": ("Resposta (y)", ("y_i", "y_f"), "r_max"),
-        "fr": ("Réponse (y)", ("y_i", "y_f"), "r_max")
+    "generic": {
+        "label": {"en": "Generic y(t)", "pt": "Genérico y(t)", "fr": "Générique y(t)"},
+        "axis": {"en": "Response (y)", "pt": "Resposta (y)", "fr": "Réponse (y)"},
+        "params": ("y_i", "y_f"),
+        "rate": "r_max"
     },
-    "Produto P(t)": {
-        "en": ("Product Conc. (P)", ("P_i", "P_f"), "r_P,max"),
-        "pt": ("Concentração de Produto (P)", ("P_i", "P_f"), "r_P,max"),
-        "fr": ("Concentration en Produit (P)", ("P_i", "P_f"), "r_P,max")
+    "product": {
+        "label": {"en": "Product P(t)", "pt": "Produto P(t)", "fr": "Produit P(t)"},
+        "axis": {"en": "Product Conc. (P)", "pt": "Concentração de Produto (P)", "fr": "Concentration en Produit (P)"},
+        "params": ("P_i", "P_f"),
+        "rate": "r_P,max"
     },
-    "Substrato S(t)": {
-        "en": ("Substrate Conc. (S)", ("S_i", "S_f"), "r_S,max"),
-        "pt": ("Concentração de Substrato (S)", ("S_i", "S_f"), "r_S,max"),
-        "fr": ("Concentration en Substrat (S)", ("S_i", "S_f"), "r_S,max")
+    "substrate": {
+        "label": {"en": "Substrate S(t)", "pt": "Substrato S(t)", "fr": "Substrat S(t)"},
+        "axis": {"en": "Substrate Conc. (S)", "pt": "Concentração de Substrato (S)", "fr": "Concentration en Substrat (S)"},
+        "params": ("S_i", "S_f"),
+        "rate": "r_S,max"
     },
-    "Biomassa X(t)": {
-        "en": ("Biomass Conc. (X)", ("X_i", "X_f"), "µ_max"),
-        "pt": ("Concentração Celular (X)", ("X_i", "X_f"), "µ_max"),
-        "fr": ("Concentration Cellulaire (X)", ("X_i", "X_f"), "µ_max")
+    "biomass": {
+        "label": {"en": "Biomass X(t)", "pt": "Biomassa X(t)", "fr": "Biomasse X(t)"},
+        "axis": {"en": "Biomass Conc. (X)", "pt": "Concentração Celular (X)", "fr": "Concentration Cellulaire (X)"},
+        "params": ("X_i", "X_f"),
+        "rate": "µ_max"
     }
 }
 
@@ -500,12 +505,12 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
         for rep in replicates:
-            ax.scatter(rep['t'], rep['y'], color='gray', alpha=0.3, s=15, marker='o', label='_nolegend_')
+            ax.scatter(rep['t'], rep['y'], color='gray', alpha=0.3, s=15, marker='o')
         outliers = raw_data_w_outliers[raw_data_w_outliers['is_outlier']]
         if not outliers.empty:
             ax.scatter(outliers['t'], outliers['y'], color='red', marker='x', s=50, label=TEXTS['legend_outlier'][lang], zorder=5)
         
-        # CONDITION ADDED HERE: Only show Mean if replicates > 1
+        # Only show mean and error bars if there are multiple replicates
         if len(replicates) > 1:
             ax.errorbar(stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'], 
                         fmt='o', color='black', ecolor='black', capsize=3, label=TEXTS['legend_mean'][lang], zorder=4)
@@ -560,24 +565,26 @@ def main():
     # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
     
-    # References with Badges
+    # References with Badges (Flexbox Layout)
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
-    st.code("Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.", language="text")
     
-    # Badges Container
+    # HTML for Badges to ensure left alignment and correct sizing
     badge_html = """
-    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
+    <div style="display: flex; align-items: center; gap: 15px;">
+        <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
+        <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
+            Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
+        </div>
         <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
             <img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv">
         </a>
         <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
             <img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub">
         </a>
-        <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
         <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
     </div>
     """
-    components.html(badge_html, height=60)
+    components.html(badge_html, height=80)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
@@ -585,9 +592,23 @@ def main():
 
     # Main Analysis Interface
     st.sidebar.header(TEXTS['sidebar_config'][lang])
+    
+    # Use internal keys for logic, but display localized text
+    # Ensure VAR_LABELS keys are consistent with the options list
     var_type_opts = list(VAR_LABELS.keys())
-    var_type = st.sidebar.selectbox(TEXTS['var_type'][lang], var_type_opts)
-    y_label, param_labels, rate_label = VAR_LABELS[var_type][lang]
+    
+    selected_var_key = st.sidebar.selectbox(
+        TEXTS['var_type'][lang], 
+        options=var_type_opts,
+        format_func=lambda x: VAR_LABELS[x]['label'][lang] # Use 'label' sub-dictionary
+    )
+    
+    # Retrieve config based on key and lang
+    config = VAR_LABELS[selected_var_key]
+    y_label = config['axis'][lang]
+    param_labels = config['params']
+    rate_label = config['rate']
+    
     file = st.sidebar.file_uploader(TEXTS['upload_label'][lang], type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5)
     
