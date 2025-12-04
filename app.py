@@ -178,7 +178,7 @@ TEXTS = {
     "error_proc": {"en": "Error processing data: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"}
 }
 
-# Variable Labels Configuration (Using neutral keys)
+# Variable Labels Configuration
 VAR_LABELS = {
     "generic": {
         "label": {"en": "Generic y(t)", "pt": "Genérico y(t)", "fr": "Générique y(t)"},
@@ -213,7 +213,8 @@ VAR_LABELS = {
 def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
     """Boltzmann model term (Eq. 31)."""
     delta_y = y_f - y_i
-    if abs(delta_y) < 1e-9: delta_y = 1e-9
+    if abs(delta_y) < 1e-9: 
+        delta_y = 1e-9
     p_safe = max(p_j, 1e-12)
     numerator = 4.0 * r_max_j * (lambda_j - t)
     denominator = delta_y * p_safe
@@ -224,7 +225,8 @@ def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
 def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
     """Gompertz model term (Eq. 32)."""
     delta_y = y_f - y_i
-    if abs(delta_y) < 1e-9: delta_y = 1e-9
+    if abs(delta_y) < 1e-9: 
+        delta_y = 1e-9
     p_safe = max(p_j, 1e-12)
     numerator = r_max_j * np.e * (lambda_j - t)
     denominator = delta_y * p_safe
@@ -251,7 +253,8 @@ def polyauxic_model(t, theta, model_func, n_phases):
 def sse_loss(theta, t, y, model_func, n_phases):
     """Sum of Squared Errors Loss function."""
     y_pred = polyauxic_model(t, theta, model_func, n_phases)
-    if np.any(y_pred < -0.1 * np.max(np.abs(y))): return 1e12
+    if np.any(y_pred < -0.1 * np.max(np.abs(y))):
+        return 1e12
     return np.sum((y - y_pred)**2)
 
 def numerical_hessian(func, theta, args, epsilon=1e-5):
@@ -314,8 +317,10 @@ def calculate_p_errors(z_vals, cov_z):
     J = np.zeros((n, n))
     for i in range(n):
         for j in range(n):
-            if i == j: J[i, j] = p[i] * (1 - p[i])
-            else: J[i, j] = -p[i] * p[j]
+            if i == j:
+                J[i, j] = p[i] * (1 - p[i])
+            else:
+                J[i, j] = -p[i] * p[j]
     try:
         cov_p = J @ cov_z @ J.T
         se_p = np.sqrt(np.abs(np.diag(cov_p)))
@@ -334,7 +339,8 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     np.random.seed(SEED_VALUE)
 
     n_params = 2 + 3 * n_phases
-    if len(t_data) <= n_params: return None 
+    if len(t_data) <= n_params:
+        return None 
     
     t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
     y_scale = np.max(y_data) if np.max(y_data) > 0 else 1.0
@@ -356,11 +362,13 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     bounds = []
     bounds.append((-0.2, 1.5)) 
     bounds.append((0.0, 2.0))
-    for _ in range(n_phases): bounds.append((-10, 10))
-    for _ in range(n_phases): bounds.append((0.0, 500.0))
-    for _ in range(n_phases): bounds.append((-0.1, 1.2))
+    for _ in range(n_phases):
+        bounds.append((-10, 10))
+    for _ in range(n_phases):
+        bounds.append((0.0, 500.0))
+    for _ in range(n_phases):
+        bounds.append((-0.1, 1.2))
 
-    # Fixed Seed Here
     res_de = differential_evolution(
         sse_loss, 
         bounds, 
@@ -369,7 +377,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
         popsize=pop_size, 
         init=init_pop, 
         strategy='best1bin',
-        seed=SEED_VALUE, # <--- Fixed Seed
+        seed=SEED_VALUE,
         polish=True, 
         tol=1e-6
     )
@@ -422,16 +430,25 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     sst = np.sum((y_data - np.mean(y_data))**2)
     r2 = 1 - sse/sst
     n_len = len(y_data); k = len(theta_real)
-    if sse <= 1e-12: sse = 1e-12
-    if (n_len - k - 1) > 0: r2_adj = 1 - (1 - r2) * (n_len - 1) / (n_len - k - 1)
-    else: r2_adj = np.nan
+    if sse <= 1e-12:
+        sse = 1e-12
+    if (n_len - k - 1) > 0:
+        r2_adj = 1 - (1 - r2) * (n_len - 1) / (n_len - k - 1)
+    else:
+        r2_adj = np.nan
     aic = n_len * np.log(sse/n_len) + 2*k
     bic = n_len * np.log(sse/n_len) + k * np.log(n_len)
     aicc = aic + (2*k*(k+1))/(n_len-k-1) if (n_len-k-1)>0 else np.inf
     
-    return {"n_phases": n_phases, "theta": theta_real, "se": se_real, "se_p": se_p,
-            "metrics": {"R2": r2, "R2_adj": r2_adj, "SSE": sse, "AIC": aic, "BIC": bic, "AICc": aicc},
-            "outliers": outliers, "y_pred": y_pred}
+    return {
+        "n_phases": n_phases,
+        "theta": theta_real,
+        "se": se_real,
+        "se_p": se_p,
+        "metrics": {"R2": r2, "R2_adj": r2_adj, "SSE": sse, "AIC": aic, "BIC": bic, "AICc": aicc},
+        "outliers": outliers,
+        "y_pred": y_pred
+    }
 
 # ==============================================================================
 # 3. DATA PROCESSING
@@ -502,9 +519,13 @@ def plot_metrics_summary(results_list, model_name, lang):
     
     buf = io.BytesIO()
     fig.savefig(buf, format="svg")
-    st.download_button(label=TEXTS['download_summary'][lang], data=buf.getvalue(),
-                       file_name=f"metrics_summary_{model_name}.svg", mime="image/svg+xml",
-                       key=f"dl_summary_{model_name}")
+    st.download_button(
+        label=TEXTS['download_summary'][lang],
+        data=buf.getvalue(),
+        file_name=f"metrics_summary_{model_name}.svg",
+        mime="image/svg+xml",
+        key=f"dl_summary_{model_name}"
+    )
     st.pyplot(fig)
 
 def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels, rate_label, lang):
@@ -529,16 +550,35 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     c_plot, c_data = st.columns([1.5, 1])
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
+        
+        # ---- AQUI está a alteração do scatter ----
         for rep in replicates:
-            ax.scatter(rep['t'], rep['y'], color='gray', alpha=0.3, s=15, marker='o')
+            ax.scatter(
+                rep['t'], rep['y'],
+                s=20,
+                facecolors='white',
+                edgecolors='black',
+                alpha=0.9,
+                marker='o'
+            )
+        # ------------------------------------------
+        
         outliers = raw_data_w_outliers[raw_data_w_outliers['is_outlier']]
         if not outliers.empty:
-            ax.scatter(outliers['t'], outliers['y'], color='red', marker='x', s=50, label=TEXTS['legend_outlier'][lang], zorder=5)
+            ax.scatter(
+                outliers['t'], outliers['y'],
+                color='red', marker='x', s=50,
+                label=TEXTS['legend_outlier'][lang],
+                zorder=5
+            )
         
-        # Only show mean and error bars if there are multiple replicates
-        if len(replicates) > 1:
-            ax.errorbar(stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'], 
-                        fmt='o', color='black', ecolor='black', capsize=3, label=TEXTS['legend_mean'][lang], zorder=4)
+        # Só mostra média/desvio se houver > 1 réplica
+        if len(replicates) > 1 and not stats_df.empty:
+            ax.errorbar(
+                stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'], 
+                fmt='o', color='black', ecolor='black', capsize=3,
+                label=TEXTS['legend_mean'][lang], zorder=4
+            )
         
         t_max_val = raw_data_w_outliers['t'].max()
         t_smooth = np.linspace(0, t_max_val, 300)
@@ -549,51 +589,77 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
         for i, ph in enumerate(phases):
             y_ind = model_func(t_smooth, y_i, y_f, ph['p'], ph['r_max'], ph['lambda'])
             y_vis = y_i + (y_f - y_i) * y_ind
-            ax.plot(t_smooth, y_vis, '--', color=colors[i], alpha=0.6, label=TEXTS['legend_phase'][lang].format(i+1))
+            ax.plot(
+                t_smooth, y_vis, '--',
+                color=colors[i], alpha=0.6,
+                label=TEXTS['legend_phase'][lang].format(i+1)
+            )
         
-        ax.set_xlabel(TEXTS['axis_time'][lang]); ax.set_ylabel(y_label)
-        ax.legend(fontsize='small'); ax.grid(True, linestyle=':', alpha=0.3)
+        ax.set_xlabel(TEXTS['axis_time'][lang])
+        ax.set_ylabel(y_label)
+        ax.legend(fontsize='small')
+        ax.grid(True, linestyle=':', alpha=0.3)
         
-        buf = io.BytesIO(); fig.savefig(buf, format="svg")
-        st.download_button(label=TEXTS['download_plot'][lang], data=buf.getvalue(),
-                           file_name=f"plot_{n}_phases.svg", mime="image/svg+xml", key=f"dl_btn_{model_func.__name__}_{n}")
+        buf = io.BytesIO()
+        fig.savefig(buf, format="svg")
+        st.download_button(
+            label=TEXTS['download_plot'][lang],
+            data=buf.getvalue(),
+            file_name=f"plot_{n}_phases.svg",
+            mime="image/svg+xml",
+            key=f"dl_btn_{model_func.__name__}_{n}"
+        )
         st.pyplot(fig)
         
     with c_data:
-        df_glob = pd.DataFrame({"Param": [yi_name, yf_name], "Val": [y_i, y_f], "SE": [y_i_se, y_f_se]})
+        df_glob = pd.DataFrame({
+            "Param": [yi_name, yf_name],
+            "Val": [y_i, y_f],
+            "SE": [y_i_se, y_f_se]
+        })
         st.dataframe(df_glob.style.format({"Val": "{:.4f}", "SE": "{:.4f}"}), hide_index=True)
+        
         rows = []
         for i, ph in enumerate(phases):
             rows.append({
-                "F": i+1, "p": ph['p'], "SE p": ph['SE p'],
-                rate_label: ph['r_max'], f"SE {rate_label}": ph['r_max_se'],
-                "λ": ph['lambda'], "SE λ": ph['lambda_se']
+                "F": i+1,
+                "p": ph['p'],
+                "SE p": ph['SE p'],
+                rate_label: ph['r_max'],
+                f"SE {rate_label}": ph['r_max_se'],
+                "λ": ph['lambda'],
+                "SE λ": ph['lambda_se']
             })
-        st.dataframe(pd.DataFrame(rows).style.format({
-            "p": "{:.4f}", "SE p": "{:.4f}", rate_label: "{:.4f}", f"SE {rate_label}": "{:.4f}",
-            "λ": "{:.4f}", "SE λ": "{:.4f}"
-        }), hide_index=True)
+        st.dataframe(
+            pd.DataFrame(rows).style.format({
+                "p": "{:.4f}",
+                "SE p": "{:.4f}",
+                rate_label: "{:.4f}",
+                f"SE {rate_label}": "{:.4f}",
+                "λ": "{:.4f}",
+                "SE λ": "{:.4f}"
+            }),
+            hide_index=True
+        )
         m = res['metrics']
-        df_met = pd.DataFrame({"Metric": ["R²", "R² Adj", "AICc", "BIC"], "Value": [m['R2'], m['R2_adj'], m['AICc'], m['BIC']]})
+        df_met = pd.DataFrame({
+            "Metric": ["R²", "R² Adj", "AICc", "BIC"],
+            "Value": [m['R2'], m['R2_adj'], m['AICc'], m['BIC']]
+        })
         st.dataframe(df_met.style.format({"Value": "{:.4f}"}), hide_index=True)
 
 def main():
     st.set_page_config(layout="wide", page_title="Polyauxic Analysis")
     
-    # Sidebar for settings
     st.sidebar.header("Language / Idioma / Langue")
     lang_key = st.sidebar.selectbox("Select Language", list(LANGUAGES.keys()))
     lang = LANGUAGES[lang_key]
     
     st.title(TEXTS['app_title'][lang])
     
-    # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
     
-    # References with Badges (Flexbox Layout)
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
-    
-    # HTML for Badges to ensure left alignment and correct sizing
     badge_html = """
     <div style="display: flex; align-items: center; gap: 15px;">
         <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
@@ -615,20 +681,15 @@ def main():
         st.markdown(TEXTS['instructions_list'][lang])
     st.markdown("---")
 
-    # Main Analysis Interface
     st.sidebar.header(TEXTS['sidebar_config'][lang])
     
-    # Use internal keys for logic, but display localized text
-    # Ensure VAR_LABELS keys are consistent with the options list
     var_type_opts = list(VAR_LABELS.keys())
-    
     selected_var_key = st.sidebar.selectbox(
         TEXTS['var_type'][lang], 
         options=var_type_opts,
-        format_func=lambda x: VAR_LABELS[x]['label'][lang] # Use 'label' sub-dictionary
+        format_func=lambda x: VAR_LABELS[x]['label'][lang]
     )
     
-    # Retrieve config based on key and lang
     config = VAR_LABELS[selected_var_key]
     y_label = config['axis'][lang]
     param_labels = config['params']
@@ -670,14 +731,23 @@ def main():
                                 for i, r in enumerate(results_list):
                                     m = r['metrics']
                                     summary_data.append({
-                                        "F": r['n_phases'], "R²": m['R2'], "R² Adj": m['R2_adj'],
-                                        "SSE": m['SSE'], "AIC": m['AIC'], "AICc": m['AICc'], "BIC": m['BIC']
+                                        "F": r['n_phases'],
+                                        "R²": m['R2'],
+                                        "R² Adj": m['R2_adj'],
+                                        "SSE": m['SSE'],
+                                        "AIC": m['AIC'],
+                                        "AICc": m['AICc'],
+                                        "BIC": m['BIC']
                                     })
                                     if m['AICc'] < best_aicc:
                                         best_aicc = m['AICc']; best_idx = i
-                                st.dataframe(pd.DataFrame(summary_data).style.apply(
-                                    lambda x: ['background-color: #d4edda; font-weight: bold' if x['AICc'] == best_aicc else '' for _ in x], 
-                                    axis=1).format("{:.4f}"), hide_index=True)
+                                st.dataframe(
+                                    pd.DataFrame(summary_data).style.apply(
+                                        lambda x: ['background-color: #d4edda; font-weight: bold' if x['AICc'] == best_aicc else '' for _ in x], 
+                                        axis=1
+                                    ).format("{:.4f}"),
+                                    hide_index=True
+                                )
                                 st.success(TEXTS['best_model_msg'][lang].format(results_list[best_idx]['n_phases']))
                                 st.markdown(f"### {TEXTS['graph_summary_title'][lang]}")
                                 plot_metrics_summary(results_list, model_name, lang)
