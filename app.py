@@ -356,7 +356,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     theta0_norm[1] = theta_smart[1] / y_scale
     theta0_norm[2:2+n_phases] = 0.0
     theta0_norm[2+n_phases:2+2*n_phases] = theta_smart[2+n_phases:2+2*n_phases] / (y_scale/t_scale)
-    theta0_norm[2+2*n_phases:2+3*n_phases] = theta_smart[2+2*n_phases:2+3*n_phases] / t_scale
+    theta0_norm[2+2+n_phases:2+3*n_phases] = theta_smart[2+2*n_phases:2+3*n_phases] / t_scale
 
     pop_size = 50
     init_pop = np.tile(theta0_norm, (pop_size, 1))
@@ -535,12 +535,19 @@ def plot_metrics_summary(results_list, model_name, lang):
     st.pyplot(fig)
 
 def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels, rate_label, lang):
+    """
+    Exibe o ajuste para um dado número de fases.
+    Regra pedida: se houver apenas UMA réplica, NÃO plota média nem desvio nos gráficos.
+    """
     n = res['n_phases']
     theta = res['theta']
     se = res['se']
     se_p = res['se_p']
     yi_name, yf_name = param_labels
+
+    # Calcula média, desvio e outliers com base no ajuste global
     stats_df, raw_data_w_outliers = calculate_mean_with_outliers(replicates, model_func, theta, n)
+
     y_i, y_f = theta[0], theta[1]
     y_i_se, y_f_se = se[0], se[1]
 
@@ -567,8 +574,12 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     c_plot, c_data = st.columns([1.5, 1])
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
+
+        # Dados brutos das réplicas
         for rep in replicates:
             ax.scatter(rep['t'], rep['y'], color='gray', alpha=0.3, s=15, marker='o')
+
+        # Marca outliers
         outliers = raw_data_w_outliers[raw_data_w_outliers['is_outlier']]
         if not outliers.empty:
             ax.scatter(
@@ -576,17 +587,22 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
                 color='red', marker='x', s=50,
                 label=TEXTS['legend_outlier'][lang], zorder=5
             )
-        ax.errorbar(
-            stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'],
-            fmt='o', color='black', ecolor='black', capsize=3,
-            label=TEXTS['legend_mean'][lang], zorder=4
-        )
 
+        # SOMENTE plota média e desvio se houver MAIS DE UMA réplica
+        if len(replicates) > 1 and not stats_df.empty:
+            ax.errorbar(
+                stats_df['t_round'], stats_df['mean'], yerr=stats_df['std'],
+                fmt='o', color='black', ecolor='black', capsize=3,
+                label=TEXTS['legend_mean'][lang], zorder=4
+            )
+
+        # Curva global suavizada
         t_max_val = raw_data_w_outliers['t'].max()
         t_smooth = np.linspace(0, t_max_val, 300)
         y_smooth = polyauxic_model(t_smooth, theta, model_func, n)
         ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label=TEXTS['legend_global'][lang])
 
+        # Fases individuais
         colors = plt.cm.viridis(np.linspace(0, 0.9, n))
         for i, ph in enumerate(phases):
             y_ind = model_func(t_smooth, y_i, y_f, ph['p'], ph['r_max'], ph['lambda'])
@@ -643,6 +659,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
             }),
             hide_index=True
         )
+
         m = res['metrics']
         df_met = pd.DataFrame({
             "Metric": ["R²", "R² Adj", "AICc", "BIC"],
@@ -663,7 +680,7 @@ def main():
     # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
 
-    # References with Badges (NOVO BLOCO)
+    # References with Badges
     cols = st.columns(2)
     with cols[0]:
         st.markdown(f"""
@@ -684,10 +701,6 @@ def main():
         </div>
         """
         components.html(altmetric_html, height=110)
-
-    # Coluna 2 está livre para uso futuro, se quiser algo ali
-    # with cols[1]:
-    #     ...
 
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
@@ -775,4 +788,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
