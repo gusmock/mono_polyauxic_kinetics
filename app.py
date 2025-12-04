@@ -324,13 +324,18 @@ def calculate_p_errors(z_vals, cov_z):
         return np.full(n, np.nan)
 
 # ==============================================================================
-# 2. FITTING ENGINE
+# 2. FITTING ENGINE (CORRIGIDO PARA REPRODUTIBILIDADE)
 # ==============================================================================
 
 def fit_model_auto(t_data, y_data, model_func, n_phases):
     """Main fitting function."""
+    
+    SEED_VALUE = 42
+    np.random.seed(SEED_VALUE)
+
     n_params = 2 + 3 * n_phases
     if len(t_data) <= n_params: return None 
+    
     t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
     y_scale = np.max(y_data) if np.max(y_data) > 0 else 1.0
     t_norm = t_data / t_scale
@@ -347,6 +352,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     pop_size = 50 
     init_pop = np.tile(theta0_norm, (pop_size, 1))
     init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
+
     bounds = []
     bounds.append((-0.2, 1.5)) 
     bounds.append((0.0, 2.0))
@@ -354,12 +360,31 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     for _ in range(n_phases): bounds.append((0.0, 500.0))
     for _ in range(n_phases): bounds.append((-0.1, 1.2))
 
-    res_de = differential_evolution(sse_loss, bounds, args=(t_norm, y_norm, model_func, n_phases),
-                                    maxiter=3000, popsize=pop_size, init=init_pop, strategy='best1bin',
-                                    seed=None, polish=True, tol=1e-6)
-    res_opt = minimize(sse_loss, res_de.x, args=(t_norm, y_norm, model_func, n_phases),
-                       method='L-BFGS-B', bounds=bounds, tol=1e-10)
+    # Fixed Seed Here
+    res_de = differential_evolution(
+        sse_loss, 
+        bounds, 
+        args=(t_norm, y_norm, model_func, n_phases),
+        maxiter=3000, 
+        popsize=pop_size, 
+        init=init_pop, 
+        strategy='best1bin',
+        seed=SEED_VALUE, # <--- Fixed Seed
+        polish=True, 
+        tol=1e-6
+    )
+    
+    res_opt = minimize(
+        sse_loss, 
+        res_de.x, 
+        args=(t_norm, y_norm, model_func, n_phases),
+        method='L-BFGS-B', 
+        bounds=bounds, 
+        tol=1e-10
+    )
+    
     theta_norm = res_opt.x
+    
     theta_real = np.zeros_like(theta_norm)
     se_real = np.zeros_like(theta_norm)
     se_p = np.full(n_phases, np.nan)
