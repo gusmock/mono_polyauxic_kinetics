@@ -330,7 +330,7 @@ def calculate_p_errors(z_vals, cov_z):
 def fit_model_auto(t_data, y_data, model_func, n_phases):
     """Main fitting function."""
     
-    SEED_VALUE = 666
+    SEED_VALUE = 42
     np.random.seed(SEED_VALUE)
 
     n_params = 2 + 3 * n_phases
