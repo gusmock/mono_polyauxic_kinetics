@@ -35,9 +35,6 @@ Polyauxic Robustness Simulator
 
 Author: Prof. Dr. Gustavo Mockaitis (GBMA/FEAGRI/UNICAMP)
 
-DESCRIPTION
------------
-
 This Streamlit application performs Monte Carlo robustness testing
 for polyauxic Boltzmann (Eq. 31) and Gompertz (Eq. 32) models.
 
@@ -51,7 +48,7 @@ The procedure follows exactly this sequence:
    - Number of replicates
    - Points per replicate
    - Number of Monte Carlo tests
-   - Whether to apply ROUT-based outlier removal in the fitting step
+   - Whether to apply ROUT-like outlier removal
 
 2) A **generating function** (noise-free curve) is computed once:
        y_gen(t) = y_i + (y_f - y_i) * sum_j term_j(t)
@@ -71,13 +68,6 @@ The procedure follows exactly this sequence:
    Differential Evolution → L-BFGS-B,
    with softmax parametrization for p_j.
 
-   If ROUT is enabled:
-       - A preliminary fit is performed on all data;
-       - Residuals are computed and outliers are detected using a robust
-         MAD-based z-score (similar to ROUT behavior);
-       - Outliers are removed and the final fit is performed on the
-         cleaned dataset.
-
 5) Metrics recorded for each test:
    - Fitted parameters (y_i, y_f, p_j, r_max_j, lambda_j)
    - SSE, R², Adjusted R²
@@ -85,16 +75,13 @@ The procedure follows exactly this sequence:
 
 6) Output:
    - Graph showing the generating function (noise-free)
-   - Graph showing the generating function + mean ± std of ALL simulated
-     datasets (all tests × all replicates)
+   - Graph showing the generating function + global mean ± std of all
+     simulated datasets (all tests × all replicates)
    - Table of all Monte Carlo results
    - Criteria plots (AIC, AICc, BIC vs test)
    - R² plots (R², R²_adj vs test)
    - Four parameter plots arranged as 2×2:
-         (1) y_i, y_f
-         (2) p_j
-         (3) r_max_j
-         (4) lambda_j
+         (1) yi,yf    (2) p_j    (3) r_max_j    (4) lambda_j
 """
 
 import streamlit as st
@@ -105,8 +92,9 @@ from scipy.optimize import differential_evolution, minimize
 from scipy.signal import find_peaks
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
 # ------------------------------------------------------------
-# 0. ROUT Outlier Detection
+# 0. ROUT-like Outlier Detection (MAD-based)
 # ------------------------------------------------------------
 
 def detect_outliers(y_true, y_pred):
@@ -182,7 +170,7 @@ def polyauxic_fit_model(t, theta, func, n_phases):
 
 def sse_loss(theta, t, y, func, n_phases):
     y_pred = polyauxic_fit_model(t, theta, func, n_phases)
-    if np.any(y_pred < -0.1 * np.max(np.abs(y))):
+    if np.any(y_pred < -0.1*np.max(np.abs(y))):
         return 1e12
     return np.sum((y - y_pred)**2)
 
@@ -226,8 +214,8 @@ def smart_guess(t, y, n_phases):
 # ------------------------------------------------------------
 
 def fit_polyauxic(t_all, y_all, func, n_phases):
-    t_scale = np.max(t_all) if np.max(t_all) > 0 else 1
-    y_scale = np.max(np.abs(y_all)) if np.max(np.abs(y_all)) > 0 else 1
+    t_scale = np.max(t_all) if np.max(t_all)>0 else 1
+    y_scale = np.max(np.abs(y_all)) if np.max(np.abs(y_all))>0 else 1
     t_n = t_all / t_scale
     y_n = y_all / y_scale
 
@@ -245,8 +233,8 @@ def fit_polyauxic(t_all, y_all, func, n_phases):
     bounds += [(0,500)]*n_phases
     bounds += [(-0.1,1.2)]*n_phases
 
-    popsize = 20
-    init_pop = np.tile(th0,(popsize,1)) * (np.random.uniform(0.8,1.2,(popsize,len(th0))))
+    popsize=20
+    init_pop = np.tile(th0,(popsize,1))*(np.random.uniform(0.8,1.2,(popsize,len(th0))))
 
     res_de = differential_evolution(
         sse_loss, bounds,
@@ -267,9 +255,6 @@ def fit_polyauxic(t_all, y_all, func, n_phases):
     th[1] = th_n[1]*y_scale
     th[2:2+n_phases] = th_n[2:2+n_phases]
     th[2+n_phases:2+2*n_phases] = th_n[2+n_phases:2+2*n_phases]*(y_scale/t_scale)
-    th[2+2+n_phases:2+3*n_phases] = th_n[2+2*n_phases:2+3*n_phases]*t_scale  # typo corrected below
-
-    # CORREÇÃO do índice anterior (linha acima):
     th[2+2*n_phases:2+3*n_phases] = th_n[2+2*n_phases:2+3*n_phases]*t_scale
 
     y_pred = polyauxic_fit_model(t_all, th, func, n_phases)
@@ -297,7 +282,7 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     t_all_list = []
     y_all_list = []
 
-    # matriz de y_obs para este teste (todas réplicas)
+    # y_obs matrix for this test (all replicas)
     y_matrix = np.zeros((n_rep, n_points))
 
     for rep in range(n_rep):
@@ -313,7 +298,7 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     t_all = np.concatenate(t_all_list)
     y_all = np.concatenate(y_all_list)
 
-    # ROUT opcional
+    # ROUT optional
     if use_rout:
         th_pre, _ = fit_polyauxic(t_all, y_all, func, n_phases)
         y_pred_pre = polyauxic_fit_model(t_all, th_pre, func, n_phases)
@@ -330,35 +315,28 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     r = th[2+n_phases:2+2*n_phases]
     lam = th[2+2*n_phases:2+3*n_phases]
 
-    z_shift = z - np.max(z)
+    z_shift = z-np.max(z)
     p_hat = np.exp(z_shift)/np.sum(np.exp(z_shift))
 
     row = {
-        "test": test_idx,
-        "yi_hat": yi_hat,
-        "yf_hat": yf_hat,
-        "SSE": met["SSE"],
-        "R2": met["R2"],
-        "R2_adj": met["R2_adj"],
-        "AIC": met["AIC"],
-        "AICc": met["AICc"],
-        "BIC": met["BIC"]
+        "test":test_idx, "yi_hat":yi_hat, "yf_hat":yf_hat,
+        "SSE":met["SSE"],"R2":met["R2"],"R2_adj":met["R2_adj"],
+        "AIC":met["AIC"],"AICc":met["AICc"],"BIC":met["BIC"]
     }
     for j in range(n_phases):
-        row[f"p{j+1}"] = p_hat[j]
-        row[f"r{j+1}"] = r[j]
-        row[f"lam{j+1}"] = lam[j]
+        row[f"p{j+1}"]=p_hat[j]
+        row[f"r{j+1}"]=r[j]
+        row[f"lam{j+1}"]=lam[j]
 
     return row, y_matrix
 
 
 # ------------------------------------------------------------
-# 7. Monte Carlo Simulation (parallel)
+# 7. Monte Carlo Simulation (parallel, with global mean/std)
 # ------------------------------------------------------------
 
 def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
-                dev_min, dev_max, n_rep, n_points, n_tests,
-                y_i, y_f, use_rout):
+                dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout):
 
     results = []
     all_y_blocks = []
@@ -369,8 +347,8 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
     with ThreadPoolExecutor() as executor:
         futures = {
             executor.submit(
-                monte_carlo_single, test_idx+1, func, ygen, t_sim,
-                p_true, r_true, lam_true,
+                monte_carlo_single,
+                test_idx+1, func, ygen, t_sim, p_true, r_true, lam_true,
                 dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout
             ): test_idx+1
             for test_idx in range(n_tests)
@@ -387,10 +365,9 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
 
     status_text.text("Simulation finished.")
 
-    # dataframe de resultados
     df = pd.DataFrame(results).sort_values("test")
 
-    # empilha todas as matrizes de y: shape (n_tests * n_rep, n_points)
+    # Stack all y matrices: shape (n_tests * n_rep, n_points)
     all_y = np.vstack(all_y_blocks)
     y_mean = np.mean(all_y, axis=0)
     y_std = np.std(all_y, axis=0)
@@ -406,37 +383,34 @@ st.title("Polyauxic Robustness Simulator")
 
 with st.expander("Instructions"):
     st.markdown("""
-This tool performs Monte Carlo robustness testing of polyauxic kinetic models
-(Boltzmann – Eq. 31, Gompertz – Eq. 32).
+This tool performs Monte Carlo robustness testing of polyauxic kinetic models.
 
-**Workflow:**
-1. A *generating function* (noise-free curve) is built from the true parameters,
+**Steps executed:**
+1. A *generating function* (noise-free curve) is computed from the true parameters,
    enforcing:
    - `y_i < y_f`
    - `p_j > 0` and automatic normalization so that Σ p_j = 1
    - strictly increasing lambdas: `lambda_1 < lambda_2 < ... < lambda_n`
-2. For each Monte Carlo test, each replicate receives independent noise:
-   `noise = scale * Normal(0,1)`, with
+2. For each Monte Carlo test, new independent noise is added with:
+   `noise = scale * Normal(0,1)` and
    `scale = dev_min + (dev_max - dev_min)*Uniform(0,1)`.
-3. All replicates are concatenated and fitted using Differential Evolution
-   followed by L-BFGS-B, with softmax parametrization for p_j.
+3. All replicates are concatenated and fitted using Differential Evolution + L-BFGS-B.
 4. Optionally, ROUT-like outlier detection (MAD-based) is applied before
    the final fit.
-5. The app records parameters, R², AIC, AICc, BIC for each test.
+5. Fitted parameters and information criteria are recorded.
 
 **Outputs:**
-- Generating function (noise-free)
-- Generating function + global mean ± std over **all** tests and replicates
-- Monte Carlo results table (downloadable as CSV)
-- Information criteria vs test (AIC, AICc, BIC)
-- R² and Adjusted R² vs test
+- Generating function plot
+- Generating function + global mean ± std of all simulated data
+- Table of Monte Carlo results
+- AIC/AICc/BIC behavior
+- R2 / R2_adj behavior
 - 4 parameter plots in a 2×2 layout:
-  - `y_i` & `y_f`
-  - `p_j`
-  - `r_max_j`
-  - `lambda_j`
+  - yi & yf
+  - p_j
+  - r_max_j
+  - lambda_j
 """)
-
 
 # Sidebar selections
 model = st.sidebar.selectbox("Model",["Boltzmann (Eq 31)","Gompertz (Eq 32)"])
@@ -448,9 +422,7 @@ st.sidebar.subheader("Global Parameters")
 y_i = st.sidebar.number_input("y_i",value=0.0)
 y_f = st.sidebar.number_input("y_f",value=1.0)
 
-p_true = []
-r_true = []
-lam_true = []
+p_true=[]; r_true=[]; lam_true=[]
 st.sidebar.subheader("Phase Parameters")
 for j in range(n_phases):
     with st.sidebar.expander(f"Phase {j+1}",expanded=(j<2)):
@@ -487,7 +459,6 @@ if run:
         st.error("Invalid parameters: y_i must be strictly less than y_f.")
         st.stop()
 
-    # p_j > 0 and normalization
     p_arr = np.array(p_true, dtype=float)
     if (p_arr <= 0).any():
         st.error("Invalid parameters: all p_j must be > 0.")
@@ -495,7 +466,6 @@ if run:
     p_arr = p_arr / np.sum(p_arr)
     p_true = p_arr.tolist()
 
-    # lambda strictly increasing
     lam_arr = np.array(lam_true, dtype=float)
     if not np.all(np.diff(lam_arr) > 0):
         st.error("Invalid parameters: lambdas must satisfy λ1 < λ2 < ... < λn.")
@@ -509,13 +479,10 @@ if run:
 
     ygen = polyauxic_generate(t_sim,y_i,y_f,p_true,r_true,lam_true,func)
 
-    # ------------------------------------------------------------
-    # Monte Carlo execution (parallel)
-    # ------------------------------------------------------------
+    # Monte Carlo execution (parallel) + global mean/std
     df, y_mean, y_std = monte_carlo(
         func, ygen, t_sim, p_true, r_true, lam_true,
-        dev_min, dev_max, n_rep, n_points, n_tests,
-        y_i, y_f, use_rout
+        dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout
     )
 
     dy = abs(y_f - y_i)
@@ -526,7 +493,7 @@ if run:
 
     # ------------------------------------------------------------
     # GRAPH 1 – generating function
-    # GRAPH 2 – generating function + global mean ± std
+    # GRAPH 2 – generating function + mean ± std
     # ------------------------------------------------------------
     col1,col2 = st.columns(2)
 
@@ -543,16 +510,16 @@ if run:
     with col2:
         st.subheader("Global Mean ± Std of All Simulated Data")
         fig,ax = plt.subplots(figsize=(6,4))
-        ax.plot(t_sim, ygen, 'k--', lw=1.5, label="Generating function")
+        ax.plot(t_sim,ygen,'k--',lw=1.5,label="Generating function")
         ax.errorbar(
             t_sim, y_mean, yerr=y_std,
             fmt='o', color='blue', ecolor='gray',
-            capsize=3, label="Mean ± Std (all tests & replicates)"
+            capsize=3, label="Mean ± Std"
         )
         ax.set_xlabel("t")
         ax.set_ylabel("y")
         ax.set_ylim(y_min_plot, y_max_plot)
-        ax.grid(True, ls=':')
+        ax.grid(True,ls=':')
         ax.legend()
         st.pyplot(fig)
 
@@ -574,12 +541,10 @@ if run:
     # ------------------------------------------------------------
     st.subheader("Information Criteria vs Test")
     fig,ax = plt.subplots(figsize=(8,4))
-    for col_crit in ["AIC","AICc","BIC"]:
-        ax.plot(df["test"],df[col_crit],marker='o',label=col_crit)
-    ax.legend()
-    ax.grid(True,ls=':')
-    ax.set_xlabel("Test")
-    ax.set_ylabel("Criterion value")
+    for col in ["AIC","AICc","BIC"]:
+        ax.plot(df["test"],df[col],marker='o',label=col)
+    ax.legend(); ax.grid(True,ls=':')
+    ax.set_xlabel("Test"); ax.set_ylabel("Criterion value")
     st.pyplot(fig)
 
     # ------------------------------------------------------------
@@ -589,10 +554,8 @@ if run:
     fig,ax = plt.subplots(figsize=(8,4))
     ax.plot(df["test"],df["R2"],marker='o',label="R²")
     ax.plot(df["test"],df["R2_adj"],marker='s',label="R²_adj")
-    ax.legend()
-    ax.grid(True,ls=':')
-    ax.set_xlabel("Test")
-    ax.set_ylabel("Value")
+    ax.legend(); ax.grid(True,ls=':')
+    ax.set_xlabel("Test"); ax.set_ylabel("Value")
     st.pyplot(fig)
 
     # ------------------------------------------------------------
@@ -606,29 +569,25 @@ if run:
     axs[0,0].plot(df["test"],df["yi_hat"],label="yi_hat")
     axs[0,0].plot(df["test"],df["yf_hat"],label="yf_hat")
     axs[0,0].set_title("y_i and y_f")
-    axs[0,0].legend()
-    axs[0,0].grid(True,ls=':')
+    axs[0,0].legend(); axs[0,0].grid(True,ls=':')
 
     # p_j
     for j in range(n_phases):
         axs[0,1].plot(df["test"],df[f"p{j+1}"],label=f"p{j+1}")
     axs[0,1].set_title("p_j")
-    axs[0,1].legend()
-    axs[0,1].grid(True,ls=':')
+    axs[0,1].legend(); axs[0,1].grid(True,ls=':')
 
     # r_j
     for j in range(n_phases):
         axs[1,0].plot(df["test"],df[f"r{j+1}"],label=f"r_max{j+1}")
     axs[1,0].set_title("r_max_j")
-    axs[1,0].legend()
-    axs[1,0].grid(True,ls=':')
+    axs[1,0].legend(); axs[1,0].grid(True,ls=':')
 
     # lambda_j
     for j in range(n_phases):
         axs[1,1].plot(df["test"],df[f"lam{j+1}"],label=f"lambda{j+1}")
     axs[1,1].set_title("lambda_j")
-    axs[1,1].legend()
-    axs[1,1].grid(True,ls=':')
+    axs[1,1].legend(); axs[1,1].grid(True,ls=':')
 
-    plt.tight_layout()
     st.pyplot(fig)
+
