@@ -627,16 +627,56 @@ if run_btn and not validation_errors:
     plt.tight_layout()
     st.pyplot(fig2)
 
+# ------------------------------------------------------------
+# FOOTER
+# ------------------------------------------------------------
 st.markdown("---")
 st.markdown(
     """
-    <div style='text-align: center; color: #666;'>
-        <h4>Developed by: Prof. Dr. Gustavo Mockaitis</h4>
-        <p>GBMA / FEAGRi / UNICAMP</p>
-        <p>
-            <a href='https://github.com/gusmock/mono_polyauxic_kinetics/tree/Simulator' target='_blank'>GitHub Repository</a> | 
-            ORCID | ResearcherID | Lattes
-        </p>
+    <div style='text-align: center; font-family: sans-serif; color: #444;'>
+        <h4 style='margin-bottom: 5px;'>Desenvolvido por: Prof. Dr. Gustavo Mockaitis</h4>
+        <p style='margin-top: 0; font-size: 0.9em; margin-bottom: 15px;'>GBMA / FEAGRi / UNICAMP</p>
+
+        <div style='display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;'>
+            
+            <a href='https://arxiv.org/abs/2507.05960' target='_blank'>
+                <img src='https://img.shields.io/badge/arXiv-Pre--print-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white' alt='arXiv'>
+            </a>
+            
+            <a href='https://github.com/gusmock/mono_polyauxic_kinetics/' target='_blank'>
+                <img src='https://img.shields.io/badge/GitHub-Código_Fonte-181717?style=for-the-badge&logo=github&logoColor=white' alt='GitHub'>
+            </a>
+            
+            <a href='https://orcid.org/0000-0002-4231-1056' target='_blank'>
+                <img src='https://img.shields.io/badge/ORCID-0000--0002--4231--1056-A6CE39?style=for-the-badge&logo=orcid&logoColor=white' alt='ORCID'>
+            </a>
+
+            <a href='https://scholar.google.com/citations?user=yR3UvuoAAAAJ&hl=pt-BR&oi=ao' target='_blank'>
+                <img src='https://img.shields.io/badge/Google_Scholar-Perfil-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white' alt='Google Scholar'>
+            </a>
+
+            <a href='http://lattes.cnpq.br/1400402042483439' target='_blank'>
+                <img src='https://img.shields.io/badge/Lattes-CV-003399?style=for-the-badge&logo=brasil&logoColor=white' alt='Lattes'>
+            </a>
+
+            <a href='https://www.linkedin.com/in/gustavo-mockaitis/' target='_blank'>
+                <img src='https://img.shields.io/badge/LinkedIn-Conectar-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white' alt='LinkedIn'>
+            </a>
+
+            <a href='https://www.researchgate.net/profile/Gustavo-Mockaitis' target='_blank'>
+                <img src='https://img.shields.io/badge/ResearchGate-Perfil-00CCBB?style=for-the-badge&logo=researchgate&logoColor=white' alt='ResearchGate'>
+            </a>
+
+            <a href='https://www.webofscience.com/wos/author/record/J-7107-2019' target='_blank'>
+                <img src='https://img.shields.io/badge/Web_of_Science-J--7107--2019-5E33BF?style=for-the-badge&logo=clarivate&logoColor=white' alt='Web of Science'>
+            </a>
+
+            <a href='http://feagri.unicamp.br/mockaitis' target='_blank'>
+                <img src='https://img.shields.io/badge/UNICAMP-Página_Institucional-CC0000?style=for-the-badge&logo=google-academic&logoColor=white' alt='UNICAMP'>
+            </a>
+            
+        </div>
+        <br>
     </div>
     """, 
     unsafe_allow_html=True
