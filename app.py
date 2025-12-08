@@ -27,7 +27,7 @@
                     ++++        ++++                                                   @@@@@@@                          
                                                                                         @@@@@ 
 ================================================================================
-POLYAUXIC ROBUSTNESS SIMULATOR (v3.0 - ROUT Enabled)
+POLYAUXIC ROBUSTNESS SIMULATOR (v3.2 - ROUT & Visualization)
 ================================================================================
 
 Author: Prof. Dr. Gustavo Mockaitis (GBMA/FEAGRI/UNICAMP)
@@ -43,33 +43,8 @@ REFERENCES:
 1. Motulsky, H. J., & Brown, R. E. (2006). Detecting outliers when fitting 
    data with nonlinear regression – a new method based on robust nonlinear 
    regression and the false discovery rate. BMC Bioinformatics, 7, 123.
-   https://doi.org/10.1186/1471-2105-7-123
-
 2. Rousseeuw, P. J., & Croux, C. (1993). Alternatives to the Median Absolute 
    Deviation. Journal of the American Statistical Association.
-
-================================================================================
-PIPELINE WITH ROUT
-================================================================================
-
-1. DATA GENERATION:
-   - True Curve + Heteroscedastic Noise + Stochastic Outliers (contaminants).
-
-2. ROBUST FIT (Step A of ROUT):
-   - The model is fitted using a Robust Loss function (Soft L1/Lorentzian).
-   - This ensures the curve ignores outliers and follows the main trend.
-
-3. OUTLIER DETECTION (Step B of ROUT):
-   - Absolute residuals are calculated from the Robust Fit.
-   - The Robust Standard Deviation of Residuals (RSDR) is estimated via MAD.
-   - A critical threshold is calculated based on the user-defined Q (FDR) 
-     and the sample size N, using the t-distribution.
-   - Points exceeding this threshold are flagged.
-
-4. FINAL FIT (Step C):
-   - The flagged points are removed.
-   - A standard Least Squares (SSE) fit is performed on the "clean" data 
-     to obtain unbiased parameters and valid confidence intervals.
 """
 
 import streamlit as st
@@ -99,7 +74,6 @@ def detect_outliers_mad_simple(y_true, y_pred):
     """
     ROUT-like (Simple): Uses residuals from Least Squares fit.
     Threshold: Fixed Z-score > 2.5 based on MAD.
-    Fast but susceptible to masking effects from large outliers.
     """
     residuals = y_true - y_pred
     med = np.median(residuals)
@@ -112,12 +86,11 @@ def detect_outliers_rout_rigorous(y_true, y_pred, Q=1.0):
     """
     ROUT (Rigorous): Uses residuals from Robust Fit.
     Threshold: Calculated dynamically based on FDR (Q) and t-distribution.
-    Resistant to masking effects.
     """
     residuals = y_true - y_pred
     abs_res = np.abs(residuals)
     
-    # Robust Standard Deviation (RSDR)
+    # Robust Standard Deviation (RSDR) via MAD
     med_res = np.median(abs_res)
     rsdr = 1.4826 * med_res if med_res > 1e-12 else 1e-12
     
@@ -126,10 +99,9 @@ def detect_outliers_rout_rigorous(y_true, y_pred, Q=1.0):
     
     # Critical Threshold (Approximate correction for FDR)
     n = len(y_true)
-    # Adjustment for False Discovery Rate: alpha is derived from Q
-    alpha = (Q / 100.0) 
+    alpha = (Q / 100.0) # FDR probability
     
-    # Critical t value
+    # Critical t value (Two-tailed)
     critical_t = t_dist.ppf(1 - (alpha / 2), df=n-1)
     
     return t_scores > critical_t
@@ -221,6 +193,7 @@ def unpack_parameters(theta, n_phases):
     r_raw = np.abs(theta[2 + n_phases : 2 + 2*n_phases])
     lam_raw = theta[2 + 2*n_phases : 2 + 3*n_phases]
     
+    # Sort triplets by time
     sort_idx = np.argsort(lam_raw)
     lam = lam_raw[sort_idx]
     p = p_raw[sort_idx]
@@ -234,12 +207,14 @@ def polyauxic_fit_model(t, theta, func, n_phases):
         sum_terms += func(t, y_i, y_f, p[j], r[j], lam[j])
     return y_i + (y_f - y_i) * sum_terms
 
+# --- LOSS FUNCTION 1: SSE (Least Squares) ---
 def sse_loss(theta, t, y, func, n_phases):
     if theta[0] >= theta[1]: return 1e12 
     y_pred = polyauxic_fit_model(t, theta, func, n_phases)
     if np.any(y_pred < -0.1 * np.max(np.abs(y))): return 1e12
     return np.sum((y - y_pred)**2)
 
+# --- LOSS FUNCTION 2: SOFT L1 (Robust) ---
 def robust_loss(theta, t, y, func, n_phases):
     if theta[0] >= theta[1]: return 1e12 
     y_pred = polyauxic_fit_model(t, theta, func, n_phases)
@@ -356,7 +331,6 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     y_all = np.concatenate(y_all_list)
     
     # ------------------ FITTING & OUTLIER REMOVAL ------------------
-    # Storage for detected outliers (t, y) to plot later
     detected_outliers_t = []
     detected_outliers_y = []
     
@@ -370,7 +344,6 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
         
         mask = detect_outliers_mad_simple(y_all, y_pred_pre) # Returns True for outliers
         
-        # Save outliers for plotting
         if np.any(mask):
             detected_outliers_t = t_all[mask]
             detected_outliers_y = y_all[mask]
@@ -423,16 +396,8 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
     results = []
     
     # Storage for global plotting
-    # To save memory, we calculate mean/std incrementally or just stack everything if N is manageable.
-    # For N_tests=100 and points=50, stacking is fine.
-    all_t_flat = []
-    all_y_flat = []
     all_out_t = []
     all_out_y = []
-    
-    # We also need a matrix for the "Mean +/- Std" calculation.
-    # Logic: Since time points t_sim are fixed for generation, we can stack raw matrices from each test.
-    # Each test produces (n_rep, n_points). We stack them to get (n_tests * n_rep, n_points).
     y_matrix_stack = []
 
     progress = st.progress(0.0)
@@ -450,13 +415,6 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
             row, t_dat, y_dat, out_t, out_y = fut.result()
             results.append(row)
             
-            # Aggregate data for plotting
-            all_t_flat.append(t_dat)
-            all_y_flat.append(y_dat)
-            
-            # For Mean/Std calculation (we only need the values corresponding to t_sim steps)
-            # t_dat is [t_sim, t_sim, t_sim], y_dat is [y_rep1, y_rep2, y_rep3]
-            # Reshape y_dat to (n_rep, n_points)
             y_mat_local = y_dat.reshape(n_rep, n_points)
             y_matrix_stack.append(y_mat_local)
             
@@ -471,12 +429,10 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
     status_text.text("Simulation finished successfully.")
     df = pd.DataFrame(results).sort_values("test")
     
-    # Process aggregates for plotting
-    final_y_matrix = np.vstack(y_matrix_stack) # Shape: (Total_Reps, N_Points)
+    final_y_matrix = np.vstack(y_matrix_stack)
     y_mean = np.mean(final_y_matrix, axis=0)
     y_std = np.std(final_y_matrix, axis=0)
     
-    # Flatten outlier lists
     if len(all_out_t) > 0:
         flat_out_t = np.concatenate(all_out_t)
         flat_out_y = np.concatenate(all_out_y)
@@ -686,14 +642,18 @@ if run_btn and not validation_errors:
     with c1:
         st.markdown("#### Fit Quality (Adj R²)")
         fig, ax = plt.subplots(figsize=(6, 3))
-        ax.plot(df["test"], df["R2_adj"], color='green', marker='s', ms=4)
+        ax.plot(df["test"], df["R2_adj"], color='green', marker='s', ms=4, label="Adj R²")
+        # Inserido R2 simples aqui também como solicitado no texto (embora o label diga Adj R2, vou plotar ambos)
+        ax.plot(df["test"], df["R2"], color='lightgreen', marker='.', ms=3, label="R²", alpha=0.7)
         ax.set_xlabel("Test Index"); ax.set_ylabel("Adjusted R²")
+        ax.legend()
         ax.grid(True, ls=':')
         st.pyplot(fig)
     with c2:
         st.markdown("#### Information Criteria")
         fig, ax = plt.subplots(figsize=(6, 3))
         ax.plot(df["test"], df["AIC"], marker='o', ms=4, label="AIC")
+        ax.plot(df["test"], df["AICc"], marker='D', ms=3, label="AICc") # Adicionado AICc
         ax.plot(df["test"], df["BIC"], marker='^', ms=4, label="BIC")
         ax.set_xlabel("Test Index"); ax.set_ylabel("Value")
         ax.legend(); ax.grid(True, ls=':')
@@ -752,7 +712,6 @@ if run_btn and not validation_errors:
 # ------------------------------------------------------------
 st.markdown("---")
 
-# Link direto para sua foto do GitHub
 profile_pic_url = "https://github.com/gusmock.png" 
 
 footer_html = f"""
@@ -813,8 +772,9 @@ footer_html = f"""
     <div class="profile-header">
         <img src="{profile_pic_url}" class="profile-img" alt="Gustavo Mockaitis">
         <div class="profile-info">
-            <h4>Desenvolvido por: Prof. Dr. Gustavo Mockaitis</h4>
-            <p>GBMA / FEAGRi / UNICAMP</p>
+            <h2>Development: Prof. Dr. Gustavo Mockaitis</h2>
+            <h4>GBMA / FEAGRi / UNICAMP</h4>
+            <p>Interdisciplinary Research Group of Biotechnology Applied to the Agriculture and Environment, School of Agricultural Engineering, University of Campinas (GBMA/FEAGRI/UNICAMP), 397 Michel Debrun Street, CEP 13.083-875, Campinas, SP, Brazil.</p>
         </div>
     </div>
 
