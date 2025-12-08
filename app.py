@@ -182,7 +182,7 @@ def find_saturation_time(y_i, y_f, p_vec, r_vec, lam_vec, func):
         t_99 = t_end # Fallback if fails
 
     # Rule: t_99 corresponds to 95% of the total simulation points
-    t_total = t_99 / 0.95
+    t_total = t_99 / 0.90
     return t_total, t_99
 
 # ------------------------------------------------------------
