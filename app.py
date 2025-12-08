@@ -26,9 +26,8 @@
                     ++++      ::++++                                    ##############  @@@@@                         
                     ++++        ++++                                                   @@@@@@@                          
                                                                                         @@@@@ 
-
 ================================================================================
-POLYAUXIC ROBUSTNESS SIMULATOR (v2.0)
+POLYAUXIC ROBUSTNESS SIMULATOR (v2.1)
 ================================================================================
 
 Author: Prof. Dr. Gustavo Mockaitis (GBMA/FEAGRI/UNICAMP)
@@ -107,7 +106,7 @@ PARAMETER REFERENCE GUIDE (Theoretical Basis)
 
 * Rate (r_max_j):
   - Theoretical Basis: The maximum specific reaction rate (or growth rate) for 
-    phase 'j'. It reflects the enzyme kinetics velocity ($V_{max}$) or the 
+    phase 'j'. It reflects the enzyme kinetics velocity (V_max) or the 
     organism's reproductive speed on that specific substrate.
 
 * Lag Time (lambda_j):
@@ -118,7 +117,7 @@ PARAMETER REFERENCE GUIDE (Theoretical Basis)
 --- SIMULATION SETTINGS ---
 * Noise Min/Max (Abs):
   - Importance: Defines the baseline experimental error (pipetting, sensor noise). 
-    Used to generate the standard deviation ($\sigma$) for the Gaussian noise.
+    Used to generate the standard deviation (sigma) for the Gaussian noise.
 
 * Outlier Probability (%):
   - Importance: Simulates "gross errors" (artifacts, bubbles, contamination). 
@@ -128,10 +127,10 @@ PARAMETER REFERENCE GUIDE (Theoretical Basis)
   - Theoretical Basis: A method based on False Discovery Rate (FDR). It detects 
     points that are statistically unlikely to belong to the model distribution 
     and excludes them from the final fit (Q coefficients).
-
 """
+
 import streamlit as st
-import streamlit.components.v1 as components  # <--- Faltava esta linha
+import streamlit.components.v1 as components 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -488,14 +487,18 @@ with st.expander("📘 Instruction Manual & Parameter Rules (Fixed)"):
 # --- SIDEBAR INPUTS ---
 st.sidebar.header("Simulation Settings")
 
-model_name = st.sidebar.selectbox("Mathematical Model", ["Boltzmann (Eq 31)", "Gompertz (Eq 32)"])
+model_name = st.sidebar.selectbox("Mathematical Model", ["Boltzmann (Eq 31)", "Gompertz (Eq 32)"], 
+                                  help="Defines the symmetric (Boltzmann) or asymmetric (Gompertz) structure of the growth phases.")
 func = boltzmann_term if "Boltzmann" in model_name else gompertz_term
 
-n_phases = st.sidebar.number_input("Number of Phases", 1, 10, 2)
+n_phases = st.sidebar.number_input("Number of Phases", 1, 10, 2, 
+                                   help="Number of sequential growth steps (e.g., 2 for diauxie).")
 
 st.sidebar.markdown("### Global Parameters")
-y_i = st.sidebar.number_input("y_i (Start)", value=0.0)
-y_f = st.sidebar.number_input("y_f (End)", value=max(1.0, y_i + 0.1), min_value=y_i + 0.001)
+y_i = st.sidebar.number_input("y_i (Start)", value=0.0, 
+                              help="Initial value of the response variable at t=0.")
+y_f = st.sidebar.number_input("y_f (End)", value=max(1.0, y_i + 0.1), min_value=y_i + 0.001, 
+                              help="Final asymptotic value. Must be greater than y_i.")
 
 p_inputs = []; r_true = []; lam_true = []
 st.sidebar.markdown("### Parameters per Phase")
@@ -507,11 +510,13 @@ for j in range(n_phases):
             p_val = 1.0 
         else:
             p_val = st.number_input(f"Proportion (p{j+1})", min_value=0.01, max_value=1.0, value=1.0/n_phases, 
-                                    help="Sum of all proportions must be 1.0", key=f"p_in_{j}")
+                                    help="Fraction of total growth for this phase. Sum of all 'p' must be 1.0.", key=f"p_in_{j}")
         
-        r = st.number_input(f"Rate (r_max{j+1})", min_value=0.01, value=1.0, key=f"r_{j}")
+        r = st.number_input(f"Rate (r_max{j+1})", min_value=0.01, value=1.0, key=f"r_{j}",
+                            help="Maximum specific reaction rate for this phase.")
         lam_min = last_lam + 0.01
-        lam = st.number_input(f"Lag Time (λ{j+1})", min_value=lam_min, value=max(float(j+1), lam_min), key=f"lam_{j}")
+        lam = st.number_input(f"Lag Time (λ{j+1})", min_value=lam_min, value=max(float(j+1), lam_min), key=f"lam_{j}",
+                              help="Time delay before this phase begins. Must be strictly increasing.")
         last_lam = lam 
         
         p_inputs.append(p_val)
@@ -538,15 +543,21 @@ else:
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Noise & Execution")
-dev_min = st.sidebar.number_input("Noise Min (Abs)", min_value=0.0, value=0.0)
-dev_max = st.sidebar.number_input("Noise Max (Abs)", min_value=0.0, value=0.1)
+dev_min = st.sidebar.number_input("Noise Min (Abs)", min_value=0.0, value=0.0, 
+                                  help="Minimum standard deviation for the added Gaussian noise.")
+dev_max = st.sidebar.number_input("Noise Max (Abs)", min_value=0.0, value=0.1, 
+                                  help="Maximum standard deviation for the added Gaussian noise.")
 outlier_pct = st.sidebar.number_input("Outlier Probability (%)", min_value=0.0, max_value=50.0, value=0.0, step=0.5,
                                       help="Percentage of points that will have 3x-6x higher noise than expected.")
 
-n_rep = st.sidebar.number_input("Replicates", 1, 10, 3)
-n_points = st.sidebar.number_input("Points/Replicate", 10, 500, 50)
-n_tests = st.sidebar.number_input("Monte Carlo Tests", 1, 500, 20)
-use_rout = st.sidebar.checkbox("Remove Outliers (ROUT)", value=False)
+n_rep = st.sidebar.number_input("Replicates", 1, 10, 3, 
+                                help="Number of experimental repetitions for the same condition.")
+n_points = st.sidebar.number_input("Points/Replicate", 10, 500, 50, 
+                                   help="Number of data points collected in each replicate.")
+n_tests = st.sidebar.number_input("Monte Carlo Tests", 1, 500, 20, 
+                                  help="Total number of independent simulations to run.")
+use_rout = st.sidebar.checkbox("Remove Outliers (ROUT)", value=False, 
+                               help="Enable Robust Regression and Outlier Removal (Q=1%).")
 
 # ------------------------------------------------------------
 # PREVIEW
