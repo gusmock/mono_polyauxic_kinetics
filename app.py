@@ -117,17 +117,28 @@ def detect_outliers(y_true, y_pred):
 # ------------------------------------------------------------
 def boltzmann_term(t, y_i, y_f, p_j, r_j, lam_j):
     t = np.asarray(t)
-    dy = y_f - y_i if abs(y_f - y_i) > 1e-12 else 1e-12
+    dy = y_f - y_i 
+    if dy < 1e-12: dy = 1e-12 # prevent division by zero
+    
     p = max(p_j, 1e-12)
-    expo = (4 * r_j * (lam_j - t)) / (dy * p) + 2
+    
+    # Calculation safe-guards
+    numerator = 4 * r_j * (lam_j - t)
+    denominator = dy * p
+    expo = numerator / denominator + 2
     expo = np.clip(expo, -500, 500) 
     return p / (1 + np.exp(expo))
 
 def gompertz_term(t, y_i, y_f, p_j, r_j, lam_j):
     t = np.asarray(t)
-    dy = y_f - y_i if abs(y_f - y_i) > 1e-12 else 1e-12
+    dy = y_f - y_i 
+    if dy < 1e-12: dy = 1e-12
+    
     p = max(p_j, 1e-12)
-    expo = (r_j * np.e * (lam_j - t)) / (dy * p) + 1
+    
+    numerator = r_j * np.e * (lam_j - t)
+    denominator = dy * p
+    expo = numerator / denominator + 1
     expo = np.clip(expo, -500, 500)
     return p * np.exp(-np.exp(expo))
 
@@ -135,14 +146,16 @@ def gompertz_term(t, y_i, y_f, p_j, r_j, lam_j):
 # 2. GENERATING FUNCTIONS & TIME CALCULATION
 # ------------------------------------------------------------
 def polyauxic_func_normalized(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
-    """Returns the normalized growth fraction (0 to 1) at time t."""
     sum_terms = 0.0
     for j in range(len(p_vec)):
         sum_terms += func(t, y_i, y_f, p_vec[j], r_vec[j], lam_vec[j])
     return sum_terms
 
 def polyauxic_components(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
-    """Returns total curve, individual components, and p_vec (passed through)."""
+    """Returns total curve and individual components."""
+    # Ensure inputs are sorted for generation to match logic
+    lam_vec = np.sort(lam_vec) 
+    
     components = []
     sum_terms = np.zeros_like(t, dtype=float)
     
@@ -156,21 +169,18 @@ def polyauxic_components(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
 
 def find_saturation_time(y_i, y_f, p_vec, r_vec, lam_vec, func):
     """
-    Calculates t_sat where the curve reaches 99% of the transition (y_f).
-    Then defines t_total such that t_sat is 95% of the experiment time.
+    Calculates t_sat (99% of y_f).
+    Sets total time so that t_sat is 90% of the experiment (10% plateau).
     """
-    # Target normalized value (99% growth)
     target = 0.99
     
-    # Define a function f(t) = current_growth_fraction - 0.99
     def objective(t):
         return polyauxic_func_normalized(t, y_i, y_f, p_vec, r_vec, lam_vec, func) - target
 
-    # Find a bracket for the root
+    # Search logic
     t_start = max(lam_vec)
-    t_end = t_start * 2 + 100 # Initial guess
+    t_end = t_start * 2 + 50 
     
-    # Expand t_end until we pass 0.99
     iter_limit = 0
     while objective(t_end) < 0 and iter_limit < 50:
         t_end *= 1.5
@@ -179,36 +189,60 @@ def find_saturation_time(y_i, y_f, p_vec, r_vec, lam_vec, func):
     try:
         t_99 = brentq(objective, 0, t_end)
     except:
-        t_99 = t_end # Fallback if fails
+        t_99 = t_end 
 
-    # Rule: t_99 corresponds to 95% of the total simulation points
+    # 10% Plateau Rule: t_99 represents 90% of the timeline
     t_total = t_99 / 0.90
     return t_total, t_99
 
 # ------------------------------------------------------------
-# 3. FITTING ENGINE
+# 3. FITTING ENGINE (CRITICAL CORRECTIONS HERE)
 # ------------------------------------------------------------
-def polyauxic_fit_model(t, theta, func, n_phases):
+
+def unpack_parameters(theta, n_phases):
+    """
+    Centralized function to decode parameters and ENFORCE CONSTRAINTS.
+    This is used by both the Loss Function and the Result Extractor.
+    """
     y_i = theta[0]
     y_f = theta[1]
-    z = theta[2 : 2 + n_phases]
-    r = theta[2 + n_phases : 2 + 2*n_phases]
-    lam = theta[2 + 2*n_phases : 2 + 3*n_phases]
     
-    # Softmax for p
+    # 1. Softmax for Proportions (Forces sum=1, p>0)
+    z = theta[2 : 2 + n_phases]
     z_shift = z - np.max(z)
     expz = np.exp(z_shift)
     p = expz / np.sum(expz)
     
+    # 2. Rates (Abs to ensure positive)
+    r = np.abs(theta[2 + n_phases : 2 + 2*n_phases])
+    
+    # 3. SORTING LAMBDAS (Forces lambda1 < lambda2 < ...)
+    lam_raw = theta[2 + 2*n_phases : 2 + 3*n_phases]
+    lam = np.sort(lam_raw)
+    
+    return y_i, y_f, p, r, lam
+
+def polyauxic_fit_model(t, theta, func, n_phases):
+    y_i, y_f, p, r, lam = unpack_parameters(theta, n_phases)
+    
     sum_terms = np.zeros_like(t)
     for j in range(n_phases):
         sum_terms += func(t, y_i, y_f, p[j], r[j], lam[j])
+        
     return y_i + (y_f - y_i) * sum_terms
 
 def sse_loss(theta, t, y, func, n_phases):
+    # HARD CONSTRAINT: y_i must be strictly less than y_f
+    # If the optimizer tries y_i >= y_f, return infinite error immediately.
+    if theta[0] >= theta[1]:
+        return 1e12
+
     y_pred = polyauxic_fit_model(t, theta, func, n_phases)
-    # Penalty for extreme negative predictions
-    if np.any(y_pred < -0.1*np.max(np.abs(y))): return 1e12
+    
+    # Penalty for extreme negative predictions (physical impossibility)
+    if np.any(y_pred < -0.1 * np.max(np.abs(y))): 
+        return 1e12
+        
     return np.sum((y - y_pred)**2)
 
 def smart_guess(t, y, n_phases):
@@ -223,55 +257,88 @@ def smart_guess(t, y, n_phases):
     while len(guesses) < n_phases:
         tspan = t.max() - t.min() if t.max() > t.min() else 1
         guesses.append((t.min() + tspan*(len(guesses)+1)/(n_phases+1), (y.max()-y.min())/(tspan/n_phases)))
+    
+    # Sort initial guesses by time
     guesses = sorted(guesses, key=lambda x: x[0])
     
     theta0 = np.zeros(2 + 3*n_phases)
     theta0[0] = max(0, y.min()) 
-    theta0[1] = y.max()
-    for i,(lam,r) in enumerate(guesses):
-        theta0[2 + n_phases + i] = r
-        theta0[2 + 2*n_phases + i] = lam
+    theta0[1] = max(y.max(), y.min() + 0.1)
+    
+    for i,(lam_guess, r_guess) in enumerate(guesses):
+        # z (proportions) init at 0 -> equal probability
+        theta0[2 + n_phases + i] = r_guess
+        theta0[2 + 2*n_phases + i] = lam_guess
     return theta0
 
 def fit_polyauxic(t_all, y_all, func, n_phases):
+    # Scaling for numerical stability
     t_scale = np.max(t_all) if np.max(t_all)>0 else 1
     y_scale = np.max(np.abs(y_all)) if np.max(np.abs(y_all))>0 else 1
+    
     t_n = t_all / t_scale
     y_n = y_all / y_scale
     
     theta0 = smart_guess(t_all, y_all, n_phases)
+    
+    # Scale Initial Guess
     th0 = np.zeros_like(theta0)
-    th0[0] = theta0[0]/y_scale; th0[1] = theta0[1]/y_scale
-    th0[2:2+n_phases] = 0 
-    th0[2+n_phases:2+2*n_phases] = theta0[2+n_phases:2+2*n_phases]*(t_scale/y_scale)
-    th0[2+2*n_phases:2+3*n_phases] = theta0[2+2*n_phases:2+3*n_phases]/t_scale
+    th0[0] = theta0[0]/y_scale
+    th0[1] = theta0[1]/y_scale
+    th0[2:2+n_phases] = 0 # z params
+    th0[2+n_phases:2+2*n_phases] = theta0[2+n_phases:2+2*n_phases] * (t_scale/y_scale) # rates need inverse time scaling
+    th0[2+2*n_phases:2+3*n_phases] = theta0[2+2*n_phases:2+3*n_phases] / t_scale # lambdas need time scaling
     
-    # Bounds: yi must be >= 0 (normalized lower bound 0.0)
-    bounds = [(0.0, 1.5), (0, 2)] + [(-10,10)]*n_phases + [(0,500)]*n_phases + [(-0.1,1.2)]*n_phases
+    # Bounds
+    # yi: [0, 1.5] (Normalized)
+    # yf: [0, 2.0]
+    # z: [-10, 10]
+    # r: [0, 500]
+    # lam: [-0.2, 1.2] (Allow slightly outside range to prevent boundary sticking)
+    bounds = [(0.0, 1.5), (0.001, 2.0)] + [(-10,10)]*n_phases + [(0,500)]*n_phases + [(-0.2,1.2)]*n_phases
     
-    popsize=20
+    popsize = 20
     init_pop = np.tile(th0,(popsize,1))*(np.random.uniform(0.8,1.2,(popsize,len(th0))))
     
-    res_de = differential_evolution(sse_loss, bounds, args=(t_n,y_n,func,n_phases),
-                                    maxiter=800, popsize=popsize, init=init_pop, strategy="best1bin", polish=True, tol=1e-6)
-    res = minimize(sse_loss, res_de.x, args=(t_n,y_n,func,n_phases), method="L-BFGS-B", bounds=bounds, tol=1e-10)
+    # 1. Global Optimization
+    res_de = differential_evolution(
+        sse_loss, bounds, args=(t_n, y_n, func, n_phases),
+        maxiter=1000, popsize=popsize, init=init_pop, 
+        strategy="best1bin", polish=True, tol=1e-6
+    )
+    
+    # 2. Local Refinement
+    res = minimize(
+        sse_loss, res_de.x, args=(t_n, y_n, func, n_phases), 
+        method="L-BFGS-B", bounds=bounds, tol=1e-10
+    )
     
     th_n = res.x
-    th = np.zeros_like(th_n)
-    th[0]=th_n[0]*y_scale; th[1]=th_n[1]*y_scale
-    th[2:2+n_phases]=th_n[2:2+n_phases]
-    th[2+n_phases:2+2*n_phases]=th_n[2+n_phases:2+2*n_phases]*(y_scale/t_scale)
-    th[2+2*n_phases:2+3*n_phases]=th_n[2+2*n_phases:2+3*n_phases]*t_scale
     
+    # Rescale back to original units
+    th = np.zeros_like(th_n)
+    th[0] = th_n[0] * y_scale
+    th[1] = th_n[1] * y_scale
+    th[2:2+n_phases] = th_n[2:2+n_phases] # z is unitless
+    th[2+n_phases:2+2*n_phases] = th_n[2+n_phases:2+2*n_phases] * (y_scale/t_scale)
+    th[2+2*n_phases:2+3*n_phases] = th_n[2+2*n_phases:2+3*n_phases] * t_scale
+    
+    # Calculate Metrics
     y_pred = polyauxic_fit_model(t_all, th, func, n_phases)
     sse = np.sum((y_all - y_pred)**2)
     sst = np.sum((y_all - np.mean(y_all))**2)
-    r2 = 1 - sse/sst if sst>0 else np.nan
-    n = len(y_all); k = len(th)
-    r2adj = 1 - (1-r2)*(n-1)/(n-k-1) if (n-k-1)>0 else np.nan
-    aic = n*np.log(sse/n) + 2*k
-    bic = n*np.log(sse/n) + k*np.log(n)
-    aicc = aic + (2*k*(k+1))/(n-k-1) if (n-k-1)>0 else np.inf
+    r2 = 1 - sse/sst if sst > 1e-12 else 0
+    n = len(y_all)
+    k = len(th)
+    r2adj = 1 - (1-r2)*(n-1)/(n-k-1) if (n-k-1)>0 else 0
+    
+    if sse > 1e-12:
+        aic = n*np.log(sse/n) + 2*k
+        bic = n*np.log(sse/n) + k*np.log(n)
+        aicc = aic + (2*k*(k+1))/(n-k-1) if (n-k-1)>0 else np.inf
+    else:
+        aic, bic, aicc = -np.inf, -np.inf, -np.inf
+
     return th, {"SSE":sse,"R2":r2,"R2_adj":r2adj,"AIC":aic,"AICc":aicc,"BIC":bic}
 
 # ------------------------------------------------------------
@@ -282,54 +349,82 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     n_phases = len(p_true)
     t_all_list = []; y_all_list = []
     y_matrix = np.zeros((n_rep, n_points))
+    
+    # Generate noisy data
     for rep in range(n_rep):
         scales = dev_min + (dev_max-dev_min)*np.random.rand(n_points)
         noise = scales * np.random.normal(0,1,n_points)
         y_obs = ygen + noise
         t_all_list.append(t_sim); y_all_list.append(y_obs)
         y_matrix[rep, :] = y_obs
-    t_all = np.concatenate(t_all_list); y_all = np.concatenate(y_all_list)
+        
+    t_all = np.concatenate(t_all_list)
+    y_all = np.concatenate(y_all_list)
     
+    # Fitting
     if use_rout:
         th_pre, _ = fit_polyauxic(t_all, y_all, func, n_phases)
         y_pred_pre = polyauxic_fit_model(t_all, th_pre, func, n_phases)
         mask = detect_outliers(y_all, y_pred_pre)
         t_clean = t_all[~mask]; y_clean = y_all[~mask]
-        if len(y_clean) < len(th_pre) + 2: 
+        
+        if len(y_clean) < len(th_pre) + 5: # Safety check
              th, met = fit_polyauxic(t_all, y_all, func, n_phases)
         else:
              th, met = fit_polyauxic(t_clean, y_clean, func, n_phases)
     else:
         th, met = fit_polyauxic(t_all, y_all, func, n_phases)
         
-    yi_hat = th[0]; yf_hat = th[1]
-    z = th[2:2+n_phases]; r = th[2+n_phases:2+2*n_phases]; lam = th[2+2*n_phases:2+3*n_phases]
-    z_shift = z-np.max(z)
-    p_hat = np.exp(z_shift)/np.sum(np.exp(z_shift))
+    # --- CRITICAL: DECODE PARAMETERS USING THE SAME RULES AS THE MODEL ---
+    # This guarantees that the saved CSV data matches the fitted curve constraints.
+    yi_hat, yf_hat, p_hat, r_hat, lam_hat = unpack_parameters(th, n_phases)
     
-    row = {"test":test_idx, "yi_hat":yi_hat, "yf_hat":yf_hat,
-           "SSE":met["SSE"],"R2":met["R2"],"R2_adj":met["R2_adj"],
-           "AIC":met["AIC"],"AICc":met["AICc"],"BIC":met["BIC"]}
+    row = {
+        "test": test_idx, 
+        "yi_hat": yi_hat, 
+        "yf_hat": yf_hat,
+        "SSE": met["SSE"],
+        "R2": met["R2"],
+        "R2_adj": met["R2_adj"],
+        "AIC": met["AIC"],
+        "AICc": met["AICc"],
+        "BIC": met["BIC"]
+    }
+    
     for j in range(n_phases):
-        row[f"p{j+1}"]=p_hat[j]; row[f"r{j+1}"]=r[j]; row[f"lam{j+1}"]=lam[j]
+        row[f"p{j+1}"] = p_hat[j]
+        row[f"r{j+1}"] = r_hat[j]
+        row[f"lam{j+1}"] = lam_hat[j]
+        
     return row, y_matrix
 
 def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
                 dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout):
-    results = []; all_y_blocks = []
+    
+    results = []
+    all_y_blocks = []
+    
     progress = st.progress(0.0)
     status_text = st.empty()
+    
     with ThreadPoolExecutor() as executor:
-        futures = {executor.submit(monte_carlo_single, i+1, func, ygen, t_sim, p_true, r_true, lam_true,
-                                   dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout): i+1 for i in range(n_tests)}
+        futures = {
+            executor.submit(monte_carlo_single, i+1, func, ygen, t_sim, p_true, r_true, lam_true,
+                            dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout): i+1 
+            for i in range(n_tests)
+        }
+        
         done = 0
         for fut in as_completed(futures):
             row, y_mat = fut.result()
-            results.append(row); all_y_blocks.append(y_mat)
+            results.append(row)
+            all_y_blocks.append(y_mat)
             done += 1
             progress.progress(done / n_tests)
             status_text.text(f"Simulating Test {done}/{n_tests}...")
+            
     status_text.text("Simulation finished successfully.")
+    
     df = pd.DataFrame(results).sort_values("test")
     all_y = np.vstack(all_y_blocks)
     return df, np.mean(all_y, axis=0), np.std(all_y, axis=0)
@@ -345,27 +440,24 @@ with st.expander("📘 Instruction Manual & Parameter Rules (Updated)"):
     st.markdown("""
     This simulator validates Polyauxic Kinetic Models under strict experimental design constraints.
     
-    ### ⏱️ Experimental Design Logic (95% Rule)
-    * **Automated Time Calculation:** The simulator does not accept an arbitrary time. 
-    * It calculates the **Saturation Time ($t_{sat}$)**, defined as the time to reach **99%** of the total growth ($y_f$).
-    * The total simulation time is set so that $t_{sat}$ corresponds to **95%** of the data points. The remaining **5%** of points capture the plateau.
+    ### ⏱️ Experimental Design Logic (10% Plateau Rule)
+    * **Automated Time Calculation:** The simulator calculates the **Saturation Time ($t_{sat}$)** where the curve reaches **99%** of $y_f$.
+    * The total simulation time is set so that $t_{sat}$ corresponds to **90%** of the data points. The remaining **10%** capture the plateau.
     
-    ### ⚖️ Parameter Constraints
-    * **Proportions ($p$):** * If `Number of Phases = 1`, $p$ is forced to 1.0 (hidden).
-        * If `Number of Phases > 1`, the sum of all $p_j$ must be exactly **1.0**.
-    * **Growth:** $y_i$ must be strictly less than $y_f$.
-    * **Sequence:** Lag times ($\lambda$) must be sequential ($\lambda_1 < \lambda_2$).
+    ### ⚖️ Parameter Constraints (Strictly Enforced)
+    * **Proportions ($p$):** Sum is forced to **1.0**. If `N=1`, $p$ is hidden and set to 1.
+    * **Growth:** $y_i < y_f$. The fitting algorithm penalizes any violation.
+    * **Sequence:** Lag times ($\lambda$) are mathematically **sorted** ($\lambda_1 < \lambda_2$). The output table guarantees this order.
     * **Non-negativity:** The fitting algorithm enforces $y_{fitted} \ge 0$.
 
     ### 🎲 Monte Carlo Settings
     * **Noise:** Random noise is added to the generated curve based on the defined deviation range.
-    * **ROUT:** Outlier removal (Robust Regression and Outlier Removal) can be enabled to clean extreme noise artifacts.
+    * **ROUT:** Robust regression outlier removal.
     """)
 
 # --- SIDEBAR INPUTS ---
 st.sidebar.header("Simulation Settings")
 
-# Model Selection
 model_name = st.sidebar.selectbox("Mathematical Model", ["Boltzmann (Eq 31)", "Gompertz (Eq 32)"])
 func = boltzmann_term if "Boltzmann" in model_name else gompertz_term
 
@@ -375,16 +467,14 @@ st.sidebar.markdown("### Global Parameters")
 y_i = st.sidebar.number_input("y_i (Start)", value=0.0)
 y_f = st.sidebar.number_input("y_f (End)", value=max(1.0, y_i + 0.1), min_value=y_i + 0.001)
 
-# Parameters per Phase
 p_inputs = []; r_true = []; lam_true = []
 st.sidebar.markdown("### Parameters per Phase")
 last_lam = -0.1 
 
 for j in range(n_phases):
     with st.sidebar.expander(f"Phase {j+1}", expanded=(j == 0)):
-        # PROPORTION INPUT LOGIC
         if n_phases == 1:
-            p_val = 1.0 # Force 1.0 for single phase
+            p_val = 1.0 
         else:
             p_val = st.number_input(f"Proportion (p{j+1})", min_value=0.01, max_value=1.0, value=1.0/n_phases, 
                                     help="Sum of all proportions must be 1.0", key=f"p_in_{j}")
@@ -403,23 +493,20 @@ for j in range(n_phases):
 # ------------------------------------------------------------
 validation_errors = []
 
-# 1. Sum of P check
 total_p = sum(p_inputs)
 if n_phases > 1 and abs(total_p - 1.0) > 0.001:
     validation_errors.append(f"❌ Sum of proportions is {total_p:.3f}. It must be exactly 1.0.")
 
-# 2. Yi < Yf check
 if y_i >= y_f:
     validation_errors.append("❌ y_i must be strictly less than y_f.")
 
 # ------------------------------------------------------------
-# DYNAMIC TIME CALCULATION
+# DYNAMIC TIME CALCULATION (10% Plateau)
 # ------------------------------------------------------------
 if not validation_errors:
-    # Only calculate if parameters are valid
     tmax, t99 = find_saturation_time(y_i, y_f, p_inputs, r_true, lam_true, func)
 else:
-    tmax = 10.0 # Placeholder
+    tmax = 10.0 
     t99 = 9.0
 
 # ------------------------------------------------------------
@@ -435,7 +522,7 @@ n_tests = st.sidebar.number_input("Monte Carlo Tests", 1, 500, 20)
 use_rout = st.sidebar.checkbox("Remove Outliers (ROUT)", value=False)
 
 # ------------------------------------------------------------
-# LIVE PREVIEW
+# PREVIEW
 # ------------------------------------------------------------
 st.subheader("Experimental Design Preview")
 
@@ -445,7 +532,6 @@ if validation_errors:
     st.warning("Please fix the errors in the sidebar to proceed.")
     run_btn = st.button("🚀 Run Monte Carlo Simulation", type="primary", disabled=True)
 else:
-    # Generate Preview Data
     t_sim = np.linspace(0, tmax, n_points)
     ygen, components = polyauxic_components(t_sim, y_i, y_f, p_inputs, r_true, lam_true, func)
 
@@ -455,11 +541,9 @@ else:
         fig_prev, ax_prev = plt.subplots(figsize=(8, 4))
         ax_prev.plot(t_sim, ygen, 'k-', lw=2.5, label="Total Curve")
         
-        # Plot saturation line
         ax_prev.axvline(t99, color='red', linestyle='--', alpha=0.5, label=f"99% Saturation (t={t99:.1f})")
-        ax_prev.axvspan(t99, tmax, color='gray', alpha=0.1, label="Plateau (5% of points)")
+        ax_prev.axvspan(t99, tmax, color='gray', alpha=0.1, label="Plateau (10% of points)")
         
-        # Components
         if n_phases > 1:
             colors = plt.cm.viridis(np.linspace(0, 1, n_phases))
             for j, (comp_y, color) in enumerate(zip(components, colors)):
@@ -475,8 +559,8 @@ else:
     with col_g2:
         st.success("✅ Parameters Validated")
         st.info(f"**Time Calculation:**\n\n"
-                f"• Growth Phase (95%): 0 to {t99:.2f}\n"
-                f"• Plateau Phase (5%): {t99:.2f} to {tmax:.2f}\n"
+                f"• Growth Phase (90%): 0 to {t99:.2f}\n"
+                f"• Plateau Phase (10%): {t99:.2f} to {tmax:.2f}\n"
                 f"• Total Time: {tmax:.2f}")
         
         df_params = pd.DataFrame({
@@ -491,7 +575,7 @@ else:
     run_btn = st.button("🚀 Run Monte Carlo Simulation", type="primary")
 
 # ------------------------------------------------------------
-# MAIN EXECUTION
+# EXECUTION
 # ------------------------------------------------------------
 if run_btn and not validation_errors:
     
@@ -506,17 +590,16 @@ if run_btn and not validation_errors:
 
     st.markdown("## Simulation Results")
     
-    # 1. Aggregate Graph
-    st.markdown("### Uncertainty Envelope (Global Mean ± Std)")
+    # Graphs and Tables (Same layout as before)
+    # 1. Aggregate
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_sim, ygen, 'k--', lw=2, label="True Curve")
     ax.errorbar(t_sim, y_mean, yerr=y_std, fmt='o', color='royalblue', 
                 ecolor='lightblue', alpha=0.5, capsize=0, markersize=3, label="Simulated Mean ± Std")
     ax.set_ylim(min(y_min_plot, -0.05), y_max_plot)
-    ax.set_xlabel("Time")
-    ax.set_ylabel("y")
-    ax.grid(True, ls=':')
-    ax.legend()
+    ax.set_xlabel("Time"); ax.set_ylabel("y")
+    ax.grid(True, ls=':'); ax.legend()
+    st.markdown("### Uncertainty Envelope (Global Mean ± Std)")
     st.pyplot(fig)
 
     # 2. Metrics
@@ -561,20 +644,17 @@ if run_btn and not validation_errors:
     for ax in axs.flat: ax.grid(True, ls=':', alpha=0.5)
     st.pyplot(fig)
 
-    # 4. Stability Plots (Line Plots with Reference)
+    # 4. Stability Plots
     st.markdown("### 2. Parameter Behavior per Test (Stability)")
     st.caption("Solid lines: Fitted values | Dashed lines: True input values used in generation")
     
-    # Increased figsize and layout adjustments
     fig2, axs2 = plt.subplots(2, 2, figsize=(14, 10))
     
     # A) yi and yf
     axs2[0,0].plot(df["test"], df["yi_hat"], label="Fitted yi", marker='.', color='C0')
     axs2[0,0].axhline(y_i, color='C0', linestyle='--', alpha=0.7, label="True yi")
-    
     axs2[0,0].plot(df["test"], df["yf_hat"], label="Fitted yf", marker='.', color='C1')
     axs2[0,0].axhline(y_f, color='C1', linestyle='--', alpha=0.7, label="True yf")
-    
     axs2[0,0].set_title("Start (yi) & End (yf)")
     axs2[0,0].legend()
     
@@ -582,7 +662,6 @@ if run_btn and not validation_errors:
     for j in range(n_phases):
         line, = axs2[0,1].plot(df["test"], df[f"p{j+1}"], label=f"p{j+1}", marker='.')
         axs2[0,1].axhline(p_inputs[j], color=line.get_color(), linestyle='--', alpha=0.7)
-        
     axs2[0,1].set_title("Proportions (p)")
     axs2[0,1].legend()
 
@@ -590,7 +669,6 @@ if run_btn and not validation_errors:
     for j in range(n_phases):
         line, = axs2[1,0].plot(df["test"], df[f"r{j+1}"], label=f"r{j+1}", marker='.')
         axs2[1,0].axhline(r_true[j], color=line.get_color(), linestyle='--', alpha=0.7)
-        
     axs2[1,0].set_title("Rates (r_max)")
     axs2[1,0].legend()
 
@@ -598,7 +676,6 @@ if run_btn and not validation_errors:
     for j in range(n_phases):
         line, = axs2[1,1].plot(df["test"], df[f"lam{j+1}"], label=f"λ{j+1}", marker='.')
         axs2[1,1].axhline(lam_true[j], color=line.get_color(), linestyle='--', alpha=0.7)
-        
     axs2[1,1].set_title("Lags (λ)")
     axs2[1,1].legend()
 
@@ -606,7 +683,7 @@ if run_btn and not validation_errors:
         ax.grid(True, ls=':', alpha=0.5)
         ax.set_xlabel("Test Index")
     
-    plt.tight_layout() # Fix superposition
+    plt.tight_layout()
     st.pyplot(fig2)
 
 # ------------------------------------------------------------
@@ -617,7 +694,7 @@ st.markdown(
     """
     <div style='text-align: center; color: #666;'>
         <h4>Developed by: Prof. Dr. Gustavo Mockaitis</h4>
-        <p>GBMA / FEAGRi / UNICAMP</p>
+        <p>GBMA / FEAGRI / UNICAMP</p>
         <p>
             <a href='https://github.com/gusmock/mono_polyauxic_kinetics/tree/Simulator' target='_blank'>GitHub Repository</a> | 
             ORCID | ResearcherID | Lattes
