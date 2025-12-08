@@ -727,8 +727,9 @@ footer_html = """
 </style>
 
 <div class="footer-text">
-    <h4 style="margin-bottom: 5px; margin-top: 0;">Desenvolvido por: Prof. Dr. Gustavo Mockaitis</h4>
-    <p style="margin-top: 0; font-size: 0.9em;">GBMA / FEAGRi / UNICAMP</p>
+    <h4 style="margin-bottom: 5px; margin-top: 0;">Development: Prof. Dr. Gustavo Mockaitis</h4>
+    <p style="margin-top: 0; font-size: 1.5em;">GBMA / FEAGRI / UNICAMP</p>
+    <p style="margin-top: 0; font-size: 0.9em;">Interdisciplinary Research Group on Biotechnology Applied to the Agriculture and the Environment, School of Agricultural Engineering, State University of Campinas, Campinas, São Paulo, 13083-875, Brazil</p>
 
     <div class="badge-container">
         <a href="https://arxiv.org/abs/2507.05960" target="_blank">
