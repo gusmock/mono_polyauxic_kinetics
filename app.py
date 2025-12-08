@@ -33,18 +33,161 @@ POLYAUXIC ROBUSTNESS SIMULATOR (v3.2 - ROUT & Visualization)
 Author: Prof. Dr. Gustavo Mockaitis (GBMA/FEAGRI/UNICAMP)
 GitHub: https://github.com/gusmock/mono_polyauxic_kinetics/
 
-DESCRIPTION:
-This Streamlit application performs rigorous Monte Carlo robustness testing for 
-Polyauxic Kinetic Models. It incorporates the ROUT method (Robust regression 
-and Outlier removal) based on Motulsky & Brown (2006) to handle outliers 
-scientifically using False Discovery Rate (FDR).
+--------------------------------------------------------------------------------
+HIGH-LEVEL OVERVIEW
+--------------------------------------------------------------------------------
+This Streamlit application performs Monte Carlo robustness analysis of polyauxic
+( multi-phase ) kinetic models under controlled noise and outlier scenarios.
 
-REFERENCES:
-1. Motulsky, H. J., & Brown, R. E. (2006). Detecting outliers when fitting 
-   data with nonlinear regression – a new method based on robust nonlinear 
-   regression and the false discovery rate. BMC Bioinformatics, 7, 123.
-2. Rousseeuw, P. J., & Croux, C. (1993). Alternatives to the Median Absolute 
-   Deviation. Journal of the American Statistical Association.
+Key features:
+- Flexible polyauxic growth curves based on Boltzmann or Gompertz equations.
+- Automatic experimental design enforcing a 10% plateau rule.
+- Global + local nonlinear fitting with constrained parameterization.
+- Outlier detection via:
+  * Simple MAD-based rule (ROUT-like),
+  * A ROUT-style procedure combining robust regression and FDR control
+    (Motulsky & Brown, 2006; Benjamini & Hochberg, 1995).
+
+The app is intended for rigorous in silico validation of polyauxic models
+and for quantifying how parameter estimates behave under noise and outliers.
+
+--------------------------------------------------------------------------------
+PIPELINE / CODE ORGANIZATION
+--------------------------------------------------------------------------------
+
+1. MODEL DEFINITION (Section 1 & 2)
+   - Two base "single-phase" kernels are implemented:
+     * boltzmann_term(t, y_i, y_f, p_j, r_j, lam_j)
+       → symmetric sigmoidal.
+     * gompertz_term(t, y_i, y_f, p_j, r_j, lam_j)
+       → asymmetric, classical Gompertz-type.
+   - A polyauxic model is constructed as a sum of J phases:
+       y(t) = y_i + (y_f - y_i) * Σ_j f_j(t; p_j, r_j, λ_j)
+     where each f_j is either Boltzmann or Gompertz.
+   - Proportions p_j represent the fractional contribution of each phase.
+     In the fitting engine, p_j are parametrized via a softmax transform,
+     ensuring Σ_j p_j = 1 by construction.
+   - Lag times λ_j are automatically sorted so that λ_1 < λ_2 < ... < λ_J,
+     enforcing a physically consistent sequence of phases.
+
+2. AUTOMATIC SATURATION TIME & EXPERIMENTAL DESIGN (find_saturation_time)
+   - For a given parameter set (y_i, y_f, p, r, λ) and chosen kernel:
+     * A target normalized value (0.99) is used to determine t_99 such that
+       y(t_99) ≈ 0.99 * y_f.
+     * Total experimental time t_total is defined as:
+           t_total = t_99 / 0.90
+       so that approximately 90% of the sampled points lie in the growth
+       region and 10% in the plateau, implementing the "10% plateau rule".
+   - This logic is used to generate the simulation time vector t_sim and to
+     show an experimental design preview to the user.
+
+3. DATA GENERATION (polyauxic_components)
+   - Using t_sim, the global parameters (y_i, y_f) and per-phase parameters
+     (p, r, λ), the code computes:
+     * y_total(t): the full polyauxic curve,
+     * components_list: each phase contribution for visualization.
+   - These deterministic curves are the "true" underlying behavior for
+     the Monte Carlo experiments.
+
+4. MONTE CARLO ENGINE (monte_carlo & monte_carlo_single)
+   For each Monte Carlo "test":
+   - Generate n_rep replicate time series with n_points each.
+   - For each replicate:
+     * Draw a per-point noise scale σ_i uniformly between dev_min and dev_max.
+     * Apply additional "volatility" to mimic heteroscedastic noise.
+     * Randomly mark a fraction outlier_pct of points as "outliers" and
+       inflate their noise scale by a factor between 3 and 6.
+     * Generate noisy observations:
+           y_obs = y_true + ε
+       where ε ~ N(0, σ_i^2), with σ_i larger for outlier points.
+   - Concatenate all replicate data into single arrays t_all, y_all.
+   - Apply the chosen outlier strategy (None, simple MAD, or ROUT), then
+     perform nonlinear regression and record fitted parameters and metrics.
+
+5. FITTING ENGINE & PARAMETERIZATION (Section 3)
+   - Parameters are stored in a flat θ vector and unpacked via:
+       unpack_parameters(theta, n_phases)
+     where:
+       * y_i = θ[0], y_f = θ[1],
+       * z_j = θ[2 : 2+n_phases] → softmax(z_j) gives p_j,
+       * r_j = |θ[...]| ensures positive rates,
+       * λ_j are extracted and then sorted.
+   - Two loss functions are available:
+     * sse_loss: classic sum of squared residuals (least squares).
+     * robust_loss: Soft L1 loss (M-estimator style) to down-weight outliers.
+   - fit_polyauxic:
+     * Normalizes time and response amplitude to improve conditioning.
+     * Uses smart_guess to initialize λ_j and r_j based on derivative peaks.
+     * Runs differential_evolution (global search) followed by minimize
+       (L-BFGS-B local refinement) under given bounds.
+     * Rescales fitted parameters back to original units.
+     * Computes goodness-of-fit metrics: SSE, R², adjusted R², AIC, AICc, BIC.
+
+6. OUTLIER DETECTION STRATEGIES (Section 0 & in monte_carlo_single)
+   - "None":
+     * Single SSE-based fit, no outlier removal.
+   - "ROUT-like (Simple MAD)":
+     * Step 1: Fit using SSE.
+     * Step 2: Compute residuals and a robust scale estimate via MAD, then
+       flag points with |residual|/σ_MAD > 2.5 as outliers.
+     * Step 3: Refit using SSE on the cleaned dataset if enough points remain;
+       otherwise keep the full dataset.
+   - "ROUT (Robust + FDR)" (UPDATED IMPLEMENTATION):
+     * Step 1: Robust fit using the Soft L1 loss to obtain a baseline model
+       that is less influenced by outliers, as in Motulsky & Brown (2006).
+     * Step 2: Compute residuals and a robust standard deviation (RSDR) from
+       the median absolute deviation (MAD).
+     * Step 3: Normalize residuals into t-like statistics and compute
+       two-tailed p-values via the Student t-distribution.
+     * Step 4: Apply the Benjamini–Hochberg FDR procedure at level Q%:
+       - Sort p-values from smallest to largest.
+       - Find the largest index k such that
+             p_(k) ≤ (k / n) * (Q / 100),
+         where n is the number of data points.
+       - All points with p ≤ p_(k) are declared outliers.
+     * Step 5: Refit using SSE on the remaining (non-outlier) data, if there
+       are enough points; otherwise, revert to fitting the full dataset.
+
+7. RESULT AGGREGATION AND VISUALIZATION (Section 5 & Execution)
+   - After n_tests Monte Carlo runs:
+     * Compute mean and standard deviation of simulated y over all tests.
+     * Plot:
+       - True generating curve,
+       - Simulation mean ± standard deviation,
+       - Detected outliers.
+     * Display overall counts of simulated points and removed outliers.
+     * Show per-test trajectories of R², adjusted R², AIC, AICc, BIC.
+     * Display boxplots of the distributions of fitted parameters (y_i, y_f,
+       p_j, r_j, λ_j).
+     * Plot per-test parameter estimates vs. true values for bias and
+       stability analysis.
+     * Provide CSV export of all Monte Carlo results.
+
+--------------------------------------------------------------------------------
+MAIN REFERENCES IMPLEMENTED IN THIS CODE
+--------------------------------------------------------------------------------
+1. Motulsky, H. J., & Brown, R. E. (2006).
+   Detecting outliers when fitting data with nonlinear regression – a new
+   method based on robust nonlinear regression and the false discovery rate.
+   BMC Bioinformatics, 7, 123.
+
+2. Benjamini, Y., & Hochberg, Y. (1995).
+   Controlling the False Discovery Rate: A Practical and Powerful Approach
+   to Multiple Testing.
+   Journal of the Royal Statistical Society. Series B (Methodological),
+   57(1), 289–300.
+
+3. Rousseeuw, P. J., & Croux, P. J. (1993).
+   Alternatives to the Median Absolute Deviation.
+   Journal of the American Statistical Association, 88(424), 1273–1283.
+
+4. Numerical implementation builds on:
+   - SciPy (optimization, root finding, statistics),
+   - NumPy (array operations),
+   - Pandas (tabular aggregation),
+   - Matplotlib (plotting),
+   - Streamlit (interactive UI).
+
 """
 
 import streamlit as st
@@ -82,29 +225,74 @@ def detect_outliers_mad_simple(y_true, y_pred):
     z = np.abs(residuals - med) / sigma
     return z > 2.5
 
+
 def detect_outliers_rout_rigorous(y_true, y_pred, Q=1.0):
     """
-    ROUT (Rigorous): Uses residuals from Robust Fit.
-    Threshold: Calculated dynamically based on FDR (Q) and t-distribution.
+    ROUT (Rigorous, Motulsky & Brown, 2006 style):
+    - Assume y_pred comes from a robust fit (e.g., Soft L1 regression).
+    - Compute robust residual scale via MAD.
+    - Convert residuals into t-like statistics.
+    - Compute two-tailed p-values using a t-distribution.
+    - Apply Benjamini–Hochberg FDR procedure at level Q (%).
+    
+    Parameters
+    ----------
+    y_true : array-like
+        Observed data.
+    y_pred : array-like
+        Model predictions from a robust fit.
+    Q : float, optional
+        Desired maximum False Discovery Rate in percent (e.g., 1.0 for 1% FDR).
+    
+    Returns
+    -------
+    mask_outliers : np.ndarray of bool
+        Boolean array where True indicates an outlier according to ROUT.
     """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
     residuals = y_true - y_pred
-    abs_res = np.abs(residuals)
-    
-    # Robust Standard Deviation (RSDR) via MAD
-    med_res = np.median(abs_res)
-    rsdr = 1.4826 * med_res if med_res > 1e-12 else 1e-12
-    
-    # Normalize residuals
-    t_scores = abs_res / rsdr
-    
-    # Critical Threshold (Approximate correction for FDR)
-    n = len(y_true)
-    alpha = (Q / 100.0) # FDR probability
-    
-    # Critical t value (Two-tailed)
-    critical_t = t_dist.ppf(1 - (alpha / 2), df=n-1)
-    
-    return t_scores > critical_t
+    n = residuals.size
+
+    if n < 3:
+        # Not enough points to perform any meaningful FDR-based test
+        return np.zeros_like(residuals, dtype=bool)
+
+    # Robust standard deviation (RSDR) via MAD of residuals
+    med_res = np.median(residuals)
+    mad_res = np.median(np.abs(residuals - med_res))
+    rsdr = 1.4826 * mad_res if mad_res > 1e-12 else 1e-12
+
+    # t-like statistics (normalized residuals)
+    t_scores = residuals / rsdr
+
+    # Two-tailed p-values using Student's t-distribution
+    # df is approximated as n-1 here (in full nonlinear regression, df would be n - p)
+    df = max(n - 1, 1)
+    abs_t = np.abs(t_scores)
+    p_values = 2.0 * (1.0 - t_dist.cdf(abs_t, df=df))
+
+    # Benjamini–Hochberg FDR control at level Q%
+    alpha = Q / 100.0
+    sort_idx = np.argsort(p_values)
+    p_sorted = p_values[sort_idx]
+
+    # Compute BH thresholds: (i/n) * alpha
+    i = np.arange(1, n + 1)
+    bh_thresholds = (i / n) * alpha
+
+    # Find largest k where p_(k) <= (k/n)*alpha
+    below = p_sorted <= bh_thresholds
+    if not np.any(below):
+        # No significant outliers at this FDR level
+        return np.zeros_like(residuals, dtype=bool)
+
+    k_max = np.max(np.where(below)[0])  # index in sorted array (0-based)
+    p_crit = p_sorted[k_max]
+
+    # Mark as outliers all points with p <= p_crit
+    mask_outliers = p_values <= p_crit
+    return mask_outliers
 
 # ------------------------------------------------------------
 # 1. MODEL EQUATIONS
@@ -356,7 +544,7 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
              th, met = fit_polyauxic(t_clean, y_clean, func, n_phases, loss_function=sse_loss)
              
     elif outlier_method == "ROUT (Robust + FDR)":
-        # 1. Fit (Robust) -> 2. Detect (ROUT Q) -> 3. Refit (SSE)
+        # 1. Fit (Robust) -> 2. Detect (ROUT Q) via BH-FDR -> 3. Refit (SSE)
         th_pre, _ = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=robust_loss)
         y_pred_pre = polyauxic_fit_model(t_all, th_pre, func, n_phases)
         
