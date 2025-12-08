@@ -632,6 +632,8 @@ if run_btn and not validation_errors:
 # ------------------------------------------------------------
 st.markdown("---")
 
+import streamlit.components.v1 as components
+
 footer_html = """
 <div style="width:100%; text-align:center; font-family:sans-serif; color:#444; margin-top:30px;">
     <h4 style="margin-bottom:5px;">Desenvolvido por: Prof. Dr. Gustavo Mockaitis</h4>
@@ -639,43 +641,34 @@ footer_html = """
 
     <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-top:15px;">
         <a href="https://arxiv.org/abs/2507.05960" target="_blank">
-            <img src="https://img.shields.io/badge/arXiv-Preprint-B31B1B"
-                 style="height:32px;"/>
+            <img src="https://img.shields.io/badge/arXiv-Preprint-B31B1B" height="32">
         </a>
         <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
-            <img src="https://img.shields.io/badge/GitHub-Repo-181717"
-                 style="height:32px;"/>
+            <img src="https://img.shields.io/badge/GitHub-Repo-181717" height="32">
         </a>
         <a href="https://orcid.org/0000-0002-4231-1056" target="_blank">
-            <img src="https://img.shields.io/badge/ORCID-iD-A6CE39"
-                 style="height:32px;"/>
+            <img src="https://img.shields.io/badge/ORCID-iD-A6CE39" height="32">
         </a>
         <a href="https://scholar.google.com/citations?user=yR3UvuoAAAAJ&hl=pt-BR&oi=ao" target="_blank">
-            <img src="https://img.shields.io/badge/Google%20Scholar-Perfil-4285F4"
-                 style="height:32px;"/>
+            <img src="https://img.shields.io/badge/Google%20Scholar-Perfil-4285F4" height="32">
         </a>
         <a href="https://www.researchgate.net/profile/Gustavo-Mockaitis" target="_blank">
-            <img src="https://img.shields.io/badge/ResearchGate-Perfil-00CCBB"
-                 style="height:32px;"/>
+            <img src="https://img.shields.io/badge/ResearchGate-Perfil-00CCBB" height="32">
         </a>
         <a href="http://lattes.cnpq.br/1400402042483439" target="_blank">
-            <img src="https://img.shields.io/badge/Lattes-CV-003399"
-                 style="height:32px;"/>
+            <img src="https://img.shields.io/badge/Lattes-CV-003399" height="32">
         </a>
         <a href="https://www.linkedin.com/in/gustavo-mockaitis/" target="_blank">
-            <img src="https://img.shields.io/badge/LinkedIn-Conectar-0A66C2"
-                 style="height:32px;"/>
+            <img src="https://img.shields.io/badge/LinkedIn-Conectar-0A66C2" height="32">
         </a>
         <a href="https://www.webofscience.com/wos/author/record/J-7107-2019" target="_blank">
-            <img src="https://img.shields.io/badge/Web%20of%20Science-Perfil-5E33BF"
-                 style="height:32px;"/>
+            <img src="https://img.shields.io/badge/Web%20of%20Science-Perfil-5E33BF" height="32">
         </a>
         <a href="http://feagri.unicamp.br/mockaitis" target="_blank">
-            <img src="https://img.shields.io/badge/UNICAMP-Institucional-CC0000"
-                 style="height:32px;"/>
+            <img src="https://img.shields.io/badge/UNICAMP-Institucional-CC0000" height="32">
         </a>
     </div>
 </div>
 """
 
-st.markdown(footer_html, unsafe_allow_html=True)
+components.html(footer_html)
