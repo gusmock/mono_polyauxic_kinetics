@@ -637,42 +637,42 @@ st.markdown(
         <h4 style='margin-bottom: 5px;'>Desenvolvido por: Prof. Dr. Gustavo Mockaitis</h4>
         <p style='margin-top: 0; font-size: 0.9em; margin-bottom: 15px;'>GBMA / FEAGRi / UNICAMP</p>
 
-        <div style='display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;'>
+        <div style='display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;'>
             
             <a href='https://arxiv.org/abs/2507.05960' target='_blank'>
-                <img src='https://img.shields.io/badge/arXiv-Pre--print-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white' alt='arXiv'>
+                <img src='https://img.shields.io/badge/arXiv-2507.05960-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white' alt='arXiv'>
             </a>
             
             <a href='https://github.com/gusmock/mono_polyauxic_kinetics/' target='_blank'>
-                <img src='https://img.shields.io/badge/GitHub-Código_Fonte-181717?style=for-the-badge&logo=github&logoColor=white' alt='GitHub'>
+                <img src='https://img.shields.io/badge/GitHub-Repo-181717?style=for-the-badge&logo=github&logoColor=white' alt='GitHub'>
             </a>
             
             <a href='https://orcid.org/0000-0002-4231-1056' target='_blank'>
-                <img src='https://img.shields.io/badge/ORCID-0000--0002--4231--1056-A6CE39?style=for-the-badge&logo=orcid&logoColor=white' alt='ORCID'>
+                <img src='https://img.shields.io/badge/ORCID-iD-A6CE39?style=for-the-badge&logo=orcid&logoColor=white' alt='ORCID'>
             </a>
 
             <a href='https://scholar.google.com/citations?user=yR3UvuoAAAAJ&hl=pt-BR&oi=ao' target='_blank'>
-                <img src='https://img.shields.io/badge/Google_Scholar-Perfil-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white' alt='Google Scholar'>
-            </a>
-
-            <a href='http://lattes.cnpq.br/1400402042483439' target='_blank'>
-                <img src='https://img.shields.io/badge/Lattes-CV-003399?style=for-the-badge&logo=brasil&logoColor=white' alt='Lattes'>
-            </a>
-
-            <a href='https://www.linkedin.com/in/gustavo-mockaitis/' target='_blank'>
-                <img src='https://img.shields.io/badge/LinkedIn-Conectar-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white' alt='LinkedIn'>
+                <img src='https://img.shields.io/badge/Scholar-Perfil-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white' alt='Google Scholar'>
             </a>
 
             <a href='https://www.researchgate.net/profile/Gustavo-Mockaitis' target='_blank'>
                 <img src='https://img.shields.io/badge/ResearchGate-Perfil-00CCBB?style=for-the-badge&logo=researchgate&logoColor=white' alt='ResearchGate'>
             </a>
 
+            <a href='http://lattes.cnpq.br/1400402042483439' target='_blank'>
+                <img src='https://img.shields.io/badge/Lattes-CV-003399?style=for-the-badge' alt='Lattes'>
+            </a>
+
+            <a href='https://www.linkedin.com/in/gustavo-mockaitis/' target='_blank'>
+                <img src='https://img.shields.io/badge/LinkedIn-Conectar-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white' alt='LinkedIn'>
+            </a>
+
             <a href='https://www.webofscience.com/wos/author/record/J-7107-2019' target='_blank'>
-                <img src='https://img.shields.io/badge/Web_of_Science-J--7107--2019-5E33BF?style=for-the-badge&logo=clarivate&logoColor=white' alt='Web of Science'>
+                <img src='https://img.shields.io/badge/Web_of_Science-Perfil-5E33BF?style=for-the-badge&logo=clarivate&logoColor=white' alt='Web of Science'>
             </a>
 
             <a href='http://feagri.unicamp.br/mockaitis' target='_blank'>
-                <img src='https://img.shields.io/badge/UNICAMP-Página_Institucional-CC0000?style=for-the-badge&logo=google-academic&logoColor=white' alt='UNICAMP'>
+                <img src='https://img.shields.io/badge/UNICAMP-Institucional-CC0000?style=for-the-badge' alt='UNICAMP'>
             </a>
             
         </div>
