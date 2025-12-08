@@ -46,27 +46,6 @@ REFERENCES:
 2. Rousseeuw, P. J., & Croux, C. (1993). Alternatives to the Median Absolute 
    Deviation. Journal of the American Statistical Association.
 """
-"""
-================================================================================
-POLYAUXIC ROBUSTNESS SIMULATOR (v3.2 - ROUT & Visualization)
-================================================================================
-
-Author: Prof. Dr. Gustavo Mockaitis (GBMA/FEAGRI/UNICAMP)
-GitHub: https://github.com/gusmock/mono_polyauxic_kinetics/
-
-DESCRIPTION:
-This Streamlit application performs rigorous Monte Carlo robustness testing for 
-Polyauxic Kinetic Models. It incorporates the ROUT method (Robust regression 
-and Outlier removal) based on Motulsky & Brown (2006) to handle outliers 
-scientifically using False Discovery Rate (FDR).
-
-REFERENCES:
-1. Motulsky, H. J., & Brown, R. E. (2006). Detecting outliers when fitting 
-   data with nonlinear regression – a new method based on robust nonlinear 
-   regression and the false discovery rate. BMC Bioinformatics, 7, 123.
-2. Rousseeuw, P. J., & Croux, C. (1993). Alternatives to the Median Absolute 
-   Deviation. Journal of the American Statistical Association.
-"""
 
 import streamlit as st
 import streamlit.components.v1 as st_components
