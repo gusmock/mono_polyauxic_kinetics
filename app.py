@@ -130,7 +130,7 @@ PARAMETER REFERENCE GUIDE (Theoretical Basis)
 """
 
 import streamlit as st
-import streamlit.components.v1 as components 
+import streamlit.components.v1 as st_components
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -202,16 +202,16 @@ def polyauxic_components(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
     p_vec = np.array(p_vec)[idx]
     r_vec = np.array(r_vec)[idx]
     
-    components = []
+    components_list = []
     sum_terms = np.zeros_like(t, dtype=float)
     
     for j in range(len(p_vec)):
         term = func(t, y_i, y_f, p_vec[j], r_vec[j], lam_vec[j])
-        components.append((y_f - y_i) * term)
+        components_list.append((y_f - y_i) * term)
         sum_terms += term
         
     y_total = y_i + (y_f - y_i) * sum_terms
-    return y_total, components
+    return y_total, components_list
 
 def find_saturation_time(y_i, y_f, p_vec, r_vec, lam_vec, func):
     target = 0.99
@@ -570,7 +570,7 @@ if validation_errors:
     run_btn = st.button("🚀 Run Monte Carlo Simulation", type="primary", disabled=True)
 else:
     t_sim = np.linspace(0, tmax, n_points)
-    ygen, components = polyauxic_components(t_sim, y_i, y_f, p_inputs, r_true, lam_true, func)
+    ygen, components_list = polyauxic_components(t_sim, y_i, y_f, p_inputs, r_true, lam_true, func)
 
     col_g1, col_g2 = st.columns([2, 1])
 
@@ -582,7 +582,7 @@ else:
         
         if n_phases > 1:
             colors = plt.cm.viridis(np.linspace(0, 1, n_phases))
-            for j, (comp_y, color) in enumerate(zip(components, colors)):
+            for j, (comp_y, color) in enumerate(zip(components_list, colors)):
                 ax_prev.plot(t_sim, y_i + comp_y, ls=':', lw=1.5, color=color, label=f"Phase {j+1}")
         
         ax_prev.set_title(f"Generating Function: {model_name}")
@@ -762,4 +762,4 @@ footer_html = """
 </div>
 """
 
-components.html(footer_html, height=350, scrolling=False)
+st_components.html(footer_html, height=350, scrolling=False)
