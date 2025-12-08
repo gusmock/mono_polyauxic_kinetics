@@ -90,9 +90,10 @@ import matplotlib.pyplot as plt
 from scipy.optimize import differential_evolution, minimize, brentq
 from scipy.signal import find_peaks
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import streamlit.components.v1 as components
 
 # ------------------------------------------------------------
-# PAGE CONFIGURATION (Obrigatório ser a primeira linha executável)
+# PAGE CONFIGURATION
 # ------------------------------------------------------------
 st.set_page_config(
     page_title="Polyauxic Robustness Simulator",
@@ -188,13 +189,12 @@ def find_saturation_time(y_i, y_f, p_vec, r_vec, lam_vec, func):
     return t_total, t_99
 
 # ------------------------------------------------------------
-# 3. FITTING ENGINE (FIXED LOGIC - CRITICAL)
+# 3. FITTING ENGINE (FIXED LOGIC)
 # ------------------------------------------------------------
 
 def unpack_parameters(theta, n_phases):
     """
     Decodes parameters and SORTS TRIPLETS (p, r, lam) based on lambda.
-    This ensures that p1 corresponds to the first phase (smallest lambda), etc.
     """
     y_i = theta[0]
     y_f = theta[1]
@@ -325,17 +325,36 @@ def fit_polyauxic(t_all, y_all, func, n_phases):
     return th, {"SSE":sse,"R2":r2,"R2_adj":r2adj,"AIC":aic,"AICc":aicc,"BIC":bic}
 
 # ------------------------------------------------------------
-# 4. MONTE CARLO ENGINE
+# 4. MONTE CARLO ENGINE (COM CONTROLE DE OUTLIERS)
 # ------------------------------------------------------------
 def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
-                       dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout):
+                       dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout, outlier_pct):
     n_phases = len(p_true)
     t_all_list = []; y_all_list = []
     y_matrix = np.zeros((n_rep, n_points))
     
+    # Calculate number of bad points based on percentage
+    n_outliers = int(n_points * (outlier_pct / 100.0))
+    
     for rep in range(n_rep):
-        scales = dev_min + (dev_max-dev_min)*np.random.rand(n_points)
-        noise = scales * np.random.normal(0,1,n_points)
+        # 1. Base Scale (Noise floor defined by user)
+        base_scales = dev_min + (dev_max - dev_min) * np.random.rand(n_points)
+        
+        # 2. Volatility Mask (Initially Low Jitter)
+        # Normal points vary slightly (0.8x to 1.2x the defined sigma)
+        volatility = np.random.uniform(0.8, 1.2, n_points)
+        
+        # 3. Inject Outliers (High Volatility)
+        if n_outliers > 0:
+            # Pick random indices to corrupt
+            bad_indices = np.random.choice(n_points, n_outliers, replace=False)
+            # Apply massive multiplier (3x to 6x sigma) to these points
+            volatility[bad_indices] = np.random.uniform(3.0, 6.0, n_outliers)
+        
+        # 4. Final Noise Calculation
+        final_scales = base_scales * volatility
+        noise = final_scales * np.random.normal(0, 1, n_points)
+        
         y_obs = ygen + noise
         t_all_list.append(t_sim); y_all_list.append(y_obs)
         y_matrix[rep, :] = y_obs
@@ -379,7 +398,7 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     return row, y_matrix
 
 def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
-                dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout):
+                dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout, outlier_pct):
     results = []
     all_y_blocks = []
     progress = st.progress(0.0)
@@ -388,7 +407,7 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
     with ThreadPoolExecutor() as executor:
         futures = {
             executor.submit(monte_carlo_single, i+1, func, ygen, t_sim, p_true, r_true, lam_true,
-                            dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout): i+1 
+                            dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout, outlier_pct): i+1 
             for i in range(n_tests)
         }
         done = 0
@@ -411,7 +430,7 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
 
 st.markdown("<h1 style='text-align: center;'>Polyauxic Robustness Simulator</h1>", unsafe_allow_html=True)
 
-with st.expander("📘 Instruction Manual & Parameter Rules"):
+with st.expander("📘 Instruction Manual & Parameter Rules (Fixed)"):
     st.markdown("""
     This simulator validates Polyauxic Kinetic Models under strict experimental design constraints.
     
@@ -424,6 +443,9 @@ with st.expander("📘 Instruction Manual & Parameter Rules"):
     * **Growth:** $y_i < y_f$.
     * **Sequence:** Lag times ($\lambda$) are mathematically **sorted triplets**. 
     * **Correction:** The fitting engine now correctly links $p$ and $r$ to their sorted $\lambda$.
+    
+    ### 🧪 Outlier Simulation
+    * **Outlier %:** A specific percentage of points (chosen randomly) will have their noise volatility multiplied by 3x-6x, simulating gross experimental errors.
     """)
 
 # --- SIDEBAR INPUTS ---
@@ -481,6 +503,9 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### Noise & Execution")
 dev_min = st.sidebar.number_input("Noise Min (Abs)", min_value=0.0, value=0.0)
 dev_max = st.sidebar.number_input("Noise Max (Abs)", min_value=0.0, value=0.1)
+outlier_pct = st.sidebar.number_input("Outlier Probability (%)", min_value=0.0, max_value=50.0, value=0.0, step=0.5,
+                                      help="Percentage of points that will have 3x-6x higher noise than expected.")
+
 n_rep = st.sidebar.number_input("Replicates", 1, 10, 3)
 n_points = st.sidebar.number_input("Points/Replicate", 10, 500, 50)
 n_tests = st.sidebar.number_input("Monte Carlo Tests", 1, 500, 20)
@@ -542,7 +567,7 @@ else:
 if run_btn and not validation_errors:
     df, y_mean, y_std = monte_carlo(
         func, ygen, t_sim, p_inputs, r_true, lam_true,
-        dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout
+        dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout, outlier_pct
     )
 
     dy = abs(y_f - y_i)
@@ -630,16 +655,10 @@ if run_btn and not validation_errors:
 # ------------------------------------------------------------
 # FOOTER
 # ------------------------------------------------------------
-# ------------------------------------------------------------
-# FOOTER
-# ------------------------------------------------------------
 st.markdown("---")
-
-import streamlit.components.v1 as components
 
 footer_html = """
 <style>
-    /* Estilo para garantir que os links não tenham decoração padrão e fiquem alinhados */
     .badge-container {
         display: flex;
         flex-wrap: wrap;
@@ -655,7 +674,7 @@ footer_html = """
         margin-bottom: 20px;
     }
     img {
-        height: 28px; /* Altura uniforme para os badges */
+        height: 28px;
     }
 </style>
 
@@ -667,39 +686,32 @@ footer_html = """
         <a href="https://arxiv.org/abs/2507.05960" target="_blank">
             <img src="https://img.shields.io/badge/arXiv-2507.05960-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white" alt="arXiv">
         </a>
-        
         <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
             <img src="https://img.shields.io/badge/GitHub-Repo-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub">
         </a>
-        
         <a href="https://orcid.org/0000-0002-4231-1056" target="_blank">
             <img src="https://img.shields.io/badge/ORCID-iD-A6CE39?style=for-the-badge&logo=orcid&logoColor=white" alt="ORCID">
         </a>
-
         <a href="https://scholar.google.com/citations?user=yR3UvuoAAAAJ&hl=pt-BR&oi=ao" target="_blank">
             <img src="https://img.shields.io/badge/Scholar-Perfil-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white" alt="Google Scholar">
         </a>
-
         <a href="https://www.researchgate.net/profile/Gustavo-Mockaitis" target="_blank">
             <img src="https://img.shields.io/badge/ResearchGate-Perfil-00CCBB?style=for-the-badge&logo=researchgate&logoColor=white" alt="ResearchGate">
         </a>
-
         <a href="http://lattes.cnpq.br/1400402042483439" target="_blank">
             <img src="https://img.shields.io/badge/Lattes-CV-003399?style=for-the-badge&logo=brasil&logoColor=white" alt="Lattes">
         </a>
-
         <a href="https://www.linkedin.com/in/gustavo-mockaitis/" target="_blank">
             <img src="https://img.shields.io/badge/LinkedIn-Conectar-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn">
         </a>
-
         <a href="https://www.webofscience.com/wos/author/record/J-7107-2019" target="_blank">
             <img src="https://img.shields.io/badge/Web_of_Science-Perfil-5E33BF?style=for-the-badge&logo=clarivate&logoColor=white" alt="Web of Science">
         </a>
-
         <a href="http://feagri.unicamp.br/mockaitis" target="_blank">
             <img src="https://img.shields.io/badge/UNICAMP-Institucional-CC0000?style=for-the-badge&logo=google-academic&logoColor=white" alt="UNICAMP">
         </a>
     </div>
 </div>
 """
+
 components.html(footer_html, height=350, scrolling=False)
