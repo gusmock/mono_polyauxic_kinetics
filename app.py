@@ -628,11 +628,11 @@ if run_btn and not validation_errors:
     st.pyplot(fig2)
 
 # ------------------------------------------------------------
-# FOOTER (Versão Final Corrigida)
+# FOOTER (CORRECTLY FORMATTED FOR BADGES)
 # ------------------------------------------------------------
 st.markdown("---")
 
-footer = """
+footer_html = """
 <div style="text-align: center; font-family: sans-serif; color: #444;">
     <h4 style="margin-bottom: 5px;">Desenvolvido por: Prof. Dr. Gustavo Mockaitis</h4>
     <p style="margin-top: 0; font-size: 0.9em; margin-bottom: 15px;">GBMA / FEAGRi / UNICAMP</p>
@@ -670,4 +670,4 @@ footer = """
 </div>
 """
 
-st.markdown(footer, unsafe_allow_html=True)
+st.markdown(footer_html, unsafe_allow_html=True)
