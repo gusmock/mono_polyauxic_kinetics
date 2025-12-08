@@ -628,7 +628,7 @@ if run_btn and not validation_errors:
     st.pyplot(fig2)
 
 # ------------------------------------------------------------
-# FOOTER (CORRECTLY FORMATTED FOR BADGES)
+# FOOTER (VERSÃO FINAL)
 # ------------------------------------------------------------
 st.markdown("---")
 
