@@ -79,7 +79,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import differential_evolution, minimize, brentq
 from scipy.signal import find_peaks
-from scipy.stats import t as t_dist # Required for ROUT critical value
+from scipy.stats import t as t_dist 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ------------------------------------------------------------
@@ -92,7 +92,50 @@ st.set_page_config(
 )
 
 # ------------------------------------------------------------
-# 0. MODEL EQUATIONS
+# 0. HELPER FUNCTIONS: OUTLIER DETECTION STRATEGIES
+# ------------------------------------------------------------
+
+def detect_outliers_mad_simple(y_true, y_pred):
+    """
+    ROUT-like (Simple): Uses residuals from Least Squares fit.
+    Threshold: Fixed Z-score > 2.5 based on MAD.
+    Fast but susceptible to masking effects from large outliers.
+    """
+    residuals = y_true - y_pred
+    med = np.median(residuals)
+    mad = np.median(np.abs(residuals - med))
+    sigma = 1.4826 * mad if mad > 1e-12 else 1e-12
+    z = np.abs(residuals - med) / sigma
+    return z > 2.5
+
+def detect_outliers_rout_rigorous(y_true, y_pred, Q=1.0):
+    """
+    ROUT (Rigorous): Uses residuals from Robust Fit.
+    Threshold: Calculated dynamically based on FDR (Q) and t-distribution.
+    Resistant to masking effects.
+    """
+    residuals = y_true - y_pred
+    abs_res = np.abs(residuals)
+    
+    # Robust Standard Deviation (RSDR)
+    med_res = np.median(abs_res)
+    rsdr = 1.4826 * med_res if med_res > 1e-12 else 1e-12
+    
+    # Normalize residuals
+    t_scores = abs_res / rsdr
+    
+    # Critical Threshold (Approximate correction for FDR)
+    n = len(y_true)
+    # Adjustment for False Discovery Rate: alpha is derived from Q
+    alpha = (Q / 100.0) 
+    
+    # Critical t value
+    critical_t = t_dist.ppf(1 - (alpha / 2), df=n-1)
+    
+    return t_scores > critical_t
+
+# ------------------------------------------------------------
+# 1. MODEL EQUATIONS
 # ------------------------------------------------------------
 def boltzmann_term(t, y_i, y_f, p_j, r_j, lam_j):
     t = np.asarray(t)
@@ -119,7 +162,7 @@ def gompertz_term(t, y_i, y_f, p_j, r_j, lam_j):
     return p * np.exp(-np.exp(expo))
 
 # ------------------------------------------------------------
-# 1. GENERATING FUNCTIONS
+# 2. GENERATING FUNCTIONS
 # ------------------------------------------------------------
 def polyauxic_func_normalized(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
     sum_terms = 0.0
@@ -161,11 +204,11 @@ def find_saturation_time(y_i, y_f, p_vec, r_vec, lam_vec, func):
     except:
         t_99 = t_end 
 
-    t_total = t_99 / 0.90 # 10% Plateau
+    t_total = t_99 / 0.90
     return t_total, t_99
 
 # ------------------------------------------------------------
-# 2. FITTING ENGINE & LOSS FUNCTIONS
+# 3. FITTING ENGINE & LOSS FUNCTIONS
 # ------------------------------------------------------------
 
 def unpack_parameters(theta, n_phases):
@@ -182,7 +225,6 @@ def unpack_parameters(theta, n_phases):
     lam = lam_raw[sort_idx]
     p = p_raw[sort_idx]
     r = r_raw[sort_idx]
-    
     return y_i, y_f, p, r, lam
 
 def polyauxic_fit_model(t, theta, func, n_phases):
@@ -192,22 +234,17 @@ def polyauxic_fit_model(t, theta, func, n_phases):
         sum_terms += func(t, y_i, y_f, p[j], r[j], lam[j])
     return y_i + (y_f - y_i) * sum_terms
 
-# --- LOSS FUNCTION 1: SSE (For Final Fit) ---
 def sse_loss(theta, t, y, func, n_phases):
     if theta[0] >= theta[1]: return 1e12 
     y_pred = polyauxic_fit_model(t, theta, func, n_phases)
     if np.any(y_pred < -0.1 * np.max(np.abs(y))): return 1e12
     return np.sum((y - y_pred)**2)
 
-# --- LOSS FUNCTION 2: SOFT L1 (For Robust Fit/ROUT) ---
 def robust_loss(theta, t, y, func, n_phases):
     if theta[0] >= theta[1]: return 1e12 
     y_pred = polyauxic_fit_model(t, theta, func, n_phases)
     if np.any(y_pred < -0.1 * np.max(np.abs(y))): return 1e12
-    
     residuals = y - y_pred
-    # Soft L1 (Charbonnier) approximation creates a linear tail for outliers
-    # preventing them from dragging the fit.
     loss = 2 * (np.sqrt(1 + residuals**2) - 1)
     return np.sum(loss)
 
@@ -253,14 +290,12 @@ def fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss):
     popsize = 20
     init_pop = np.tile(th0,(popsize,1))*(np.random.uniform(0.8,1.2,(popsize,len(th0))))
     
-    # Global Search
     res_de = differential_evolution(
         loss_function, bounds, args=(t_n, y_n, func, n_phases),
         maxiter=1000, popsize=popsize, init=init_pop, 
         strategy="best1bin", polish=True, tol=1e-6
     )
     
-    # Local Refinement
     res = minimize(
         loss_function, res_de.x, args=(t_n, y_n, func, n_phases), 
         method="L-BFGS-B", bounds=bounds, tol=1e-10
@@ -274,7 +309,6 @@ def fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss):
     th[2+n_phases:2+2*n_phases] = th_n[2+n_phases:2+2*n_phases] * (y_scale/t_scale)
     th[2+2*n_phases:2+3*n_phases] = th_n[2+2*n_phases:2+3*n_phases] * t_scale
     
-    # Metrics are ALWAYS calculated with SSE for comparability
     y_pred = polyauxic_fit_model(t_all, th, func, n_phases)
     sse = np.sum((y_all - y_pred)**2)
     sst = np.sum((y_all - np.mean(y_all))**2)
@@ -292,92 +326,81 @@ def fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss):
     return th, {"SSE":sse,"R2":r2,"R2_adj":r2adj,"AIC":aic,"AICc":aicc,"BIC":bic}
 
 # ------------------------------------------------------------
-# 3. ROUT OUTLIER DETECTION (Motulsky & Brown, 2006 Implementation)
-# ------------------------------------------------------------
-def detect_outliers_rout(y_true, y_pred, Q=1.0):
-    """
-    Detects outliers based on ROUT method logic.
-    Q: Maximum desired False Discovery Rate (percentage).
-    """
-    residuals = y_true - y_pred
-    abs_res = np.abs(residuals)
-    
-    # 1. Robust Standard Deviation (RSDR) using MAD
-    # 1.4826 is the correction factor to make MAD consistent with Gaussian SD
-    med_res = np.median(abs_res)
-    rsdr = 1.4826 * med_res if med_res > 1e-12 else 1e-12
-    
-    # 2. Normalize Residuals (t-scores)
-    t_scores = abs_res / rsdr
-    
-    # 3. Calculate Critical Threshold based on Q
-    # We approximate the critical t-value using the t-distribution
-    # such that the probability of a value exceeding it is related to Q.
-    # Degrees of freedom = N - 1 (approx)
-    n = len(y_true)
-    alpha = (Q / 100.0) # FDR probability
-    
-    # Critical value: Two-tailed t-test threshold
-    # Note: In strict ROUT this is iterative, here we use a single-step robust approximation
-    # which is computationally efficient for MC.
-    critical_t = t_dist.ppf(1 - (alpha / 2), df=n-1)
-    
-    # 4. Flag Outliers
-    mask = t_scores > critical_t
-    return mask
-
-# ------------------------------------------------------------
 # 4. MONTE CARLO ENGINE
 # ------------------------------------------------------------
 def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
-                       dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout, outlier_pct, rout_q):
+                       dev_min, dev_max, n_rep, n_points, y_i, y_f, 
+                       outlier_method, outlier_pct, rout_q):
+    
     n_phases = len(p_true)
     t_all_list = []; y_all_list = []
-    y_matrix = np.zeros((n_rep, n_points))
     
-    n_outliers = int(n_points * (outlier_pct / 100.0))
+    # ------------------ NOISE GENERATION ------------------
+    n_outliers_gen = int(n_points * (outlier_pct / 100.0))
     
     for rep in range(n_rep):
         base_scales = dev_min + (dev_max - dev_min) * np.random.rand(n_points)
         volatility = np.random.uniform(0.8, 1.2, n_points)
         
-        if n_outliers > 0:
-            bad_indices = np.random.choice(n_points, n_outliers, replace=False)
-            # Massive noise injection for outliers
-            volatility[bad_indices] = np.random.uniform(3.0, 6.0, n_outliers)
+        if n_outliers_gen > 0:
+            bad_indices = np.random.choice(n_points, n_outliers_gen, replace=False)
+            volatility[bad_indices] = np.random.uniform(3.0, 6.0, n_outliers_gen)
         
         final_scales = base_scales * volatility
         noise = final_scales * np.random.normal(0, 1, n_points)
         
         y_obs = ygen + noise
         t_all_list.append(t_sim); y_all_list.append(y_obs)
-        y_matrix[rep, :] = y_obs
         
     t_all = np.concatenate(t_all_list)
     y_all = np.concatenate(y_all_list)
     
-    # --- ROUT LOGIC IMPLEMENTATION ---
-    if use_rout:
-        # Step A: Robust Fit (Lorentzian/Soft L1)
-        # This prevents outliers from distorting the baseline for detection
-        th_pre, _ = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=robust_loss)
+    # ------------------ FITTING & OUTLIER REMOVAL ------------------
+    # Storage for detected outliers (t, y) to plot later
+    detected_outliers_t = []
+    detected_outliers_y = []
+    
+    if outlier_method == "None":
+        th, met = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss)
         
-        # Step B: Detection using ROUT criteria
+    elif outlier_method == "ROUT-like (Simple MAD)":
+        # 1. Fit (SSE) -> 2. Detect (MAD Z>2.5) -> 3. Refit (SSE)
+        th_pre, _ = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss)
         y_pred_pre = polyauxic_fit_model(t_all, th_pre, func, n_phases)
-        mask = detect_outliers_rout(y_all, y_pred_pre, Q=rout_q)
         
-        t_clean = t_all[~mask]
-        y_clean = y_all[~mask]
+        mask = detect_outliers_mad_simple(y_all, y_pred_pre) # Returns True for outliers
         
-        # Step C: Final Least Squares Fit on Clean Data
-        if len(y_clean) < len(th_pre) + 5: # Fallback if too many points removed
+        # Save outliers for plotting
+        if np.any(mask):
+            detected_outliers_t = t_all[mask]
+            detected_outliers_y = y_all[mask]
+            
+        t_clean = t_all[~mask]; y_clean = y_all[~mask]
+        
+        if len(y_clean) < len(th_pre) + 5: 
              th, met = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss)
         else:
              th, met = fit_polyauxic(t_clean, y_clean, func, n_phases, loss_function=sse_loss)
-    else:
-        # Standard LS Fit (No filtering)
-        th, met = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss)
+             
+    elif outlier_method == "ROUT (Robust + FDR)":
+        # 1. Fit (Robust) -> 2. Detect (ROUT Q) -> 3. Refit (SSE)
+        th_pre, _ = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=robust_loss)
+        y_pred_pre = polyauxic_fit_model(t_all, th_pre, func, n_phases)
         
+        mask = detect_outliers_rout_rigorous(y_all, y_pred_pre, Q=rout_q)
+        
+        if np.any(mask):
+            detected_outliers_t = t_all[mask]
+            detected_outliers_y = y_all[mask]
+            
+        t_clean = t_all[~mask]; y_clean = y_all[~mask]
+        
+        if len(y_clean) < len(th_pre) + 5: 
+             th, met = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss)
+        else:
+             th, met = fit_polyauxic(t_clean, y_clean, func, n_phases, loss_function=sse_loss)
+    
+    # ------------------ OUTPUT ------------------
     yi_hat, yf_hat, p_hat, r_hat, lam_hat = unpack_parameters(th, n_phases)
     
     row = {
@@ -392,34 +415,76 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
         row[f"r{j+1}"] = r_hat[j]
         row[f"lam{j+1}"] = lam_hat[j]
         
-    return row, y_matrix
+    return row, t_all, y_all, detected_outliers_t, detected_outliers_y
 
 def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
-                dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout, outlier_pct, rout_q):
+                dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, 
+                outlier_method, outlier_pct, rout_q):
     results = []
-    all_y_blocks = []
+    
+    # Storage for global plotting
+    # To save memory, we calculate mean/std incrementally or just stack everything if N is manageable.
+    # For N_tests=100 and points=50, stacking is fine.
+    all_t_flat = []
+    all_y_flat = []
+    all_out_t = []
+    all_out_y = []
+    
+    # We also need a matrix for the "Mean +/- Std" calculation.
+    # Logic: Since time points t_sim are fixed for generation, we can stack raw matrices from each test.
+    # Each test produces (n_rep, n_points). We stack them to get (n_tests * n_rep, n_points).
+    y_matrix_stack = []
+
     progress = st.progress(0.0)
     status_text = st.empty()
     
     with ThreadPoolExecutor() as executor:
         futures = {
             executor.submit(monte_carlo_single, i+1, func, ygen, t_sim, p_true, r_true, lam_true,
-                            dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout, outlier_pct, rout_q): i+1 
+                            dev_min, dev_max, n_rep, n_points, y_i, y_f, 
+                            outlier_method, outlier_pct, rout_q): i+1 
             for i in range(n_tests)
         }
         done = 0
         for fut in as_completed(futures):
-            row, y_mat = fut.result()
+            row, t_dat, y_dat, out_t, out_y = fut.result()
             results.append(row)
-            all_y_blocks.append(y_mat)
+            
+            # Aggregate data for plotting
+            all_t_flat.append(t_dat)
+            all_y_flat.append(y_dat)
+            
+            # For Mean/Std calculation (we only need the values corresponding to t_sim steps)
+            # t_dat is [t_sim, t_sim, t_sim], y_dat is [y_rep1, y_rep2, y_rep3]
+            # Reshape y_dat to (n_rep, n_points)
+            y_mat_local = y_dat.reshape(n_rep, n_points)
+            y_matrix_stack.append(y_mat_local)
+            
+            if len(out_t) > 0:
+                all_out_t.append(out_t)
+                all_out_y.append(out_y)
+                
             done += 1
             progress.progress(done / n_tests)
             status_text.text(f"Simulating Test {done}/{n_tests}...")
             
     status_text.text("Simulation finished successfully.")
     df = pd.DataFrame(results).sort_values("test")
-    all_y = np.vstack(all_y_blocks)
-    return df, np.mean(all_y, axis=0), np.std(all_y, axis=0)
+    
+    # Process aggregates for plotting
+    final_y_matrix = np.vstack(y_matrix_stack) # Shape: (Total_Reps, N_Points)
+    y_mean = np.mean(final_y_matrix, axis=0)
+    y_std = np.std(final_y_matrix, axis=0)
+    
+    # Flatten outlier lists
+    if len(all_out_t) > 0:
+        flat_out_t = np.concatenate(all_out_t)
+        flat_out_y = np.concatenate(all_out_y)
+    else:
+        flat_out_t = np.array([])
+        flat_out_y = np.array([])
+        
+    return df, y_mean, y_std, flat_out_t, flat_out_y, final_y_matrix.size
 
 # ------------------------------------------------------------
 # 5. STREAMLIT APP - UI
@@ -443,10 +508,8 @@ with st.expander("📘 Instruction Manual & Parameter Rules (ROUT Enabled)"):
     
     ### 🧪 Outlier & ROUT Logic
     * **Outlier %:** Injects artificial contaminants (3x-6x noise) into the data.
-    * **ROUT (Robust Outlier Removal):** 1. Performs a **Robust Fit** (Soft L1 Loss) insensitive to outliers.
-      2. Calculates **Robust Standard Deviation** (MAD).
-      3. Identifies points exceeding the False Discovery Rate (**Q**) threshold.
-      4. Re-fits using Least Squares on clean data.
+    * **ROUT-like (Simple):** Uses Standard LS Fit + MAD check (Threshold > 2.5 sigma).
+    * **ROUT (Rigorous):** Uses Robust Fit (Soft L1) + MAD check + False Discovery Rate (Q) threshold.
     """)
 
 # --- SIDEBAR INPUTS ---
@@ -523,10 +586,14 @@ n_tests = st.sidebar.number_input("Monte Carlo Tests", 1, 500, 20,
                                   help="Total number of independent simulations to run.")
 
 st.sidebar.markdown("### Robustness")
-use_rout = st.sidebar.checkbox("Enable ROUT (Outlier Removal)", value=False, 
-                               help="Enable Robust Regression followed by Outlier Removal.")
-rout_q = st.sidebar.slider("ROUT Q (Max FDR %)", 0.1, 10.0, 1.0, 
-                           help="Maximum desired False Discovery Rate. Lower values make detection stricter.")
+outlier_method = st.sidebar.selectbox("Outlier Removal Method", 
+                                      ["None", "ROUT-like (Simple MAD)", "ROUT (Robust + FDR)"],
+                                      help="Select the strategy to handle outliers before the final fit.")
+
+rout_q = 1.0
+if "ROUT (Robust" in outlier_method:
+    rout_q = st.sidebar.slider("ROUT Q (Max FDR %)", 0.1, 10.0, 1.0, 
+                               help="Maximum desired False Discovery Rate. Lower values make detection stricter.")
 
 # ------------------------------------------------------------
 # PREVIEW
@@ -582,9 +649,10 @@ else:
 # EXECUTION
 # ------------------------------------------------------------
 if run_btn and not validation_errors:
-    df, y_mean, y_std = monte_carlo(
+    df, y_mean, y_std, out_t, out_y, total_points = monte_carlo(
         func, ygen, t_sim, p_inputs, r_true, lam_true,
-        dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout, outlier_pct, rout_q
+        dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, 
+        outlier_method, outlier_pct, rout_q
     )
 
     dy = abs(y_f - y_i)
@@ -594,15 +662,25 @@ if run_btn and not validation_errors:
     st.markdown("## Simulation Results")
     
     # Graphs and Tables
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(t_sim, ygen, 'k--', lw=2, label="True Curve")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(t_sim, ygen, 'k-', lw=2, label="True Curve", zorder=3)
     ax.errorbar(t_sim, y_mean, yerr=y_std, fmt='o', color='royalblue', 
-                ecolor='lightblue', alpha=0.5, capsize=0, markersize=3, label="Simulated Mean ± Std")
+                ecolor='lightblue', alpha=0.6, capsize=0, markersize=3, label="Sim Mean ± Std", zorder=2)
+    
+    # PLOT DETECTED OUTLIERS
+    if len(out_t) > 0:
+        ax.scatter(out_t, out_y, marker='x', color='red', s=40, label=f"Detected Outliers", zorder=4)
+        
     ax.set_ylim(min(y_min_plot, -0.05), y_max_plot)
     ax.set_xlabel("Time"); ax.set_ylabel("y")
     ax.grid(True, ls=':'); ax.legend()
-    st.markdown("### Uncertainty Envelope (Global Mean ± Std)")
+    st.markdown("### Uncertainty Envelope & Outliers")
     st.pyplot(fig)
+    
+    # Metrics below graph
+    m1, m2 = st.columns(2)
+    m1.metric("Total Simulated Points", total_points)
+    m2.metric("Total Outliers Removed", len(out_t), delta_color="inverse")
 
     c1, c2 = st.columns(2)
     with c1:
