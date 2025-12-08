@@ -27,70 +27,117 @@
                     ++++        ++++                                                   @@@@@@@                          
                                                                                         @@@@@ 
 
-
-
 ================================================================================
-Polyauxic Robustness Simulator
+POLYAUXIC ROBUSTNESS SIMULATOR (v2.0)
 ================================================================================
 
 Author: Prof. Dr. Gustavo Mockaitis (GBMA/FEAGRI/UNICAMP)
+GitHub: https://github.com/gusmock/mono_polyauxic_kinetics/
 
-This Streamlit application performs Monte Carlo robustness testing
-for polyauxic Boltzmann (Eq. 31) and Gompertz (Eq. 32) models.
+DESCRIPTION:
+This Streamlit application performs rigorous Monte Carlo robustness testing for 
+Polyauxic Kinetic Models (Boltzmann and Gompertz). It simulates experimental 
+data generation with stochastic noise and outliers to evaluate the model's 
+ability to recover true physiological parameters under non-ideal conditions.
 
-The procedure follows exactly this sequence:
+================================================================================
+COMPUTATIONAL PIPELINE
+================================================================================
 
-1) The user selects:
-   - Model (Boltzmann or Gompertz)
-   - Number of phases
-   - True parameters for simulation (y_i, y_f; p_j, r_max_j, lambda_j)
-   - Noise range (absolute deviation min/max)
-   - Number of replicates
-   - Points per replicate
-   - Number of Monte Carlo tests
-   - Whether to apply ROUT-like outlier removal
+1. EXPERIMENTAL DESIGN & TIME DOMAIN (90/10 Rule):
+   - The user does NOT define an arbitrary simulation time.
+   - The algorithm calculates the 'Saturation Time' (t_sat) required for the 
+     system to reach 99% of the total transition (y_f).
+   - The total simulation timeline (t_total) is defined such that the growth 
+     phase occupies 90% of the data points, and the final plateau occupies 
+     the remaining 10%. This simulates optimized sampling.
 
-2) A **generating function** (noise-free curve) is computed once:
-       y_gen(t) = y_i + (y_f - y_i) * sum_j term_j(t)
+2. PARAMETER VALIDATION & GENERATION:
+   - Constraints Enforced: 
+     a) y_i < y_f (Strict Growth).
+     b) Sum(p_j) = 1.0 (Mass Balance).
+     c) lambda_1 < lambda_2 < ... < lambda_n (Sequential Adaptation).
+   - A noise-free generating function (y_gen) is created based on these "True" parameters.
 
-   Before this step, the following constraints are enforced:
-       - y_i < y_f
-       - p_j > 0 for all j and Σ p_j = 1 (they are renormalized)
-       - lambda_1 < lambda_2 < ... < lambda_n
+3. STOCHASTIC SIMULATION (MONTE CARLO):
+   - For each test (N_tests) and each replicate (N_reps):
+     a) Base Noise: A random scale is drawn from [Noise_Min, Noise_Max].
+     b) Volatility: A random jitter (0.8x to 1.2x) is applied to the scale.
+     c) Outlier Injection: A user-defined percentage of points receives a 
+        massive noise amplification (3x-6x sigma) to simulate gross experimental errors.
+     d) The final noisy dataset is: y_obs = y_gen + Noise_Realization.
 
-3) For each Monte Carlo test:
-   - Each replicate receives a new independent noise realization:
-         noise = scale * Normal(0,1)
-         where scale = dev_min + (dev_max - dev_min)*Uniform(0,1)
-   - All replicates are concatenated for fitting.
+4. INVERSE PROBLEM (FITTING ENGINE):
+   - Algorithm: Two-stage hybrid optimization.
+     a) Global: Differential Evolution (DE) prevents trapping in local minima.
+     b) Local: L-BFGS-B refines the solution for maximum precision.
+   - Parametrization: 'p_j' uses Softmax transformation to ensure 0 < p < 1 and sum(p)=1.
+   - Correction: The 'Frankenstein Parameter' bug is solved by sorting the 
+     (p, r, lambda) triplets based on lambda values before outputting, 
+     ensuring phase consistency.
 
-4) Fitting uses the same method as your main kinetic platform:
-   Differential Evolution → L-BFGS-B,
-   with softmax parametrization for p_j.
+5. STATISTICAL DIAGNOSTICS:
+   - Information Criteria: AIC, AICc, BIC (Model Selection).
+   - Goodness-of-Fit: SSE, R², Adjusted R².
+   - Robustness: Boxplots and stability traces of recovered parameters.
 
-5) Metrics recorded for each test:
-   - Fitted parameters (y_i, y_f, p_j, r_max_j, lambda_j)
-   - SSE, R², Adjusted R²
-   - AIC, AICc, BIC
+================================================================================
+PARAMETER REFERENCE GUIDE (Theoretical Basis)
+================================================================================
 
-6) Output:
-   - Graph showing the generating function (noise-free)
-   - Graph showing the generating function + global mean ± std of all
-     simulated datasets (all tests × all replicates)
-   - Table of all Monte Carlo results
-   - Criteria plots (AIC, AICc, BIC vs test)
-   - R² plots (R², R²_adj vs test)
-   - Four parameter plots arranged as 2×2:
-         (1) yi,yf    (2) p_j    (3) r_max_j    (4) lambda_j
+--- GLOBAL PARAMETERS ---
+* Model (Boltzmann vs. Gompertz):
+  - Importance: Defines the symmetry of the growth curve. Boltzmann is symmetric 
+    around the inflection point; Gompertz is asymmetric (inflection at ~37% of max), 
+    often better for biological systems.
+
+* Number of Phases (n):
+  - Importance: Represents the number of distinct metabolic regimes (e.g., 
+    diauxic growth on glucose + lactose = 2 phases).
+
+* y_i (Initial Asymptote) & y_f (Final Asymptote):
+  - Theoretical Basis: Define the boundary conditions of the system. y_f - y_i 
+    represents the total carrying capacity or total product yield.
+
+--- KINETIC PARAMETERS (Per Phase) ---
+* Proportion (p_j):
+  - Theoretical Basis: Represents the relative contribution of phase 'j' to the 
+    total growth. Physiologically linked to the yield coefficient of the specific 
+    substrate consumed in that phase. Must sum to 1.0.
+
+* Rate (r_max_j):
+  - Theoretical Basis: The maximum specific reaction rate (or growth rate) for 
+    phase 'j'. It reflects the enzyme kinetics velocity ($V_{max}$) or the 
+    organism's reproductive speed on that specific substrate.
+
+* Lag Time (lambda_j):
+  - Theoretical Basis: The time required for the system to adapt (synthesize 
+    enzymes) before phase 'j' begins exponentially. Critical for determining 
+    sequential substrate consumption order.
+
+--- SIMULATION SETTINGS ---
+* Noise Min/Max (Abs):
+  - Importance: Defines the baseline experimental error (pipetting, sensor noise). 
+    Used to generate the standard deviation ($\sigma$) for the Gaussian noise.
+
+* Outlier Probability (%):
+  - Importance: Simulates "gross errors" (artifacts, bubbles, contamination). 
+    Tests the algorithm's ability to ignore non-representative data points.
+
+* ROUT (Robust Regression):
+  - Theoretical Basis: A method based on False Discovery Rate (FDR). It detects 
+    points that are statistically unlikely to belong to the model distribution 
+    and excludes them from the final fit (Q coefficients).
+
 """
 import streamlit as st
+import streamlit.components.v1 as components  # <--- Faltava esta linha
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import differential_evolution, minimize, brentq
 from scipy.signal import find_peaks
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import streamlit.components.v1 as components
 
 # ------------------------------------------------------------
 # PAGE CONFIGURATION
@@ -333,25 +380,16 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     t_all_list = []; y_all_list = []
     y_matrix = np.zeros((n_rep, n_points))
     
-    # Calculate number of bad points based on percentage
     n_outliers = int(n_points * (outlier_pct / 100.0))
     
     for rep in range(n_rep):
-        # 1. Base Scale (Noise floor defined by user)
         base_scales = dev_min + (dev_max - dev_min) * np.random.rand(n_points)
-        
-        # 2. Volatility Mask (Initially Low Jitter)
-        # Normal points vary slightly (0.8x to 1.2x the defined sigma)
         volatility = np.random.uniform(0.8, 1.2, n_points)
         
-        # 3. Inject Outliers (High Volatility)
         if n_outliers > 0:
-            # Pick random indices to corrupt
             bad_indices = np.random.choice(n_points, n_outliers, replace=False)
-            # Apply massive multiplier (3x to 6x sigma) to these points
             volatility[bad_indices] = np.random.uniform(3.0, 6.0, n_outliers)
         
-        # 4. Final Noise Calculation
         final_scales = base_scales * volatility
         noise = final_scales * np.random.normal(0, 1, n_points)
         
@@ -375,7 +413,6 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     else:
         th, met = fit_polyauxic(t_all, y_all, func, n_phases)
         
-    # Unpack with sorting to match rows correctly
     yi_hat, yf_hat, p_hat, r_hat, lam_hat = unpack_parameters(th, n_phases)
     
     row = {
