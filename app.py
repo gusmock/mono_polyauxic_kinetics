@@ -92,7 +92,7 @@ from scipy.signal import find_peaks
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ------------------------------------------------------------
-# PAGE CONFIGURATION (Must be the first Streamlit command)
+# PAGE CONFIGURATION
 # ------------------------------------------------------------
 st.set_page_config(
     page_title="Polyauxic Robustness Simulator",
@@ -118,7 +118,6 @@ def boltzmann_term(t, y_i, y_f, p_j, r_j, lam_j):
     t = np.asarray(t)
     dy = y_f - y_i if abs(y_f - y_i) > 1e-12 else 1e-12
     p = max(p_j, 1e-12)
-    # Avoid overflow/division by zero
     expo = (4 * r_j * (lam_j - t)) / (dy * p) + 2
     expo = np.clip(expo, -500, 500) 
     return p / (1 + np.exp(expo))
@@ -136,7 +135,6 @@ def gompertz_term(t, y_i, y_f, p_j, r_j, lam_j):
 # ------------------------------------------------------------
 def polyauxic_components(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
     p_vec = np.asarray(p_vec, dtype=float)
-    # Normalize proportions if invalid
     if np.sum(p_vec) <= 0:
         p_vec = np.ones_like(p_vec) / len(p_vec)
     else:
@@ -166,12 +164,9 @@ def polyauxic_fit_model(t, theta, func, n_phases):
     z = theta[2 : 2 + n_phases]
     r = theta[2 + n_phases : 2 + 2*n_phases]
     lam = theta[2 + 2*n_phases : 2 + 3*n_phases]
-    
-    # Softmax for p
     z_shift = z - np.max(z)
     expz = np.exp(z_shift)
     p = expz / np.sum(expz)
-    
     sum_terms = np.zeros_like(t)
     for j in range(n_phases):
         sum_terms += func(t, y_i, y_f, p[j], r[j], lam[j])
@@ -179,7 +174,6 @@ def polyauxic_fit_model(t, theta, func, n_phases):
 
 def sse_loss(theta, t, y, func, n_phases):
     y_pred = polyauxic_fit_model(t, theta, func, n_phases)
-    # Penalty for extreme negative predictions
     if np.any(y_pred < -0.1*np.max(np.abs(y))): return 1e12
     return np.sum((y - y_pred)**2)
 
@@ -196,9 +190,8 @@ def smart_guess(t, y, n_phases):
         tspan = t.max() - t.min() if t.max() > t.min() else 1
         guesses.append((t.min() + tspan*(len(guesses)+1)/(n_phases+1), (y.max()-y.min())/(tspan/n_phases)))
     guesses = sorted(guesses, key=lambda x: x[0])
-    
     theta0 = np.zeros(2 + 3*n_phases)
-    theta0[0] = max(0, y.min()) # Ensure non-negative start guess
+    theta0[0] = max(0, y.min())
     theta0[1] = y.max()
     for i,(lam,r) in enumerate(guesses):
         theta0[2 + n_phases + i] = r
@@ -218,10 +211,6 @@ def fit_polyauxic(t_all, y_all, func, n_phases):
     th0[2+n_phases:2+2*n_phases] = theta0[2+n_phases:2+2*n_phases]*(t_scale/y_scale)
     th0[2+2*n_phases:2+3*n_phases] = theta0[2+2*n_phases:2+3*n_phases]/t_scale
     
-    # ---------------------------------------------------------
-    # CONSTRAINT: yi >= 0
-    # The lower bound for the first parameter (yi normalized) is set to 0.0
-    # ---------------------------------------------------------
     bounds = [(0.0, 1.5), (0, 2)] + [(-10,10)]*n_phases + [(0,500)]*n_phases + [(-0.1,1.2)]*n_phases
     
     popsize=20
@@ -316,7 +305,7 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
 st.markdown("<h1 style='text-align: center;'>Polyauxic Robustness Simulator</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>Robustness analysis tool for polyauxic kinetic models via Monte Carlo</p>", unsafe_allow_html=True)
 
-# --- INSTRUCTIONS GUIDE (Dropdown) ---
+# --- INSTRUCTIONS GUIDE ---
 with st.expander("📘 Parameter Guide & Instructions (Click to open)"):
     st.markdown("""
     This simulator allows testing the capability of **Boltzmann** and **Gompertz** models to recover kinetic parameters from noisy data.
@@ -490,31 +479,43 @@ if st.button("🚀 Run Monte Carlo Simulation", type="primary"):
 
     # 4. Behavior per Test (Line Plots)
     st.markdown("### 2. Parameter Behavior per Test (Stability)")
-    st.caption("X-Axis = Monte Carlo Test Index | Y-Axis = Fitted Value")
+    st.caption("Solid lines: Fitted values per test | Dashed lines: True input values used in generation")
     
-    fig2, axs2 = plt.subplots(2, 2, figsize=(12, 8))
+    # Increased figsize to avoid overlapping
+    fig2, axs2 = plt.subplots(2, 2, figsize=(14, 10))
     
-    # Yi and Yf
-    axs2[0,0].plot(df["test"], df["yi_hat"], label="yi_hat", marker='.')
-    axs2[0,0].plot(df["test"], df["yf_hat"], label="yf_hat", marker='.')
-    axs2[0,0].set_title("yi and yf")
+    # A) yi and yf
+    axs2[0,0].plot(df["test"], df["yi_hat"], label="Fitted yi", marker='.', color='C0')
+    axs2[0,0].axhline(y_i, color='C0', linestyle='--', alpha=0.6, label="True yi")
+    
+    axs2[0,0].plot(df["test"], df["yf_hat"], label="Fitted yf", marker='.', color='C1')
+    axs2[0,0].axhline(y_f, color='C1', linestyle='--', alpha=0.6, label="True yf")
+    
+    axs2[0,0].set_title("Start (yi) & End (yf)")
     axs2[0,0].legend()
     
-    # Proportions
+    # B) Proportions
     for j in range(n_phases):
-        axs2[0,1].plot(df["test"], df[f"p{j+1}"], label=f"p{j+1}", marker='.')
+        line, = axs2[0,1].plot(df["test"], df[f"p{j+1}"], label=f"p{j+1}", marker='.')
+        # Add True Value line matching the color of the fitted line
+        axs2[0,1].axhline(p_norm_vec[j], color=line.get_color(), linestyle='--', alpha=0.6)
+        
     axs2[0,1].set_title("Proportions (p)")
     axs2[0,1].legend()
 
-    # Rates
+    # C) Rates
     for j in range(n_phases):
-        axs2[1,0].plot(df["test"], df[f"r{j+1}"], label=f"r{j+1}", marker='.')
+        line, = axs2[1,0].plot(df["test"], df[f"r{j+1}"], label=f"r{j+1}", marker='.')
+        axs2[1,0].axhline(r_true[j], color=line.get_color(), linestyle='--', alpha=0.6)
+        
     axs2[1,0].set_title("Rates (r_max)")
     axs2[1,0].legend()
 
-    # Lags
+    # D) Lags
     for j in range(n_phases):
-        axs2[1,1].plot(df["test"], df[f"lam{j+1}"], label=f"λ{j+1}", marker='.')
+        line, = axs2[1,1].plot(df["test"], df[f"lam{j+1}"], label=f"λ{j+1}", marker='.')
+        axs2[1,1].axhline(lam_true[j], color=line.get_color(), linestyle='--', alpha=0.6)
+        
     axs2[1,1].set_title("Lags (λ)")
     axs2[1,1].legend()
 
@@ -522,6 +523,8 @@ if st.button("🚀 Run Monte Carlo Simulation", type="primary"):
         ax.grid(True, ls=':', alpha=0.5)
         ax.set_xlabel("Test Index")
     
+    # Fix layout superposition
+    plt.tight_layout()
     st.pyplot(fig2)
 
 # ------------------------------------------------------------
