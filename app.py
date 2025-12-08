@@ -705,31 +705,72 @@ if run_btn and not validation_errors:
 # ------------------------------------------------------------
 st.markdown("---")
 
-footer_html = """
+# Link direto para sua foto do GitHub
+profile_pic_url = "https://github.com/gusmock.png" 
+
+footer_html = f"""
 <style>
-    .badge-container {
+    .footer-container {{
+        width: 100%;
+        font-family: sans-serif;
+        color: #444;
+        margin-bottom: 20px;
+    }}
+    
+    /* Layout Flex para Foto + Texto */
+    .profile-header {{
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 15px;
+        margin-bottom: 15px;
+    }}
+    
+    /* Estilo da Foto */
+    .profile-img {{
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;       /* Deixa redonda */
+        object-fit: cover;
+        border: 2px solid #e0e0e0; /* Borda sutil */
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }}
+    
+    .profile-info h4 {{
+        margin: 0;
+        font-size: 1.1rem;
+        color: #222;
+    }}
+    
+    .profile-info p {{
+        margin: 2px 0 0 0;
+        font-size: 0.9rem;
+        color: #666;
+    }}
+
+    .badge-container {{
         display: flex;
         flex-wrap: wrap;
         justify-content: center;
         gap: 10px;
-        margin-top: 10px;
-    }
-    .footer-text {
-        width: 100%;
-        text-align: center;
-        font-family: sans-serif;
-        color: #444;
-        margin-bottom: 20px;
-    }
-    img {
+        margin-top: 15px;
+    }}
+    
+    .badge-container img {{
         height: 28px;
-    }
+    }}
 </style>
 
-<div class="footer-text">
-    <h4 style="margin-bottom: 5px; margin-top: 0;">Development: Prof. Dr. Gustavo Mockaitis</h4>
-    <p style="margin-top: 0; font-size: 1.5em;">GBMA / FEAGRI / UNICAMP</p>
-    <p style="margin-top: 0; font-size: 0.9em;">Interdisciplinary Research Group on Biotechnology Applied to the Agriculture and the Environment, School of Agricultural Engineering, State University of Campinas, Campinas, São Paulo, 13083-875, Brazil</p>
+<div class="footer-container">
+    
+    <div class="profile-header">
+        <img src="{profile_pic_url}" class="profile-img" alt="Gustavo Mockaitis">
+        <div class="profile-info">
+            <h3>Development: Prof. Dr. Gustavo Mockaitis</h4>
+            <h4>GBMA / FEAGRI / UNICAMP</h4>
+            <p>Interdisciplinary Research Group on Biotechnology Applied to the Agriculture and the Environment, School of Agricultural Engineering, State University of Campinas, Campinas, São Paulo, 13083-875, Brazil</p>
+        </div>
+    </div>
 
     <div class="badge-container">
         <a href="https://arxiv.org/abs/2507.05960" target="_blank">
@@ -763,4 +804,4 @@ footer_html = """
 </div>
 """
 
-st_components.html(footer_html, height=350, scrolling=False)
+st_components.html(footer_html, height=280, scrolling=False)
