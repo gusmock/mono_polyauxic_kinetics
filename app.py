@@ -27,7 +27,7 @@
                     ++++        ++++                                                   @@@@@@@                          
                                                                                         @@@@@ 
 ================================================================================
-POLYAUXIC ROBUSTNESS SIMULATOR (v2.1)
+POLYAUXIC ROBUSTNESS SIMULATOR (v3.0 - ROUT Enabled)
 ================================================================================
 
 Author: Prof. Dr. Gustavo Mockaitis (GBMA/FEAGRI/UNICAMP)
@@ -35,98 +35,41 @@ GitHub: https://github.com/gusmock/mono_polyauxic_kinetics/
 
 DESCRIPTION:
 This Streamlit application performs rigorous Monte Carlo robustness testing for 
-Polyauxic Kinetic Models (Boltzmann and Gompertz). It simulates experimental 
-data generation with stochastic noise and outliers to evaluate the model's 
-ability to recover true physiological parameters under non-ideal conditions.
+Polyauxic Kinetic Models. It incorporates the ROUT method (Robust regression 
+and Outlier removal) based on Motulsky & Brown (2006) to handle outliers 
+scientifically using False Discovery Rate (FDR).
+
+REFERENCES:
+1. Motulsky, H. J., & Brown, R. E. (2006). Detecting outliers when fitting 
+   data with nonlinear regression – a new method based on robust nonlinear 
+   regression and the false discovery rate. BMC Bioinformatics, 7, 123.
+   https://doi.org/10.1186/1471-2105-7-123
+
+2. Rousseeuw, P. J., & Croux, C. (1993). Alternatives to the Median Absolute 
+   Deviation. Journal of the American Statistical Association.
 
 ================================================================================
-COMPUTATIONAL PIPELINE
+PIPELINE WITH ROUT
 ================================================================================
 
-1. EXPERIMENTAL DESIGN & TIME DOMAIN (90/10 Rule):
-   - The user does NOT define an arbitrary simulation time.
-   - The algorithm calculates the 'Saturation Time' (t_sat) required for the 
-     system to reach 99% of the total transition (y_f).
-   - The total simulation timeline (t_total) is defined such that the growth 
-     phase occupies 90% of the data points, and the final plateau occupies 
-     the remaining 10%. This simulates optimized sampling.
+1. DATA GENERATION:
+   - True Curve + Heteroscedastic Noise + Stochastic Outliers (contaminants).
 
-2. PARAMETER VALIDATION & GENERATION:
-   - Constraints Enforced: 
-     a) y_i < y_f (Strict Growth).
-     b) Sum(p_j) = 1.0 (Mass Balance).
-     c) lambda_1 < lambda_2 < ... < lambda_n (Sequential Adaptation).
-   - A noise-free generating function (y_gen) is created based on these "True" parameters.
+2. ROBUST FIT (Step A of ROUT):
+   - The model is fitted using a Robust Loss function (Soft L1/Lorentzian).
+   - This ensures the curve ignores outliers and follows the main trend.
 
-3. STOCHASTIC SIMULATION (MONTE CARLO):
-   - For each test (N_tests) and each replicate (N_reps):
-     a) Base Noise: A random scale is drawn from [Noise_Min, Noise_Max].
-     b) Volatility: A random jitter (0.8x to 1.2x) is applied to the scale.
-     c) Outlier Injection: A user-defined percentage of points receives a 
-        massive noise amplification (3x-6x sigma) to simulate gross experimental errors.
-     d) The final noisy dataset is: y_obs = y_gen + Noise_Realization.
+3. OUTLIER DETECTION (Step B of ROUT):
+   - Absolute residuals are calculated from the Robust Fit.
+   - The Robust Standard Deviation of Residuals (RSDR) is estimated via MAD.
+   - A critical threshold is calculated based on the user-defined Q (FDR) 
+     and the sample size N, using the t-distribution.
+   - Points exceeding this threshold are flagged.
 
-4. INVERSE PROBLEM (FITTING ENGINE):
-   - Algorithm: Two-stage hybrid optimization.
-     a) Global: Differential Evolution (DE) prevents trapping in local minima.
-     b) Local: L-BFGS-B refines the solution for maximum precision.
-   - Parametrization: 'p_j' uses Softmax transformation to ensure 0 < p < 1 and sum(p)=1.
-   - Correction: The 'Frankenstein Parameter' bug is solved by sorting the 
-     (p, r, lambda) triplets based on lambda values before outputting, 
-     ensuring phase consistency.
-
-5. STATISTICAL DIAGNOSTICS:
-   - Information Criteria: AIC, AICc, BIC (Model Selection).
-   - Goodness-of-Fit: SSE, R², Adjusted R².
-   - Robustness: Boxplots and stability traces of recovered parameters.
-
-================================================================================
-PARAMETER REFERENCE GUIDE (Theoretical Basis)
-================================================================================
-
---- GLOBAL PARAMETERS ---
-* Model (Boltzmann vs. Gompertz):
-  - Importance: Defines the symmetry of the growth curve. Boltzmann is symmetric 
-    around the inflection point; Gompertz is asymmetric (inflection at ~37% of max), 
-    often better for biological systems.
-
-* Number of Phases (n):
-  - Importance: Represents the number of distinct metabolic regimes (e.g., 
-    diauxic growth on glucose + lactose = 2 phases).
-
-* y_i (Initial Asymptote) & y_f (Final Asymptote):
-  - Theoretical Basis: Define the boundary conditions of the system. y_f - y_i 
-    represents the total carrying capacity or total product yield.
-
---- KINETIC PARAMETERS (Per Phase) ---
-* Proportion (p_j):
-  - Theoretical Basis: Represents the relative contribution of phase 'j' to the 
-    total growth. Physiologically linked to the yield coefficient of the specific 
-    substrate consumed in that phase. Must sum to 1.0.
-
-* Rate (r_max_j):
-  - Theoretical Basis: The maximum specific reaction rate (or growth rate) for 
-    phase 'j'. It reflects the enzyme kinetics velocity (V_max) or the 
-    organism's reproductive speed on that specific substrate.
-
-* Lag Time (lambda_j):
-  - Theoretical Basis: The time required for the system to adapt (synthesize 
-    enzymes) before phase 'j' begins exponentially. Critical for determining 
-    sequential substrate consumption order.
-
---- SIMULATION SETTINGS ---
-* Noise Min/Max (Abs):
-  - Importance: Defines the baseline experimental error (pipetting, sensor noise). 
-    Used to generate the standard deviation (sigma) for the Gaussian noise.
-
-* Outlier Probability (%):
-  - Importance: Simulates "gross errors" (artifacts, bubbles, contamination). 
-    Tests the algorithm's ability to ignore non-representative data points.
-
-* ROUT (Robust Regression):
-  - Theoretical Basis: A method based on False Discovery Rate (FDR). It detects 
-    points that are statistically unlikely to belong to the model distribution 
-    and excludes them from the final fit (Q coefficients).
+4. FINAL FIT (Step C):
+   - The flagged points are removed.
+   - A standard Least Squares (SSE) fit is performed on the "clean" data 
+     to obtain unbiased parameters and valid confidence intervals.
 """
 
 import streamlit as st
@@ -136,6 +79,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import differential_evolution, minimize, brentq
 from scipy.signal import find_peaks
+from scipy.stats import t as t_dist # Required for ROUT critical value
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ------------------------------------------------------------
@@ -148,19 +92,7 @@ st.set_page_config(
 )
 
 # ------------------------------------------------------------
-# 0. HELPER FUNCTIONS & OUTLIER DETECTION
-# ------------------------------------------------------------
-def detect_outliers(y_true, y_pred):
-    """Detects outliers using MAD (Median Absolute Deviation)."""
-    residuals = y_true - y_pred
-    med = np.median(residuals)
-    mad = np.median(np.abs(residuals - med))
-    sigma = 1.4826 * mad if mad > 1e-12 else 1e-12
-    z = np.abs(residuals - med) / sigma
-    return z > 2.5
-
-# ------------------------------------------------------------
-# 1. MODEL EQUATIONS
+# 0. MODEL EQUATIONS
 # ------------------------------------------------------------
 def boltzmann_term(t, y_i, y_f, p_j, r_j, lam_j):
     t = np.asarray(t)
@@ -187,7 +119,7 @@ def gompertz_term(t, y_i, y_f, p_j, r_j, lam_j):
     return p * np.exp(-np.exp(expo))
 
 # ------------------------------------------------------------
-# 2. GENERATING FUNCTIONS & TIME CALCULATION
+# 1. GENERATING FUNCTIONS
 # ------------------------------------------------------------
 def polyauxic_func_normalized(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
     sum_terms = 0.0
@@ -196,7 +128,6 @@ def polyauxic_func_normalized(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
     return sum_terms
 
 def polyauxic_components(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
-    # Sort parameters for visualization consistency
     idx = np.argsort(lam_vec)
     lam_vec = np.array(lam_vec)[idx]
     p_vec = np.array(p_vec)[idx]
@@ -230,37 +161,24 @@ def find_saturation_time(y_i, y_f, p_vec, r_vec, lam_vec, func):
     except:
         t_99 = t_end 
 
-    # 10% Plateau Rule (t_99 is 90% of the experiment)
-    t_total = t_99 / 0.90
+    t_total = t_99 / 0.90 # 10% Plateau
     return t_total, t_99
 
 # ------------------------------------------------------------
-# 3. FITTING ENGINE (FIXED LOGIC)
+# 2. FITTING ENGINE & LOSS FUNCTIONS
 # ------------------------------------------------------------
 
 def unpack_parameters(theta, n_phases):
-    """
-    Decodes parameters and SORTS TRIPLETS (p, r, lam) based on lambda.
-    """
     y_i = theta[0]
     y_f = theta[1]
-    
-    # 1. Softmax for Proportions
     z = theta[2 : 2 + n_phases]
     z_shift = z - np.max(z)
     expz = np.exp(z_shift)
     p_raw = expz / np.sum(expz)
-    
-    # 2. Rates (Abs)
     r_raw = np.abs(theta[2 + n_phases : 2 + 2*n_phases])
-    
-    # 3. Lambdas
     lam_raw = theta[2 + 2*n_phases : 2 + 3*n_phases]
     
-    # --- CRITICAL FIX: Sort indices based on time (lambda) ---
     sort_idx = np.argsort(lam_raw)
-    
-    # Apply sorting to ALL phase-related vectors
     lam = lam_raw[sort_idx]
     p = p_raw[sort_idx]
     r = r_raw[sort_idx]
@@ -269,23 +187,29 @@ def unpack_parameters(theta, n_phases):
 
 def polyauxic_fit_model(t, theta, func, n_phases):
     y_i, y_f, p, r, lam = unpack_parameters(theta, n_phases)
-    
     sum_terms = np.zeros_like(t)
     for j in range(n_phases):
         sum_terms += func(t, y_i, y_f, p[j], r[j], lam[j])
-        
     return y_i + (y_f - y_i) * sum_terms
 
+# --- LOSS FUNCTION 1: SSE (For Final Fit) ---
 def sse_loss(theta, t, y, func, n_phases):
-    # Constraint: yi < yf
     if theta[0] >= theta[1]: return 1e12 
-
     y_pred = polyauxic_fit_model(t, theta, func, n_phases)
-    
-    # Constraint: Non-negative physics (soft penalty)
+    if np.any(y_pred < -0.1 * np.max(np.abs(y))): return 1e12
+    return np.sum((y - y_pred)**2)
+
+# --- LOSS FUNCTION 2: SOFT L1 (For Robust Fit/ROUT) ---
+def robust_loss(theta, t, y, func, n_phases):
+    if theta[0] >= theta[1]: return 1e12 
+    y_pred = polyauxic_fit_model(t, theta, func, n_phases)
     if np.any(y_pred < -0.1 * np.max(np.abs(y))): return 1e12
     
-    return np.sum((y - y_pred)**2)
+    residuals = y - y_pred
+    # Soft L1 (Charbonnier) approximation creates a linear tail for outliers
+    # preventing them from dragging the fit.
+    loss = 2 * (np.sqrt(1 + residuals**2) - 1)
+    return np.sum(loss)
 
 def smart_guess(t, y, n_phases):
     dy = np.gradient(y, t)
@@ -304,13 +228,12 @@ def smart_guess(t, y, n_phases):
     theta0 = np.zeros(2 + 3*n_phases)
     theta0[0] = max(0, y.min()) 
     theta0[1] = max(y.max(), y.min() + 0.1)
-    
     for i,(lam_guess, r_guess) in enumerate(guesses):
         theta0[2 + n_phases + i] = r_guess
         theta0[2 + 2*n_phases + i] = lam_guess
     return theta0
 
-def fit_polyauxic(t_all, y_all, func, n_phases):
+def fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss):
     t_scale = np.max(t_all) if np.max(t_all)>0 else 1
     y_scale = np.max(np.abs(y_all)) if np.max(np.abs(y_all))>0 else 1
     
@@ -318,7 +241,6 @@ def fit_polyauxic(t_all, y_all, func, n_phases):
     y_n = y_all / y_scale
     
     theta0 = smart_guess(t_all, y_all, n_phases)
-    
     th0 = np.zeros_like(theta0)
     th0[0] = theta0[0]/y_scale
     th0[1] = theta0[1]/y_scale
@@ -331,22 +253,20 @@ def fit_polyauxic(t_all, y_all, func, n_phases):
     popsize = 20
     init_pop = np.tile(th0,(popsize,1))*(np.random.uniform(0.8,1.2,(popsize,len(th0))))
     
-    # 1. Global Optimization (DE)
+    # Global Search
     res_de = differential_evolution(
-        sse_loss, bounds, args=(t_n, y_n, func, n_phases),
+        loss_function, bounds, args=(t_n, y_n, func, n_phases),
         maxiter=1000, popsize=popsize, init=init_pop, 
         strategy="best1bin", polish=True, tol=1e-6
     )
     
-    # 2. Local Refinement (L-BFGS-B)
+    # Local Refinement
     res = minimize(
-        sse_loss, res_de.x, args=(t_n, y_n, func, n_phases), 
+        loss_function, res_de.x, args=(t_n, y_n, func, n_phases), 
         method="L-BFGS-B", bounds=bounds, tol=1e-10
     )
     
     th_n = res.x
-    
-    # Scaling back
     th = np.zeros_like(th_n)
     th[0] = th_n[0] * y_scale
     th[1] = th_n[1] * y_scale
@@ -354,6 +274,7 @@ def fit_polyauxic(t_all, y_all, func, n_phases):
     th[2+n_phases:2+2*n_phases] = th_n[2+n_phases:2+2*n_phases] * (y_scale/t_scale)
     th[2+2*n_phases:2+3*n_phases] = th_n[2+2*n_phases:2+3*n_phases] * t_scale
     
+    # Metrics are ALWAYS calculated with SSE for comparability
     y_pred = polyauxic_fit_model(t_all, th, func, n_phases)
     sse = np.sum((y_all - y_pred)**2)
     sst = np.sum((y_all - np.mean(y_all))**2)
@@ -371,10 +292,45 @@ def fit_polyauxic(t_all, y_all, func, n_phases):
     return th, {"SSE":sse,"R2":r2,"R2_adj":r2adj,"AIC":aic,"AICc":aicc,"BIC":bic}
 
 # ------------------------------------------------------------
-# 4. MONTE CARLO ENGINE (COM CONTROLE DE OUTLIERS)
+# 3. ROUT OUTLIER DETECTION (Motulsky & Brown, 2006 Implementation)
+# ------------------------------------------------------------
+def detect_outliers_rout(y_true, y_pred, Q=1.0):
+    """
+    Detects outliers based on ROUT method logic.
+    Q: Maximum desired False Discovery Rate (percentage).
+    """
+    residuals = y_true - y_pred
+    abs_res = np.abs(residuals)
+    
+    # 1. Robust Standard Deviation (RSDR) using MAD
+    # 1.4826 is the correction factor to make MAD consistent with Gaussian SD
+    med_res = np.median(abs_res)
+    rsdr = 1.4826 * med_res if med_res > 1e-12 else 1e-12
+    
+    # 2. Normalize Residuals (t-scores)
+    t_scores = abs_res / rsdr
+    
+    # 3. Calculate Critical Threshold based on Q
+    # We approximate the critical t-value using the t-distribution
+    # such that the probability of a value exceeding it is related to Q.
+    # Degrees of freedom = N - 1 (approx)
+    n = len(y_true)
+    alpha = (Q / 100.0) # FDR probability
+    
+    # Critical value: Two-tailed t-test threshold
+    # Note: In strict ROUT this is iterative, here we use a single-step robust approximation
+    # which is computationally efficient for MC.
+    critical_t = t_dist.ppf(1 - (alpha / 2), df=n-1)
+    
+    # 4. Flag Outliers
+    mask = t_scores > critical_t
+    return mask
+
+# ------------------------------------------------------------
+# 4. MONTE CARLO ENGINE
 # ------------------------------------------------------------
 def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
-                       dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout, outlier_pct):
+                       dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout, outlier_pct, rout_q):
     n_phases = len(p_true)
     t_all_list = []; y_all_list = []
     y_matrix = np.zeros((n_rep, n_points))
@@ -387,6 +343,7 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
         
         if n_outliers > 0:
             bad_indices = np.random.choice(n_points, n_outliers, replace=False)
+            # Massive noise injection for outliers
             volatility[bad_indices] = np.random.uniform(3.0, 6.0, n_outliers)
         
         final_scales = base_scales * volatility
@@ -399,31 +356,35 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     t_all = np.concatenate(t_all_list)
     y_all = np.concatenate(y_all_list)
     
+    # --- ROUT LOGIC IMPLEMENTATION ---
     if use_rout:
-        th_pre, _ = fit_polyauxic(t_all, y_all, func, n_phases)
-        y_pred_pre = polyauxic_fit_model(t_all, th_pre, func, n_phases)
-        mask = detect_outliers(y_all, y_pred_pre)
-        t_clean = t_all[~mask]; y_clean = y_all[~mask]
+        # Step A: Robust Fit (Lorentzian/Soft L1)
+        # This prevents outliers from distorting the baseline for detection
+        th_pre, _ = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=robust_loss)
         
-        if len(y_clean) < len(th_pre) + 5: 
-             th, met = fit_polyauxic(t_all, y_all, func, n_phases)
+        # Step B: Detection using ROUT criteria
+        y_pred_pre = polyauxic_fit_model(t_all, th_pre, func, n_phases)
+        mask = detect_outliers_rout(y_all, y_pred_pre, Q=rout_q)
+        
+        t_clean = t_all[~mask]
+        y_clean = y_all[~mask]
+        
+        # Step C: Final Least Squares Fit on Clean Data
+        if len(y_clean) < len(th_pre) + 5: # Fallback if too many points removed
+             th, met = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss)
         else:
-             th, met = fit_polyauxic(t_clean, y_clean, func, n_phases)
+             th, met = fit_polyauxic(t_clean, y_clean, func, n_phases, loss_function=sse_loss)
     else:
-        th, met = fit_polyauxic(t_all, y_all, func, n_phases)
+        # Standard LS Fit (No filtering)
+        th, met = fit_polyauxic(t_all, y_all, func, n_phases, loss_function=sse_loss)
         
     yi_hat, yf_hat, p_hat, r_hat, lam_hat = unpack_parameters(th, n_phases)
     
     row = {
         "test": test_idx, 
-        "yi_hat": yi_hat, 
-        "yf_hat": yf_hat,
-        "SSE": met["SSE"],
-        "R2": met["R2"],
-        "R2_adj": met["R2_adj"],
-        "AIC": met["AIC"],
-        "AICc": met["AICc"],
-        "BIC": met["BIC"]
+        "yi_hat": yi_hat, "yf_hat": yf_hat,
+        "SSE": met["SSE"], "R2": met["R2"], "R2_adj": met["R2_adj"],
+        "AIC": met["AIC"], "AICc": met["AICc"], "BIC": met["BIC"]
     }
     
     for j in range(n_phases):
@@ -434,7 +395,7 @@ def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
     return row, y_matrix
 
 def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
-                dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout, outlier_pct):
+                dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout, outlier_pct, rout_q):
     results = []
     all_y_blocks = []
     progress = st.progress(0.0)
@@ -443,7 +404,7 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
     with ThreadPoolExecutor() as executor:
         futures = {
             executor.submit(monte_carlo_single, i+1, func, ygen, t_sim, p_true, r_true, lam_true,
-                            dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout, outlier_pct): i+1 
+                            dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout, outlier_pct, rout_q): i+1 
             for i in range(n_tests)
         }
         done = 0
@@ -466,7 +427,7 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
 
 st.markdown("<h1 style='text-align: center;'>Polyauxic Robustness Simulator</h1>", unsafe_allow_html=True)
 
-with st.expander("📘 Instruction Manual & Parameter Rules (Fixed)"):
+with st.expander("📘 Instruction Manual & Parameter Rules (ROUT Enabled)"):
     st.markdown("""
     This simulator validates Polyauxic Kinetic Models under strict experimental design constraints.
     
@@ -480,8 +441,12 @@ with st.expander("📘 Instruction Manual & Parameter Rules (Fixed)"):
     * **Sequence:** Lag times ($\lambda$) are mathematically **sorted triplets**. 
     * **Correction:** The fitting engine now correctly links $p$ and $r$ to their sorted $\lambda$.
     
-    ### 🧪 Outlier Simulation
-    * **Outlier %:** A specific percentage of points (chosen randomly) will have their noise volatility multiplied by 3x-6x, simulating gross experimental errors.
+    ### 🧪 Outlier & ROUT Logic
+    * **Outlier %:** Injects artificial contaminants (3x-6x noise) into the data.
+    * **ROUT (Robust Outlier Removal):** 1. Performs a **Robust Fit** (Soft L1 Loss) insensitive to outliers.
+      2. Calculates **Robust Standard Deviation** (MAD).
+      3. Identifies points exceeding the False Discovery Rate (**Q**) threshold.
+      4. Re-fits using Least Squares on clean data.
     """)
 
 # --- SIDEBAR INPUTS ---
@@ -539,7 +504,7 @@ else:
     tmax = 10.0; t99 = 9.0
 
 # ------------------------------------------------------------
-# NOISE
+# NOISE & ROUT
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Noise & Execution")
@@ -556,8 +521,12 @@ n_points = st.sidebar.number_input("Points/Replicate", 10, 500, 50,
                                    help="Number of data points collected in each replicate.")
 n_tests = st.sidebar.number_input("Monte Carlo Tests", 1, 500, 20, 
                                   help="Total number of independent simulations to run.")
-use_rout = st.sidebar.checkbox("Remove Outliers (ROUT)", value=False, 
-                               help="Enable Robust Regression and Outlier Removal (Q=1%).")
+
+st.sidebar.markdown("### Robustness")
+use_rout = st.sidebar.checkbox("Enable ROUT (Outlier Removal)", value=False, 
+                               help="Enable Robust Regression followed by Outlier Removal.")
+rout_q = st.sidebar.slider("ROUT Q (Max FDR %)", 0.1, 10.0, 1.0, 
+                           help="Maximum desired False Discovery Rate. Lower values make detection stricter.")
 
 # ------------------------------------------------------------
 # PREVIEW
@@ -615,7 +584,7 @@ else:
 if run_btn and not validation_errors:
     df, y_mean, y_std = monte_carlo(
         func, ygen, t_sim, p_inputs, r_true, lam_true,
-        dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout, outlier_pct
+        dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout, outlier_pct, rout_q
     )
 
     dy = abs(y_f - y_i)
@@ -705,72 +674,30 @@ if run_btn and not validation_errors:
 # ------------------------------------------------------------
 st.markdown("---")
 
-# Link direto para sua foto do GitHub
-profile_pic_url = "https://github.com/gusmock.png" 
-
-footer_html = f"""
+footer_html = """
 <style>
-    .footer-container {{
-        width: 100%;
-        font-family: sans-serif;
-        color: #444;
-        margin-bottom: 20px;
-    }}
-    
-    /* Layout Flex para Foto + Texto */
-    .profile-header {{
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 15px;
-        margin-bottom: 15px;
-    }}
-    
-    /* Estilo da Foto */
-    .profile-img {{
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;       /* Deixa redonda */
-        object-fit: cover;
-        border: 2px solid #e0e0e0; /* Borda sutil */
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }}
-    
-    .profile-info h4 {{
-        margin: 0;
-        font-size: 1.1rem;
-        color: #222;
-    }}
-    
-    .profile-info p {{
-        margin: 2px 0 0 0;
-        font-size: 0.9rem;
-        color: #666;
-    }}
-
-    .badge-container {{
+    .badge-container {
         display: flex;
         flex-wrap: wrap;
         justify-content: center;
         gap: 10px;
-        margin-top: 15px;
-    }}
-    
-    .badge-container img {{
+        margin-top: 10px;
+    }
+    .footer-text {
+        width: 100%;
+        text-align: center;
+        font-family: sans-serif;
+        color: #444;
+        margin-bottom: 20px;
+    }
+    img {
         height: 28px;
-    }}
+    }
 </style>
 
-<div class="footer-container">
-    
-    <div class="profile-header">
-        <img src="{profile_pic_url}" class="profile-img" alt="Gustavo Mockaitis">
-        <div class="profile-info">
-            <h3>Development: Prof. Dr. Gustavo Mockaitis</h4>
-            <h4>GBMA / FEAGRI / UNICAMP</h4>
-            <p>Interdisciplinary Research Group on Biotechnology Applied to the Agriculture and the Environment, School of Agricultural Engineering, State University of Campinas, Campinas, São Paulo, 13083-875, Brazil</p>
-        </div>
-    </div>
+<div class="footer-text">
+    <h4 style="margin-bottom: 5px; margin-top: 0;">Desenvolvido por: Prof. Dr. Gustavo Mockaitis</h4>
+    <p style="margin-top: 0; font-size: 0.9em;">GBMA / FEAGRi / UNICAMP</p>
 
     <div class="badge-container">
         <a href="https://arxiv.org/abs/2507.05960" target="_blank">
@@ -804,4 +731,4 @@ footer_html = f"""
 </div>
 """
 
-st_components.html(footer_html, height=280, scrolling=False)
+st_components.html(footer_html, height=350, scrolling=False)
