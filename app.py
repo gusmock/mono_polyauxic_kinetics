@@ -53,10 +53,6 @@ import matplotlib.pyplot as plt
 from scipy.optimize import differential_evolution, minimize
 from scipy.signal import find_peaks
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import warnings
-
-# Suppress minor warnings for cleaner output during simulation
-warnings.filterwarnings("ignore")
 
 # ------------------------------------------------------------
 # 0. ROUT-like Outlier Detection (MAD-based)
@@ -65,7 +61,6 @@ def detect_outliers(y_true, y_pred):
     """
     Detects outliers based on Median Absolute Deviation (MAD).
     Uses a modified Z-score.
-    Returns a boolean mask where True indicates an outlier.
     """
     residuals = y_true - y_pred
     med = np.median(residuals)
@@ -73,7 +68,7 @@ def detect_outliers(y_true, y_pred):
     # 1.4826 scales MAD to be consistent with standard deviation for normal distribution
     sigma = 1.4826 * mad if mad > 1e-12 else 1e-12
     z = np.abs(residuals - med) / sigma
-    return z > 2.5 # Threshold Q (usually corresponds to FDR < 1% depending on N)
+    return z > 2.5
 
 # ------------------------------------------------------------
 # 1. Model Equations
@@ -96,7 +91,7 @@ def gompertz_term(t, y_i, y_f, p_j, r_j, lam_j):
     return p * np.exp(-np.exp(expo))
 
 # ------------------------------------------------------------
-# 2. Polyauxic generating function
+# 2. Polyauxic generating function (Updated for separate terms)
 # ------------------------------------------------------------
 def polyauxic_components(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
     """Returns the sum and individual terms for plotting."""
@@ -119,11 +114,12 @@ def polyauxic_components(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
     return y_total, components, p_vec
 
 def polyauxic_generate(t, y_i, y_f, p_vec, r_vec, lam_vec, func):
+    # Simple wrapper for compatibility with old Monte Carlo code
     y, _, _ = polyauxic_components(t, y_i, y_f, p_vec, r_vec, lam_vec, func)
     return y
 
 # ------------------------------------------------------------
-# 3. Fitting & Helpers (Optimized)
+# 3. Fitting & Helpers (Kept unchanged)
 # ------------------------------------------------------------
 def polyauxic_fit_model(t, theta, func, n_phases):
     y_i = theta[0]
@@ -141,6 +137,7 @@ def polyauxic_fit_model(t, theta, func, n_phases):
 
 def sse_loss(theta, t, y, func, n_phases):
     y_pred = polyauxic_fit_model(t, theta, func, n_phases)
+    # Soft penalty if prediction is extremely negative
     if np.any(y_pred < -0.1*np.max(np.abs(y))): return 1e12
     return np.sum((y - y_pred)**2)
 
@@ -164,16 +161,11 @@ def smart_guess(t, y, n_phases):
         theta0[2 + 2*n_phases + i] = lam
     return theta0
 
-def fit_polyauxic(t_all, y_all, func, n_phases, fast_mode=False):
-    """
-    Fits the model.
-    fast_mode=True reduces optimization precision for speed in Monte Carlo.
-    """
+def fit_polyauxic(t_all, y_all, func, n_phases):
     t_scale = np.max(t_all) if np.max(t_all)>0 else 1
     y_scale = np.max(np.abs(y_all)) if np.max(np.abs(y_all))>0 else 1
     t_n = t_all / t_scale
     y_n = y_all / y_scale
-    
     theta0 = smart_guess(t_all, y_all, n_phases)
     th0 = np.zeros_like(theta0)
     th0[0] = theta0[0]/y_scale; th0[1] = theta0[1]/y_scale
@@ -182,29 +174,12 @@ def fit_polyauxic(t_all, y_all, func, n_phases, fast_mode=False):
     th0[2+2*n_phases:2+3*n_phases] = theta0[2+2*n_phases:2+3*n_phases]/t_scale
     
     bounds = [(-0.2,1.5),(0,2)] + [(-10,10)]*n_phases + [(0,500)]*n_phases + [(-0.1,1.2)]*n_phases
-    
-    # Optimization settings based on mode
-    if fast_mode:
-        popsize = 5
-        maxiter = 100
-        mutation = (0.5, 1)
-        recombination = 0.7
-    else:
-        popsize = 20
-        maxiter = 800
-        mutation = (0.5, 1)
-        recombination = 0.7
-
+    popsize=20
     init_pop = np.tile(th0,(popsize,1))*(np.random.uniform(0.8,1.2,(popsize,len(th0))))
     
-    # Global Search
     res_de = differential_evolution(sse_loss, bounds, args=(t_n,y_n,func,n_phases),
-                                    maxiter=maxiter, popsize=popsize, init=init_pop, 
-                                    strategy="best1bin", mutation=mutation, recombination=recombination,
-                                    polish=False, tol=1e-3)
-    
-    # Local Polish
-    res = minimize(sse_loss, res_de.x, args=(t_n,y_n,func,n_phases), method="L-BFGS-B", bounds=bounds, tol=1e-8)
+                                    maxiter=800, popsize=popsize, init=init_pop, strategy="best1bin", polish=True, tol=1e-6)
+    res = minimize(sse_loss, res_de.x, args=(t_n,y_n,func,n_phases), method="L-BFGS-B", bounds=bounds, tol=1e-10)
     
     th_n = res.x
     th = np.zeros_like(th_n)
@@ -222,131 +197,67 @@ def fit_polyauxic(t_all, y_all, func, n_phases, fast_mode=False):
     aic = n*np.log(sse/n) + 2*k
     bic = n*np.log(sse/n) + k*np.log(n)
     aicc = aic + (2*k*(k+1))/(n-k-1) if (n-k-1)>0 else np.inf
-    
     return th, {"SSE":sse,"R2":r2,"R2_adj":r2adj,"AIC":aic,"AICc":aicc,"BIC":bic}
 
 # ------------------------------------------------------------
-# 4. Monte Carlo Engine (Updated with Iterative ROUT & Error Handling)
+# 4. Monte Carlo Engine
 # ------------------------------------------------------------
 def monte_carlo_single(test_idx, func, ygen, t_sim, p_true, r_true, lam_true,
                        dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout):
-    try:
-        n_phases = len(p_true)
-        t_all_list = []; y_all_list = []
-        y_matrix = np.zeros((n_rep, n_points))
-        
-        # Generate noisy data
-        for rep in range(n_rep):
-            scales = dev_min + (dev_max-dev_min)*np.random.rand(n_points)
-            noise = scales * np.random.normal(0,1,n_points)
-            y_obs = ygen + noise
-            t_all_list.append(t_sim); y_all_list.append(y_obs)
-            y_matrix[rep, :] = y_obs
-        t_all = np.concatenate(t_all_list); y_all = np.concatenate(y_all_list)
-        
-        # --- Fit Logic ---
-        th = None
-        met = None
-        
-        if use_rout:
-            # Iterative ROUT implementation
-            mask = np.ones(len(y_all), dtype=bool) # Start keeping all
-            max_rout_iter = 5
-            
-            for iteration in range(max_rout_iter):
-                t_curr = t_all[mask]
-                y_curr = y_all[mask]
-                
-                # Fit on current 'clean' data (using fast_mode)
-                if len(y_curr) < (2 + 3*n_phases) + 2:
-                    break # Not enough points left
-                    
-                th_temp, met_temp = fit_polyauxic(t_curr, y_curr, func, n_phases, fast_mode=True)
-                
-                # Predict on CURRENT subset to check residuals relative to THIS fit
-                y_pred_temp = polyauxic_fit_model(t_curr, th_temp, func, n_phases)
-                
-                # Detect outliers in the current subset
-                outliers_in_subset = detect_outliers(y_curr, y_pred_temp)
-                
-                if not np.any(outliers_in_subset):
-                    # No new outliers found, converged
-                    th, met = th_temp, met_temp
-                    break
-                else:
-                    # Map subset outliers back to global mask
-                    # (This is tricky, simplified approach: remove from mask)
-                    # We iterate through the current valid indices and set outliers to False
-                    current_indices = np.where(mask)[0]
-                    indices_to_remove = current_indices[outliers_in_subset]
-                    mask[indices_to_remove] = False
-                    
-                    # Update final result pointer
-                    th, met = th_temp, met_temp
-            
-            # Fallback if loop finishes without strict convergence (take last result)
-            if th is None:
-                th, met = fit_polyauxic(t_all, y_all, func, n_phases, fast_mode=True)
-                
+    n_phases = len(p_true)
+    t_all_list = []; y_all_list = []
+    y_matrix = np.zeros((n_rep, n_points))
+    for rep in range(n_rep):
+        scales = dev_min + (dev_max-dev_min)*np.random.rand(n_points)
+        noise = scales * np.random.normal(0,1,n_points)
+        y_obs = ygen + noise
+        t_all_list.append(t_sim); y_all_list.append(y_obs)
+        y_matrix[rep, :] = y_obs
+    t_all = np.concatenate(t_all_list); y_all = np.concatenate(y_all_list)
+    
+    if use_rout:
+        th_pre, _ = fit_polyauxic(t_all, y_all, func, n_phases)
+        y_pred_pre = polyauxic_fit_model(t_all, th_pre, func, n_phases)
+        mask = detect_outliers(y_all, y_pred_pre)
+        t_clean = t_all[~mask]; y_clean = y_all[~mask]
+        if len(y_clean) < len(th_pre) + 2: # Fallback if too many deleted
+             th, met = fit_polyauxic(t_all, y_all, func, n_phases)
         else:
-            # Standard fit without outlier removal
-            th, met = fit_polyauxic(t_all, y_all, func, n_phases, fast_mode=True)
-            
-        # --- Parameter Extraction ---
-        yi_hat = th[0]; yf_hat = th[1]
-        z = th[2:2+n_phases]
-        r = th[2+n_phases:2+2*n_phases]
-        lam = th[2+2*n_phases:2+3*n_phases]
+             th, met = fit_polyauxic(t_clean, y_clean, func, n_phases)
+    else:
+        th, met = fit_polyauxic(t_all, y_all, func, n_phases)
         
-        z_shift = z - np.max(z)
-        p_hat = np.exp(z_shift)/np.sum(np.exp(z_shift))
-        
-        row = {
-            "test":test_idx, "yi_hat":yi_hat, "yf_hat":yf_hat,
-            "SSE":met["SSE"],"R2":met["R2"],"R2_adj":met["R2_adj"],
-            "AIC":met["AIC"],"AICc":met["AICc"],"BIC":met["BIC"]
-        }
-        for j in range(n_phases):
-            row[f"p{j+1}"]=p_hat[j]; row[f"r{j+1}"]=r[j]; row[f"lam{j+1}"]=lam[j]
-            
-        return row, y_matrix
-
-    except Exception as e:
-        # Error handling to prevent crash
-        row = {"test":test_idx, "yi_hat":np.nan, "yf_hat":np.nan, "SSE":np.nan, "R2":np.nan}
-        return row, np.zeros((n_rep, n_points))
+    yi_hat = th[0]; yf_hat = th[1]
+    z = th[2:2+n_phases]; r = th[2+n_phases:2+2*n_phases]; lam = th[2+2*n_phases:2+3*n_phases]
+    z_shift = z-np.max(z)
+    p_hat = np.exp(z_shift)/np.sum(np.exp(z_shift))
+    
+    row = {"test":test_idx, "yi_hat":yi_hat, "yf_hat":yf_hat,
+           "SSE":met["SSE"],"R2":met["R2"],"R2_adj":met["R2_adj"],
+           "AIC":met["AIC"],"AICc":met["AICc"],"BIC":met["BIC"]}
+    for j in range(n_phases):
+        row[f"p{j+1}"]=p_hat[j]; row[f"r{j+1}"]=r[j]; row[f"lam{j+1}"]=lam[j]
+    return row, y_matrix
 
 def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
                 dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout):
     results = []; all_y_blocks = []
     progress = st.progress(0.0)
     status_text = st.empty()
-    
     with ThreadPoolExecutor() as executor:
         futures = {executor.submit(monte_carlo_single, i+1, func, ygen, t_sim, p_true, r_true, lam_true,
                                    dev_min, dev_max, n_rep, n_points, y_i, y_f, use_rout): i+1 for i in range(n_tests)}
         done = 0
         for fut in as_completed(futures):
             row, y_mat = fut.result()
-            # Filter out failed runs (NaNs)
-            if not np.isnan(row.get("yi_hat", np.nan)):
-                results.append(row)
-                all_y_blocks.append(y_mat)
+            results.append(row); all_y_blocks.append(y_mat)
             done += 1
             progress.progress(done / n_tests)
             status_text.text(f"Running Monte Carlo: {done}/{n_tests}")
-            
     status_text.text("Simulation finished.")
-    
-    if len(results) == 0:
-        return pd.DataFrame(), None, None
-        
     df = pd.DataFrame(results).sort_values("test")
-    if len(all_y_blocks) > 0:
-        all_y = np.vstack(all_y_blocks)
-        return df, np.mean(all_y, axis=0), np.std(all_y, axis=0)
-    else:
-        return df, np.zeros_like(t_sim), np.zeros_like(t_sim)
+    all_y = np.vstack(all_y_blocks)
+    return df, np.mean(all_y, axis=0), np.std(all_y, axis=0)
 
 # ------------------------------------------------------------
 # 5. Streamlit App Interface
@@ -370,21 +281,25 @@ y_f = st.sidebar.number_input("y_f (End)", min_value=y_f_min, value=max(1.0, y_f
 p_inputs=[]; r_true=[]; lam_true=[]
 st.sidebar.subheader("Phase Parameters")
 
+# Helper variable to ensure increasing order of lambdas
 last_lam = -0.1 
 
 for j in range(n_phases):
     with st.sidebar.expander(f"Phase {j+1}", expanded=True):
+        # Input for raw p (will be normalized later)
         p_in = st.number_input(f"Raw Proportion (p{j+1})", min_value=0.01, value=1.0, key=f"p_in_{j}")
         r = st.number_input(f"Rate (r_max{j+1})", min_value=0.01, value=1.0, key=f"r_{j}")
         
+        # Constraint 2: current lambda > previous lambda
         lam_min = last_lam + 0.1
         lam = st.number_input(f"Lag Time (λ{j+1})", min_value=lam_min, value=max(float(j+1), lam_min), key=f"lam_{j}")
-        last_lam = lam 
+        last_lam = lam # Update for next loop
         
         p_inputs.append(p_in)
         r_true.append(r)
         lam_true.append(lam)
 
+# Calculation of normalized p for immediate use
 total_p = sum(p_inputs)
 p_true = [p / total_p for p in p_inputs]
 
@@ -398,23 +313,30 @@ n_tests = st.sidebar.number_input("MC Tests", 1, 500, 20)
 use_rout = st.sidebar.checkbox("Use ROUT Outlier Removal?", value=False)
 
 # ------------------------------------------------------------
-# LIVE PREVIEW
+# LIVE PREVIEW (Real-time Graph)
 # ------------------------------------------------------------
 st.subheader("True Parameters Preview")
 
+# Generate data for real-time preview
 max_lam = max(lam_true)
 tmax = max(3*max_lam, 1.0)
 t_sim = np.linspace(0, tmax, n_points)
 
+# Calculate curve and components
 ygen, components, p_norm_vec = polyauxic_components(t_sim, y_i, y_f, p_true, r_true, lam_true, func)
 
+# Columns: Graph and Data
 col_g1, col_g2 = st.columns([2, 1])
 
 with col_g1:
     fig_prev, ax_prev = plt.subplots(figsize=(6, 4))
+    # Total curve
     ax_prev.plot(t_sim, ygen, 'k-', lw=2.5, label="Total Curve")
+    # Individual components
     colors = plt.cm.viridis(np.linspace(0, 1, n_phases))
     for j, (comp_y, color) in enumerate(zip(components, colors)):
+        # Adds y_i to visualize the contribution over the base, or plot delta
+        # Here we plot the visual incremental contribution
         ax_prev.plot(t_sim, y_i + comp_y, ls='--', lw=1.5, color=color, label=f"Phase {j+1}")
         
     ax_prev.set_title(f"Generating Function ({model})")
@@ -423,7 +345,6 @@ with col_g1:
     ax_prev.grid(True, ls=':', alpha=0.6)
     ax_prev.legend(fontsize='small')
     st.pyplot(fig_prev)
-    plt.close(fig_prev) # Memory cleanup
 
 with col_g2:
     st.markdown("**Effective Parameters:**")
@@ -446,75 +367,75 @@ st.markdown("---")
 run = st.button("Run Monte Carlo Simulation", type="primary")
 
 if run:
+    # Monte Carlo execution
     df, y_mean, y_std = monte_carlo(
         func, ygen, t_sim, p_true, r_true, lam_true,
         dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, use_rout
     )
 
-    if not df.empty and y_mean is not None:
-        dy = abs(y_f - y_i) if abs(y_f - y_i) > 0 else 1.0
-        y_min_plot = min(y_i, y_f) - 0.1*dy
-        y_max_plot = max(y_i, y_f) + 0.1*dy
+    # Limits for result plots
+    dy = abs(y_f - y_i) if abs(y_f - y_i) > 0 else 1.0
+    y_min_plot = min(y_i, y_f) - 0.1*dy
+    y_max_plot = max(y_i, y_f) + 0.1*dy
 
-        st.subheader("Simulation Results")
-        
-        # Aggregated Results
-        st.markdown("### Global Mean ± Std (Simulated)")
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(t_sim, ygen, 'k--', lw=2, label="True Curve")
-        ax.errorbar(t_sim, y_mean, yerr=y_std, fmt='o', color='blue', 
-                    ecolor='lightblue', alpha=0.6, capsize=3, markersize=4, label="Sim Mean ± Std")
-        ax.set_ylim(y_min_plot, y_max_plot)
-        ax.grid(True, ls=':')
+    st.subheader("Simulation Results")
+    
+    # Aggregated Results Plot
+    st.markdown("### Global Mean ± Std (Simulated)")
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(t_sim, ygen, 'k--', lw=2, label="True Curve")
+    ax.errorbar(t_sim, y_mean, yerr=y_std, fmt='o', color='blue', 
+                ecolor='lightblue', alpha=0.6, capsize=3, markersize=4, label="Sim Mean ± Std")
+    ax.set_ylim(y_min_plot, y_max_plot)
+    ax.grid(True, ls=':')
+    ax.legend()
+    st.pyplot(fig)
+
+    # Table and Download
+    st.dataframe(df.head(10))
+    st.download_button("Download Full CSV", df.to_csv(index=False), "monte_carlo_results.csv", "text/csv")
+
+    # Diagnostics
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### Information Criteria")
+        fig, ax = plt.subplots(figsize=(6, 4))
+        for col in ["AIC", "BIC"]:
+            ax.plot(df["test"], df[col], marker='o', ms=4, label=col)
         ax.legend()
+        ax.grid(True, ls=':')
         st.pyplot(fig)
-        plt.close(fig) # Cleanup
-
-        st.dataframe(df.head(10))
-        st.download_button("Download Full CSV", df.to_csv(index=False), "monte_carlo_results.csv", "text/csv")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("#### Information Criteria")
-            fig, ax = plt.subplots(figsize=(6, 4))
-            if "AIC" in df.columns:
-                for col in ["AIC", "BIC"]:
-                    ax.plot(df["test"], df[col], marker='o', ms=4, label=col)
-                ax.legend()
-            ax.grid(True, ls=':')
-            st.pyplot(fig)
-            plt.close(fig)
-        
-        with col2:
-            st.markdown("#### Fit Quality (R²)")
-            fig, ax = plt.subplots(figsize=(6, 4))
-            if "R2_adj" in df.columns:
-                ax.plot(df["test"], df["R2_adj"], color='green', marker='s', ms=4, label="Adj R²")
-                ax.legend()
-            ax.grid(True, ls=':')
-            st.pyplot(fig)
-            plt.close(fig)
-        
-        st.markdown("#### Parameter Recovery Distribution")
-        fig, axs = plt.subplots(2, 2, figsize=(10, 8))
-        
-        axs[0,0].boxplot([df["yi_hat"], df["yf_hat"]], labels=["yi", "yf"])
-        axs[0,0].set_title("Bounds Parameters")
-        
-        axs[0,1].boxplot([df[f"p{j+1}"] for j in range(n_phases)], labels=[f"p{j+1}" for j in range(n_phases)])
-        axs[0,1].set_title("Proportions (p)")
-        
-        axs[1,0].boxplot([df[f"r{j+1}"] for j in range(n_phases)], labels=[f"r{j+1}" for j in range(n_phases)])
-        axs[1,0].set_title("Rates (r_max)")
-        
-        axs[1,1].boxplot([df[f"lam{j+1}"] for j in range(n_phases)], labels=[f"λ{j+1}" for j in range(n_phases)])
-        axs[1,1].set_title("Lags (λ)")
-        
-        for ax in axs.flat: ax.grid(True, ls=':', alpha=0.5)
+    
+    with col2:
+        st.markdown("#### Fit Quality (R²)")
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.plot(df["test"], df["R2_adj"], color='green', marker='s', ms=4, label="Adj R²")
+        ax.legend()
+        ax.grid(True, ls=':')
         st.pyplot(fig)
-        plt.close(fig)
-    else:
-        st.error("Simulation failed to produce valid results. Check parameters or try increasing replicates.")
+    
+    # Parameter Distribution
+    st.markdown("#### Parameter Recovery Distribution")
+    fig, axs = plt.subplots(2, 2, figsize=(10, 8))
+    
+    # yi, yf
+    axs[0,0].boxplot([df["yi_hat"], df["yf_hat"]], labels=["yi", "yf"])
+    axs[0,0].set_title("Bounds Parameters")
+    
+    # p
+    axs[0,1].boxplot([df[f"p{j+1}"] for j in range(n_phases)], labels=[f"p{j+1}" for j in range(n_phases)])
+    axs[0,1].set_title("Proportions (p)")
+    
+    # r
+    axs[1,0].boxplot([df[f"r{j+1}"] for j in range(n_phases)], labels=[f"r{j+1}" for j in range(n_phases)])
+    axs[1,0].set_title("Rates (r_max)")
+    
+    # lambda
+    axs[1,1].boxplot([df[f"lam{j+1}"] for j in range(n_phases)], labels=[f"λ{j+1}" for j in range(n_phases)])
+    axs[1,1].set_title("Lags (λ)")
+    
+    for ax in axs.flat: ax.grid(True, ls=':', alpha=0.5)
+    st.pyplot(fig)
 # ------------------------------------------------------------
 # FOOTER
 # ------------------------------------------------------------
