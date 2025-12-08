@@ -92,7 +92,7 @@ from scipy.signal import find_peaks
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ------------------------------------------------------------
-# PAGE CONFIGURATION
+# PAGE CONFIGURATION (Obrigatório ser a primeira linha executável)
 # ------------------------------------------------------------
 st.set_page_config(
     page_title="Polyauxic Robustness Simulator",
@@ -188,7 +188,7 @@ def find_saturation_time(y_i, y_f, p_vec, r_vec, lam_vec, func):
     return t_total, t_99
 
 # ------------------------------------------------------------
-# 3. FITTING ENGINE (FIXED LOGIC)
+# 3. FITTING ENGINE (FIXED LOGIC - CRITICAL)
 # ------------------------------------------------------------
 
 def unpack_parameters(theta, n_phases):
@@ -411,7 +411,7 @@ def monte_carlo(func, ygen, t_sim, p_true, r_true, lam_true,
 
 st.markdown("<h1 style='text-align: center;'>Polyauxic Robustness Simulator</h1>", unsafe_allow_html=True)
 
-with st.expander("📘 Instruction Manual & Parameter Rules (Fixed)"):
+with st.expander("📘 Instruction Manual & Parameter Rules"):
     st.markdown("""
     This simulator validates Polyauxic Kinetic Models under strict experimental design constraints.
     
@@ -628,7 +628,7 @@ if run_btn and not validation_errors:
     st.pyplot(fig2)
 
 # ------------------------------------------------------------
-# FOOTER (VERSÃO FINAL)
+# FOOTER
 # ------------------------------------------------------------
 st.markdown("---")
 
