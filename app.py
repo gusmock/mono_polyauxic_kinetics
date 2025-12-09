@@ -102,7 +102,7 @@ PIPELINE / CODE ORGANIZATION
        where ε ~ N(0, σ_i^2), with σ_i larger for outlier points.
    - Concatenate all replicate data into single arrays t_all, y_all.
    - Apply the chosen outlier strategy (None, simple MAD, or ROUT), then
-       perform nonlinear regression and record fitted parameters and metrics.
+     perform nonlinear regression and record fitted parameters and metrics.
 
 5. FITTING ENGINE & PARAMETERIZATION (Section 3)
    - Parameters are stored in a flat θ vector and unpacked via:
@@ -793,55 +793,6 @@ else:
 # EXECUTION
 # ------------------------------------------------------------
 if run_btn and not validation_errors:
-
-    # ----------------------------------------------------------------
-    # MÚSICA: toca madracer.mp3 enquanto a simulação roda
-    # e faz fade out quando aparecer "Simulation finished successfully."
-    # ----------------------------------------------------------------
-    st_components.html(
-        """
-        <audio id="bg-music" src="https://raw.githubusercontent.com/gusmock/mono_polyauxic_kinetics/main/madracer.mp3" autoplay loop></audio>
-        <script>
-        const audio = document.getElementById('bg-music');
-        if (audio) {
-            audio.volume = 1.0;
-
-            function fadeOutAndStop() {
-                let vol = audio.volume;
-                const fade = setInterval(() => {
-                    vol -= 0.05;
-                    if (vol <= 0.0) {
-                        audio.pause();
-                        audio.currentTime = 0;
-                        clearInterval(fade);
-                    } else {
-                        audio.volume = vol;
-                    }
-                }, 200);
-            }
-
-            // Checa periodicamente o DOM do app pai para ver se a simulação terminou
-            const checkFinish = setInterval(() => {
-                try {
-                    const parentDoc = window.parent.document;
-                    const elements = parentDoc.querySelectorAll('span,div');
-                    for (let el of elements) {
-                        if (el.innerText && el.innerText.includes('Simulation finished successfully.')) {
-                            clearInterval(checkFinish);
-                            fadeOutAndStop();
-                            break;
-                        }
-                    }
-                } catch (e) {
-                    console.log(e);
-                }
-            }, 1000);
-        }
-        </script>
-        """,
-        height=0,
-    )
-
     df, y_mean, y_std, out_t, out_y, total_points = monte_carlo(
         func, ygen, t_sim, p_inputs, r_true, lam_true,
         dev_min, dev_max, n_rep, n_points, n_tests, y_i, y_f, 
@@ -1009,8 +960,8 @@ footer_html = f"""
     <div class="profile-header">
         <img src="{profile_pic_url}" class="profile-img" alt="Gustavo Mockaitis">
         <div class="profile-info">
-            <h2>Development: Prof. Dr. Gustavo Mockaitis</h2>
-            <h4>GBMA / FEAGRi / UNICAMP</h4>
+            <h2>GBMA / FEAGRi / UNICAMP</h2>
+            <h4>Development: Prof. Dr. Gustavo Mockaitis</h4>
             <p>Interdisciplinary Research Group of Biotechnology Applied to the Agriculture and Environment, School of Agricultural Engineering, University of Campinas (GBMA/FEAGRI/UNICAMP), 397 Michel Debrun Street, CEP 13.083-875, Campinas, SP, Brazil.</p>
         </div>
     </div>
