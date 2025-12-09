@@ -894,108 +894,220 @@ if run_btn and not validation_errors:
         ax.grid(True, ls=':', alpha=0.5); ax.set_xlabel("Test Index")
     plt.tight_layout()
     st.pyplot(fig2)
+import streamlit as st
+import streamlit.components.v1 as components
 
-# ------------------------------------------------------------
-# FOOTER
-# ------------------------------------------------------------
+# --- CONFIGURATION ---
+TEXTS = {
+    'paper_ref': 'Paper Reference'
+}
+profile_pic_url = "https://github.com/gusmock.png"
+
+# ==============================================================================
+# 1. REFERENCE SECTION (Paper, Altmetric, Project GitHub)
+# ==============================================================================
 st.markdown("---")
+st.subheader(f"📄 {TEXTS['paper_ref']}")
 
-profile_pic_url = "https://github.com/gusmock.png" 
+# HTML for the reference card with project-specific badges
+ref_html = """
+<style>
+    .ref-container {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 15px;
+        font-family: 'Times New Roman', serif;
+        background-color: #f9f9f9;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        flex-wrap: wrap;
+    }
+    .citation-text {
+        font-size: 16px;
+        color: #333;
+        font-weight: 500;
+        margin-right: auto; /* Pushes badges to the right if there is space */
+    }
+    .badge-group {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+    .badge-group img {
+        height: 22px;
+        transition: transform 0.2s;
+    }
+    .badge-group img:hover {
+        transform: scale(1.05);
+    }
+    a { text-decoration: none; }
+</style>
+
+<div class="ref-container">
+    <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
+    
+    <div class="citation-text">
+        Mockaitis, G. (2025) <i>Mono and Polyauxic Growth Kinetic Models</i>. <br>
+        ArXiv: 2507.05960, 24 p.
+    </div>
+
+    <div class="badge-group">
+        <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
+            <img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg?style=flat-square&logo=arxiv&logoColor=white" alt="arXiv">
+        </a>
+        <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
+            <img src="https://img.shields.io/badge/GitHub-Code-181717?style=flat-square&logo=github&logoColor=white" alt="GitHub Repo">
+        </a>
+    </div>
+
+    <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
+</div>
+"""
+# Renders the reference block
+components.html(ref_html, height=100)
+
+# ==============================================================================
+# 2. AUTHOR FOOTER (Profile & Personal Badges)
+# ==============================================================================
+st.markdown("---")
 
 footer_html = f"""
 <style>
+    /* Main Footer Container */
     .footer-container {{
         width: 100%;
-        font-family: sans-serif;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         color: #444;
-        margin-bottom: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 20px 0;
     }}
     
-    /* Layout Flex para Foto + Texto */
-    .profile-header {{
+    /* Photo and Text Area */
+    .profile-section {{
         display: flex;
+        flex-direction: row;
         align-items: center;
         justify-content: center;
-        gap: 15px;
-        margin-bottom: 15px;
+        gap: 20px;
+        margin-bottom: 20px;
+        max-width: 800px;
     }}
     
-    /* Estilo da Foto */
+    /* Mobile responsiveness: stacks photo and text */
+    @media (max-width: 600px) {{
+        .profile-section {{
+            flex-direction: column;
+        }}
+    }}
+
     .profile-img {{
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;       /* Deixa redonda */
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
         object-fit: cover;
-        border: 2px solid #e0e0e0; /* Borda sutil */
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        border: 3px solid #f0f2f6;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }}
+
+    .profile-info {{
+        text-align: left;
+    }}
+    
+    @media (max-width: 600px) {{
+        .profile-info {{ text-align: center; }}
+    }}
+
+    .profile-info h2 {{
+        margin: 0;
+        font-size: 16px;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }}
     
     .profile-info h4 {{
-        margin: 0;
-        font-size: 1.1rem;
+        margin: 5px 0;
+        font-size: 18px;
         color: #222;
+        font-weight: 700;
     }}
     
     .profile-info p {{
-        margin: 2px 0 0 0;
-        font-size: 0.9rem;
+        margin: 0;
+        font-size: 13px;
         color: #666;
+        line-height: 1.4;
     }}
 
-    .badge-container {{
+    /* Personal Badges Container */
+    .social-badges {{
         display: flex;
         flex-wrap: wrap;
         justify-content: center;
-        gap: 10px;
-        margin-top: 15px;
+        gap: 8px;
+        margin-top: 10px;
     }}
     
-    .badge-container img {{
-        height: 28px;
+    .social-badges a img {{
+        height: 26px; /* Standardized height */
+        border-radius: 4px;
+        transition: transform 0.2s, opacity 0.2s;
+    }}
+    
+    .social-badges a img:hover {{
+        transform: translateY(-2px);
+        opacity: 0.9;
     }}
 </style>
 
 <div class="footer-container">
     
-    <div class="profile-header">
+    <div class="profile-section">
         <img src="{profile_pic_url}" class="profile-img" alt="Gustavo Mockaitis">
+        
         <div class="profile-info">
-            <h2>GBMA / FEAGRi / UNICAMP</h2>
-            <h4>Development: Prof. Dr. Gustavo Mockaitis</h4>
-            <p>Interdisciplinary Research Group of Biotechnology Applied to the Agriculture and Environment, School of Agricultural Engineering, University of Campinas (GBMA/FEAGRI/UNICAMP), 397 Michel Debrun Street, CEP 13.083-875, Campinas, SP, Brazil.</p>
+            <h2>GBMA / FEAGRI / UNICAMP</h2>
+            <h4>Dev: Prof. Dr. Gustavo Mockaitis</h4>
+            <p>
+                Interdisciplinary Research Group of Biotechnology Applied to the Agriculture and Environment<br>
+                School of Agricultural Engineering, University of Campinas.<br>
+                Campinas, SP, Brazil.
+            </p>
         </div>
     </div>
 
-    <div class="badge-container">
-        <a href="https://arxiv.org/abs/2507.05960" target="_blank">
-            <img src="https://img.shields.io/badge/arXiv-2507.05960-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white" alt="arXiv">
-        </a>
-        <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
-            <img src="https://img.shields.io/badge/GitHub-Repo-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub">
-        </a>
+    <div class="social-badges">
         <a href="https://orcid.org/0000-0002-4231-1056" target="_blank">
             <img src="https://img.shields.io/badge/ORCID-iD-A6CE39?style=for-the-badge&logo=orcid&logoColor=white" alt="ORCID">
         </a>
-        <a href="https://scholar.google.com/citations?user=yR3UvuoAAAAJ&hl=pt-BR&oi=ao" target="_blank">
-            <img src="https://img.shields.io/badge/Scholar-Perfil-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white" alt="Google Scholar">
+        <a href="https://scholar.google.com/citations?user=yR3UvuoAAAAJ&hl=en&oi=ao" target="_blank">
+            <img src="https://img.shields.io/badge/Scholar-Profile-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white" alt="Google Scholar">
         </a>
         <a href="https://www.researchgate.net/profile/Gustavo-Mockaitis" target="_blank">
-            <img src="https://img.shields.io/badge/ResearchGate-Perfil-00CCBB?style=for-the-badge&logo=researchgate&logoColor=white" alt="ResearchGate">
+            <img src="https://img.shields.io/badge/ResearchGate-Profile-00CCBB?style=for-the-badge&logo=researchgate&logoColor=white" alt="ResearchGate">
         </a>
         <a href="http://lattes.cnpq.br/1400402042483439" target="_blank">
-            <img src="https://img.shields.io/badge/Lattes-CV-003399?style=for-the-badge&logo=brasil&logoColor=white" alt="Lattes">
+            <img src="https://img.shields.io/badge/Lattes-CV-003399?style=for-the-badge&logo=brasil&logoColor=white" alt="Lattes CV">
         </a>
         <a href="https://www.linkedin.com/in/gustavo-mockaitis/" target="_blank">
-            <img src="https://img.shields.io/badge/LinkedIn-Conectar-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn">
+            <img src="https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn">
         </a>
         <a href="https://www.webofscience.com/wos/author/record/J-7107-2019" target="_blank">
-            <img src="https://img.shields.io/badge/Web_of_Science-Perfil-5E33BF?style=for-the-badge&logo=clarivate&logoColor=white" alt="Web of Science">
+            <img src="https://img.shields.io/badge/Web_of_Science-Profile-5E33BF?style=for-the-badge&logo=clarivate&logoColor=white" alt="Web of Science">
         </a>
         <a href="http://feagri.unicamp.br/mockaitis" target="_blank">
-            <img src="https://img.shields.io/badge/UNICAMP-Institucional-CC0000?style=for-the-badge&logo=google-academic&logoColor=white" alt="UNICAMP">
+            <img src="https://img.shields.io/badge/UNICAMP-Institutional-CC0000?style=for-the-badge&logo=google-academic&logoColor=white" alt="UNICAMP">
         </a>
     </div>
+
 </div>
 """
 
-st_components.html(footer_html, height=280, scrolling=False)
+# Render Footer
+components.html(footer_html, height=280, scrolling=False)
