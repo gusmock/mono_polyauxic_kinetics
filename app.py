@@ -897,19 +897,21 @@ if run_btn and not validation_errors:
 import streamlit as st
 import streamlit.components.v1 as components
 
-# --- CONFIGURATION ---
+import streamlit as st
+import streamlit.components.v1 as components
+# ==============================================================================
+# REFERENCE SECTION (Paper, Altmetric, Project GitHub) & FOOTER
+# ==============================================================================
 TEXTS = {
     'paper_ref': 'Paper Reference'
 }
 profile_pic_url = "https://github.com/gusmock.png"
 
-# ==============================================================================
-# 1. REFERENCE SECTION (Paper, Altmetric, Project GitHub)
-# ==============================================================================
 st.markdown("---")
 st.subheader(f"📄 {TEXTS['paper_ref']}")
 
-# HTML for the reference card with project-specific badges
+# HTML for the reference card
+# Changes: Font is now sans-serif, and container is optimized for spacing
 ref_html = """
 <style>
     .ref-container {
@@ -918,7 +920,8 @@ ref_html = """
         align-items: center;
         justify-content: flex-start;
         gap: 15px;
-        font-family: 'Times New Roman', serif;
+        /* Standard sans-serif font */
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         background-color: #f9f9f9;
         padding: 15px;
         border-radius: 8px;
@@ -929,7 +932,8 @@ ref_html = """
         font-size: 16px;
         color: #333;
         font-weight: 500;
-        margin-right: auto; /* Pushes badges to the right if there is space */
+        margin-right: auto;
+        line-height: 1.4;
     }
     .badge-group {
         display: flex;
@@ -950,8 +954,8 @@ ref_html = """
     <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
     
     <div class="citation-text">
-        Mockaitis, G. (2025) <i>Mono and Polyauxic Growth Kinetic Models</i>. <br>
-        ArXiv: 2507.05960, 24 p.
+        Mockaitis, G. (2025) <strong>Mono and Polyauxic Growth Kinetic Models</strong>. <br>
+        <span style="color: #666; font-size: 14px;">ArXiv: 2507.05960, 24 p.</span>
     </div>
 
     <div class="badge-group">
@@ -966,12 +970,10 @@ ref_html = """
     <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
 </div>
 """
-# Renders the reference block
-components.html(ref_html, height=100)
 
-# ==============================================================================
-# 2. AUTHOR FOOTER (Profile & Personal Badges)
-# ==============================================================================
+# Increased height to 150 to prevent the bottom from being cut off
+components.html(ref_html, height=150)
+
 st.markdown("---")
 
 footer_html = f"""
@@ -999,7 +1001,7 @@ footer_html = f"""
         max-width: 800px;
     }}
     
-    /* Mobile responsiveness: stacks photo and text */
+    /* Mobile responsiveness */
     @media (max-width: 600px) {{
         .profile-section {{
             flex-direction: column;
@@ -1055,7 +1057,7 @@ footer_html = f"""
     }}
     
     .social-badges a img {{
-        height: 26px; /* Standardized height */
+        height: 26px;
         border-radius: 4px;
         transition: transform 0.2s, opacity 0.2s;
     }}
@@ -1109,5 +1111,4 @@ footer_html = f"""
 </div>
 """
 
-# Render Footer
 components.html(footer_html, height=280, scrolling=False)
