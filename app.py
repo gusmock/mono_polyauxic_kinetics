@@ -29,158 +29,6 @@
 
 """
 
-# ==============================================================================
-# POLYAUXIC MODELING PLATFORM - OVERVIEW & PIPELINE (DOCUMENTATION SECTION)
-# ------------------------------------------------------------------------------
-# 1. Purpose of this script
-#    - This Streamlit application implements mono- and polyauxic growth models
-#      based on the Boltzmann (Eq. 31) and Gompertz (Eq. 32) formulations
-#      described in:
-#      Mockaitis, G. (2025) "Mono and Polyauxic Growth Kinetic Models".
-#      ArXiv: 2507.05960.
-#    - The app is designed for microbial growth / bioprocess kinetics, but it
-#      works for any sigmoidal response y(t) that can be described by these
-#      models (biomass, product, substrate, etc.).
-#
-# 2. Theoretical background (core ideas)
-#    - Global model:
-#        y(t) = y_i + (y_f - y_i) * Σ_{j=1..n} f_j(t; p_j, r_max,j, λ_j)
-#
-#      where:
-#        * y_i, y_f  : initial and final asymptotes of the global curve.
-#        * p_j       : fractional contribution of phase j (0 < p_j < 1,
-#                      Σ p_j = 1).
-#        * r_max,j   : maximum rate of phase j.
-#        * λ_j       : "lag" or inflection-related parameter of phase j.
-#        * f_j       : phase term from Boltzmann (Eq. 31) or Gompertz (Eq. 32).
-#
-#    - Boltzmann term (Eq. 31):
-#        f_B,j(t) = p_j / [1 + exp( (4 r_max,j (λ_j - t)) / ((y_f - y_i) p_j) + 2 )]
-#
-#    - Gompertz term (Eq. 32):
-#        f_G,j(t) = p_j * exp( -exp( 1 + (r_max,j e (λ_j - t)) / ((y_f - y_i) p_j) ) )
-#
-#    - To guarantee that p_j are positive and sum to 1, the implementation uses:
-#        z_j  = unconstrained parameters
-#        p_j  = softmax(z_j) = exp(z_j) / Σ_k exp(z_k)
-#
-#    - The model is therefore parameterized by:
-#        θ = [y_i, y_f, z_1..z_n, r_max,1..r_max,n, λ_1..λ_n]
-#
-# 3. Optimization and statistics pipeline
-#    1) Data normalization:
-#       - Time and response are scaled to [0, O(1)] to improve numerical
-#         stability (t_norm, y_norm).
-#
-#    2) Smart initial guess (smart_initial_guess):
-#       - Uses numerical derivative dy/dt and peak detection (find_peaks) to
-#         estimate λ_j and r_max,j.
-#       - Sets y_i and y_f from min(y) and max(y).
-#       - Initializes z_j = 0 (uniform p_j).
-#
-#    3) Global + local optimization:
-#       - Cost function: SSE (sum of squared errors) in normalized space.
-#       - Global step: differential_evolution with bounds in normalized space.
-#       - Local refinement: L-BFGS-B starting from the DE optimum.
-#
-#    4) Back-scaling of parameters:
-#       - θ_norm → θ_real using the original scales of time and response.
-#
-#    5) Uncertainty estimation:
-#       - Numerical Hessian of SSE in normalized space.
-#       - Covariance matrix approximated as σ² H⁻¹ (pseudoinverse).
-#       - Standard errors for θ in normalized space are rescaled to real units.
-#       - p_j standard errors are obtained by error propagation through the
-#         softmax Jacobian (calculate_p_errors).
-#
-#    6) Goodness-of-fit metrics:
-#       - SSE, R², adjusted R².
-#       - Information criteria: AIC, AICc, BIC.
-#
-#    7) Outlier detection:
-#       - ROUT-inspired robust z-score:
-#           residuals = y_true - y_pred
-#           MAD-based robust σ → z-scores
-#           |z| > 2.5 → outlier.
-#       - Outliers are highlighted and excluded from the mean curve used as
-#         visual summary across replicates.
-#
-# 4. Model selection strategy (information criteria)
-#    - For each model (Boltzmann or Gompertz) and each number of phases n:
-#        → a fit is computed, and AIC, AICc, BIC are stored.
-#    - The script chooses ONE information criterion based on N (number of
-#      observations) and k_max (largest number of parameters among tested
-#      models), following the logic of Table 1 in the preprint:
-#        * If N ≤ 200 and N/k_max < 40 → use AIC.
-#        * If N ≤ 200 and N/k_max ≥ 40 → use AICc.
-#        * If N  > 200 and k_max is large → use BIC (parsimony).
-#      (see choose_information_criterion).
-#
-#    - Once the criterion is chosen, the "best" number of phases is the FIRST
-#      local minimum along the sequence of phases:
-#        - While the criterion decreases with additional phases, we keep going.
-#        - As soon as it stops improving (equal or worse), we select the
-#          previous minimum (select_first_local_min_index).
-#
-# 5. Data handling pipeline
-#    - Input:
-#        • CSV or XLSX with columns in pairs:
-#            t1, y1, t2, y2, ..., tN, yN
-#        • Each pair defines one replicate.
-#    - process_data:
-#        1) Drops completely empty columns.
-#        2) For each pair of columns:
-#             - Converts to numeric and removes NaN.
-#             - Stores each replicate as {t, y, name}.
-#        3) Concatenates all replicates into flat arrays (t_flat, y_flat) and
-#           sorts them by time.
-#
-#    - calculate_mean_with_outliers:
-#        • Given the global fit θ, predicts y for all points, flags outliers,
-#          and computes a time-binned mean (and std) without outliers for
-#          visualization purposes.
-#
-# 6. Streamlit UI architecture
-#    - Sidebar:
-#        • Language selection (English, Portuguese, French).
-#        • Response type (generic, product, substrate, biomass).
-#        • File uploader and maximum number of phases to test.
-#
-#    - Main area:
-#        • App title and description.
-#        • Reference section with arXiv and GitHub badges.
-#        • Instructions (expander) for the expected file format.
-#        • When a file is loaded:
-#            - process_data is called.
-#            - On "RUN ANALYSIS", the app opens two tabs:
-#                (1) Gompertz (Eq. 32)
-#                (2) Boltzmann (Eq. 31)
-#            - For each model and each phase count:
-#                • fit_model_auto is executed.
-#                • display_single_fit shows:
-#                    - Raw replicates
-#                    - Outliers
-#                    - Mean ± std without outliers
-#                    - Global fit
-#                    - Individual phase contributions
-#                    - Tables with parameters, standard errors, and metrics.
-#            - A summary table of metrics versus number of phases is built.
-#            - The automatic criterion (AIC/AICc/BIC) is clearly reported,
-#              along with N, k_min, k_max, and N/k_max.
-#            - The selected number of phases (first local minimum) is
-#              highlighted.
-#            - plot_metrics_summary displays a graph of AIC/AICc/BIC and
-#              adjusted R² versus number of phases, with SVG download buttons.
-#
-# 7. Reproducibility and usage notes
-#    - Random seed is fixed (SEED_VALUE = 42) to make DE reproducible.
-#    - The code assumes reasonably smooth sigmoidal-like data and may require
-#      enough data points (N > number of parameters) to compute a stable
-#      covariance matrix.
-#    - The logic and parameter names strictly follow Eq. 31 and 32 of the
-#      preprint; do not rename them if you are comparing with the paper.
-# ==============================================================================
-
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -188,6 +36,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize, differential_evolution
 from scipy.signal import find_peaks
+from scipy.stats import t as t_dist  # <-- NEW: for ROUT FDR
 import io
 import re
 import os
@@ -210,11 +59,11 @@ plt.rcParams.update({
     'mathtext.fontset': 'stix'
 })
 
-# Languages Configuration
+# Languages Configuration (with flags)
 LANGUAGES = {
-    "English": "en",
-    "Português (BR)": "pt",
-    "Français (CA)": "fr"
+    "🇬🇧 English": "en",
+    "🇧🇷 Português (BR)": "pt",
+    "🇫🇷 Français (CA)": "fr"
 }
 
 # UI Text Dictionary
@@ -327,7 +176,38 @@ TEXTS = {
     "legend_outlier": {"en": "Outliers", "pt": "Outliers", "fr": "Valeurs Aberrantes"},
     "error_read": {"en": "Error processing data: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"},
     "error_cols": {"en": "Column error.", "pt": "Erro nas colunas.", "fr": "Erreur de colonne."},
-    "error_proc": {"en": "Error processing data: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"}
+    "error_proc": {"en": "Error processing data: {0}", "pt": "Erro ao processar dados: {0}", "fr": "Erreur de traitement: {0}"},
+    # --- NEW TEXTS: Outlier handling (trilingual) ---
+    "sidebar_outlier_header": {
+        "en": "Outliers & Robustness",
+        "pt": "Outliers e Robustez",
+        "fr": "Valeurs Aberrantes & Robustesse"
+    },
+    "outlier_method_label": {
+        "en": "Outlier Removal Method",
+        "pt": "Método de Remoção de Outliers",
+        "fr": "Méthode de Suppression des Valeurs Aberrantes"
+    },
+    "outlier_none": {
+        "en": "No removal (use all points)",
+        "pt": "Nenhuma remoção (usar todos os pontos)",
+        "fr": "Aucune suppression (utiliser tous les points)"
+    },
+    "outlier_simple": {
+        "en": "ROUT-like (Simple MAD, Z > 2.5)",
+        "pt": "ROUT-like (MAD simples, Z > 2,5)",
+        "fr": "ROUT-like (MAD simple, Z > 2,5)"
+    },
+    "outlier_rout": {
+        "en": "ROUT (Robust + FDR)",
+        "pt": "ROUT (Robusto + FDR)",
+        "fr": "ROUT (Robuste + FDR)"
+    },
+    "rout_q_label": {
+        "en": "ROUT Q (Max FDR %)",
+        "pt": "ROUT Q (FDR máx. %)",
+        "fr": "ROUT Q (FDR max. %)"
+    }
 }
 
 # Variable Labels Configuration (Using neutral keys)
@@ -409,6 +289,15 @@ def sse_loss(theta, t, y, model_func, n_phases):
         return 1e12
     return np.sum((y - y_pred) ** 2)
 
+def robust_loss(theta, t, y, model_func, n_phases):
+    """Soft L1 robust loss (for ROUT pre-fit)."""
+    y_pred = polyauxic_model(t, theta, model_func, n_phases)
+    if np.any(y_pred < -0.1 * np.max(np.abs(y))):
+        return 1e12
+    residuals = y - y_pred
+    loss = 2.0 * (np.sqrt(1.0 + residuals**2) - 1.0)
+    return np.sum(loss)
+
 def numerical_hessian(func, theta, args, epsilon=1e-5):
     """Numerical Hessian calculation."""
     k = len(theta)
@@ -427,13 +316,50 @@ def numerical_hessian(func, theta, args, epsilon=1e-5):
     return hess
 
 def detect_outliers(y_true, y_pred):
-    """ROUT-based outlier detection."""
+    """ROUT-based outlier detection (simple MAD z-score > 2.5)."""
     residuals = y_true - y_pred
     median_res = np.median(residuals)
     mad = np.median(np.abs(residuals - median_res))
     sigma_robust = 1.4826 * mad if mad > 1e-9 else 1e-9
     z_scores = np.abs(residuals - median_res) / sigma_robust
     return z_scores > 2.5
+
+def detect_outliers_rout_rigorous(y_true, y_pred, Q=1.0):
+    """
+    ROUT (Rigorous) with FDR control:
+    - Robust scale via MAD.
+    - t-like scores -> p-values via Student t.
+    - Benjamini–Hochberg FDR at Q%.
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    residuals = y_true - y_pred
+    n = residuals.size
+    if n < 3:
+        return np.zeros_like(residuals, dtype=bool)
+
+    med_res = np.median(residuals)
+    mad_res = np.median(np.abs(residuals - med_res))
+    rsdr = 1.4826 * mad_res if mad_res > 1e-12 else 1e-12
+
+    t_scores = residuals / rsdr
+    df = max(n - 1, 1)
+    abs_t = np.abs(t_scores)
+    p_values = 2.0 * (1.0 - t_dist.cdf(abs_t, df=df))
+
+    alpha = Q / 100.0
+    sort_idx = np.argsort(p_values)
+    p_sorted = p_values[sort_idx]
+    i = np.arange(1, n + 1)
+    bh_thresholds = (i / n) * alpha
+    below = p_sorted <= bh_thresholds
+    if not np.any(below):
+        return np.zeros_like(residuals, dtype=bool)
+
+    k_max = np.max(np.where(below)[0])
+    p_crit = p_sorted[k_max]
+    mask_outliers = p_values <= p_crit
+    return mask_outliers
 
 def smart_initial_guess(t, y, n_phases):
     """Initial parameter guessing based on derivatives."""
@@ -487,7 +413,7 @@ def calculate_p_errors(z_vals, cov_z):
 # ==============================================================================
 
 def fit_model_auto(t_data, y_data, model_func, n_phases):
-    """Main fitting function."""
+    """Main fitting function (SSE-based)."""
     SEED_VALUE = 42
     np.random.seed(SEED_VALUE)
 
@@ -608,6 +534,81 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
         "y_pred": y_pred
     }
 
+def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases):
+    """
+    Robust pre-fit (Soft L1) used only to detect outliers (ROUT FDR).
+    No SE / information criteria here.
+    """
+    SEED_VALUE = 42
+    np.random.seed(SEED_VALUE)
+
+    n_params = 2 + 3 * n_phases
+    if len(t_data) <= n_params:
+        return None
+
+    t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
+    y_scale = np.max(y_data) if np.max(y_data) > 0 else 1.0
+    t_norm = t_data / t_scale
+    y_norm = y_data / y_scale
+
+    theta_smart = smart_initial_guess(t_data, y_data, n_phases)
+    theta0_norm = np.zeros_like(theta_smart)
+    theta0_norm[0] = theta_smart[0] / y_scale
+    theta0_norm[1] = theta_smart[1] / y_scale
+    theta0_norm[2 : 2 + n_phases] = 0.0
+    theta0_norm[2 + n_phases : 2 + 2 * n_phases] = theta_smart[2 + n_phases : 2 + 2 * n_phases] / (y_scale / t_scale)
+    theta0_norm[2 + 2 * n_phases : 2 + 3 * n_phases] = theta_smart[2 + 2 * n_phases : 2 + 3 * n_phases] / t_scale
+
+    pop_size = 50
+    init_pop = np.tile(theta0_norm, (pop_size, 1))
+    init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
+
+    bounds = []
+    bounds.append((-0.2, 1.5))   # y_i_norm
+    bounds.append((0.0, 2.0))    # y_f_norm
+    for _ in range(n_phases):
+        bounds.append((-10, 10))     # z
+    for _ in range(n_phases):
+        bounds.append((0.0, 500.0))  # r_max_norm
+    for _ in range(n_phases):
+        bounds.append((-0.1, 1.2))   # lambda_norm
+
+    res_de = differential_evolution(
+        robust_loss,
+        bounds,
+        args=(t_norm, y_norm, model_func, n_phases),
+        maxiter=3000,
+        popsize=pop_size,
+        init=init_pop,
+        strategy='best1bin',
+        seed=SEED_VALUE,
+        polish=True,
+        tol=1e-6
+    )
+
+    res_opt = minimize(
+        robust_loss,
+        res_de.x,
+        args=(t_norm, y_norm, model_func, n_phases),
+        method='L-BFGS-B',
+        bounds=bounds,
+        tol=1e-10
+    )
+
+    theta_norm = res_opt.x
+
+    theta_real = np.zeros_like(theta_norm)
+    scale_y = np.array([y_scale, y_scale])
+    theta_real[0:2] = theta_norm[0:2] * scale_y
+    theta_real[2 : 2 + n_phases] = theta_norm[2 : 2 + n_phases]
+    scale_r = y_scale / t_scale
+    theta_real[2 + n_phases : 2 + 2 * n_phases] = theta_norm[2 + n_phases : 2 + 2 * n_phases] * scale_r
+    scale_l = t_scale
+    theta_real[2 + 2 * n_phases : 2 + 3 * n_phases] = theta_norm[2 + 2 * n_phases : 2 + 3 * n_phases] * scale_l
+
+    y_pred = polyauxic_model(t_data, theta_real, model_func, n_phases)
+    return {"theta": theta_real, "y_pred": y_pred}
+
 # ==============================================================================
 # 3. DATA PROCESSING
 # ==============================================================================
@@ -726,7 +727,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
 
-        # Replicates: white markers with black edge
+        # Réplicas: marcadores brancos com borda preta
         for rep in replicates:
             ax.scatter(
                 rep['t'],
@@ -750,7 +751,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
                 zorder=5
             )
 
-        # Mean + error bar only if there are multiple replicates
+        # Média + barra de erro só se houver múltiplas réplicas
         if len(replicates) > 1:
             ax.errorbar(
                 stats_df['t_round'],
@@ -840,11 +841,11 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
 
 def choose_information_criterion(N, k_max):
     """
-    Chooses AIC, AICc or BIC based on N and k_max, following Table 1 of the paper.
+    Escolhe AIC, AICc ou BIC com base em N e k, conforme Tabela 1 do artigo.
     - N <= 200:
         - N/k_max < 40 → AIC
         - N/k_max >= 40 → AICc
-    - N  > 200 and k_max large → BIC (parsimony).
+    - N  > 200 e k_max grande → BIC (parcimônia).
     """
     dof_ratio = N / max(k_max, 1)
     if N <= 200:
@@ -856,16 +857,16 @@ def choose_information_criterion(N, k_max):
         if k_max > 40:
             return "BIC"
         else:
-            # Large N, even with moderate k, still justifies using BIC penalty
+            # N grande, mesmo com k moderado, ainda é razoável penalizar com BIC
             return "BIC"
 
 def select_first_local_min_index(values, tol=1e-9):
     """
-    Returns the index of the first local minimum (in the sense of the paper):
-    scans phases in order; as long as the criterion improves (decreases), it
-    continues. At the first point where the value stops improving (becomes
-    equal or higher), it returns the index of the best value up to that point.
-    Example: [100, 50, 75, 10] → index 1 (2 phases).
+    Retorna o índice do primeiro mínimo local (no sentido do artigo):
+    varre na ordem das fases; enquanto o critério melhora (diminui), segue.
+    Na primeira vez que o valor deixa de melhorar (fica igual ou aumenta),
+    retorna o índice do melhor até aquele ponto.
+    Exemplo: [100, 50, 75, 10] → índice 1 (2 fases).
     """
     if not values:
         return 0
@@ -874,7 +875,7 @@ def select_first_local_min_index(values, tol=1e-9):
         if values[i] < values[best_idx] - tol:
             best_idx = i
         elif values[i] >= values[best_idx] - tol:
-            # Stopped improving (equal or worse) → return previous minimum
+            # parou de melhorar (igual ou pior) → retorna mínimo anterior
             break
     return best_idx
 
@@ -938,6 +939,25 @@ def main():
     file = st.sidebar.file_uploader(TEXTS['upload_label'][lang], type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5)
 
+    # --- NEW: Outlier handling configuration (trilingual) ---
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"### {TEXTS['sidebar_outlier_header'][lang]}")
+    outlier_options_keys = ["none", "simple", "rout"]
+    outlier_method_key = st.sidebar.selectbox(
+        TEXTS['outlier_method_label'][lang],
+        options=outlier_options_keys,
+        format_func=lambda k: TEXTS[f"outlier_{k}"][lang]
+    )
+    rout_q = 1.0
+    if outlier_method_key == "rout":
+        rout_q = st.sidebar.slider(
+            TEXTS["rout_q_label"][lang],
+            min_value=0.1,
+            max_value=10.0,
+            value=1.0,
+            step=0.1
+        )
+
     if file:
         try:
             if file.name.endswith(".csv"):
@@ -967,7 +987,44 @@ def main():
                                     expanded=False
                                 ):
                                     with st.spinner(TEXTS['optimizing'][lang].format(n)):
-                                        res = fit_model_auto(t_flat, y_flat, func, n)
+
+                                        res = None
+
+                                        # --- Outlier pipeline applied to loaded data ---
+                                        if outlier_method_key == "none":
+                                            res = fit_model_auto(t_flat, y_flat, func, n)
+
+                                        elif outlier_method_key == "simple":
+                                            # 1) Pre-fit with SSE
+                                            res_pre = fit_model_auto(t_flat, y_flat, func, n)
+                                            if res_pre:
+                                                y_pred_pre = res_pre["y_pred"]
+                                                mask = detect_outliers(y_flat, y_pred_pre)
+                                                n_params = 2 + 3 * n
+                                                # Require some margin of points after removal
+                                                if np.any(mask) and (len(y_flat[~mask]) > n_params + 5):
+                                                    t_clean = t_flat[~mask]
+                                                    y_clean = y_flat[~mask]
+                                                    res = fit_model_auto(t_clean, y_clean, func, n)
+                                                else:
+                                                    res = res_pre
+
+                                        elif outlier_method_key == "rout":
+                                            # 1) Robust pre-fit
+                                            res_robust = fit_model_auto_robust_pre(t_flat, y_flat, func, n)
+                                            if res_robust:
+                                                y_pred_pre = res_robust["y_pred"]
+                                                mask = detect_outliers_rout_rigorous(y_flat, y_pred_pre, Q=rout_q)
+                                                n_params = 2 + 3 * n
+                                                if np.any(mask) and (len(y_flat[~mask]) > n_params + 5):
+                                                    t_clean = t_flat[~mask]
+                                                    y_clean = y_flat[~mask]
+                                                    res = fit_model_auto(t_clean, y_clean, func, n)
+                                                else:
+                                                    res = fit_model_auto(t_flat, y_flat, func, n)
+
+                                        # ------------------------------------------------
+
                                         if res:
                                             display_single_fit(
                                                 res,
@@ -986,7 +1043,7 @@ def main():
                             if results_list:
                                 st.markdown(f"### {TEXTS['table_title'][lang]}")
 
-                                # N and k_max used to choose information criterion (Table 1)
+                                # N e k_max para escolha do critério (Tabela 1)
                                 N = len(y_flat)
                                 k_values = [len(r['theta']) for r in results_list]
                                 k_min, k_max = min(k_values), max(k_values)
@@ -994,7 +1051,7 @@ def main():
 
                                 ic_values = [r['metrics'][ic_name] for r in results_list]
 
-                                # First local minimum of the chosen criterion
+                                # Primeiro mínimo local do critério escolhido
                                 best_idx = select_first_local_min_index(ic_values)
                                 best_n = results_list[best_idx]['n_phases']
 
@@ -1032,7 +1089,7 @@ def main():
                                     hide_index=True
                                 )
 
-                                # Clear message about the criterion and degrees of freedom
+                                # Mensagem clara sobre o critério e graus de liberdade
                                 ratio = N / k_max
                                 st.info(
                                     f"Critério de seleção de modelo: **{ic_name}** "
