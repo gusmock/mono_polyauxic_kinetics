@@ -29,6 +29,158 @@
 
 """
 
+# ==============================================================================
+# POLYAUXIC MODELING PLATFORM - OVERVIEW & PIPELINE (DOCUMENTATION SECTION)
+# ------------------------------------------------------------------------------
+# 1. Purpose of this script
+#    - This Streamlit application implements mono- and polyauxic growth models
+#      based on the Boltzmann (Eq. 31) and Gompertz (Eq. 32) formulations
+#      described in:
+#      Mockaitis, G. (2025) "Mono and Polyauxic Growth Kinetic Models".
+#      ArXiv: 2507.05960.
+#    - The app is designed for microbial growth / bioprocess kinetics, but it
+#      works for any sigmoidal response y(t) that can be described by these
+#      models (biomass, product, substrate, etc.).
+#
+# 2. Theoretical background (core ideas)
+#    - Global model:
+#        y(t) = y_i + (y_f - y_i) * Σ_{j=1..n} f_j(t; p_j, r_max,j, λ_j)
+#
+#      where:
+#        * y_i, y_f  : initial and final asymptotes of the global curve.
+#        * p_j       : fractional contribution of phase j (0 < p_j < 1,
+#                      Σ p_j = 1).
+#        * r_max,j   : maximum rate of phase j.
+#        * λ_j       : "lag" or inflection-related parameter of phase j.
+#        * f_j       : phase term from Boltzmann (Eq. 31) or Gompertz (Eq. 32).
+#
+#    - Boltzmann term (Eq. 31):
+#        f_B,j(t) = p_j / [1 + exp( (4 r_max,j (λ_j - t)) / ((y_f - y_i) p_j) + 2 )]
+#
+#    - Gompertz term (Eq. 32):
+#        f_G,j(t) = p_j * exp( -exp( 1 + (r_max,j e (λ_j - t)) / ((y_f - y_i) p_j) ) )
+#
+#    - To guarantee that p_j are positive and sum to 1, the implementation uses:
+#        z_j  = unconstrained parameters
+#        p_j  = softmax(z_j) = exp(z_j) / Σ_k exp(z_k)
+#
+#    - The model is therefore parameterized by:
+#        θ = [y_i, y_f, z_1..z_n, r_max,1..r_max,n, λ_1..λ_n]
+#
+# 3. Optimization and statistics pipeline
+#    1) Data normalization:
+#       - Time and response are scaled to [0, O(1)] to improve numerical
+#         stability (t_norm, y_norm).
+#
+#    2) Smart initial guess (smart_initial_guess):
+#       - Uses numerical derivative dy/dt and peak detection (find_peaks) to
+#         estimate λ_j and r_max,j.
+#       - Sets y_i and y_f from min(y) and max(y).
+#       - Initializes z_j = 0 (uniform p_j).
+#
+#    3) Global + local optimization:
+#       - Cost function: SSE (sum of squared errors) in normalized space.
+#       - Global step: differential_evolution with bounds in normalized space.
+#       - Local refinement: L-BFGS-B starting from the DE optimum.
+#
+#    4) Back-scaling of parameters:
+#       - θ_norm → θ_real using the original scales of time and response.
+#
+#    5) Uncertainty estimation:
+#       - Numerical Hessian of SSE in normalized space.
+#       - Covariance matrix approximated as σ² H⁻¹ (pseudoinverse).
+#       - Standard errors for θ in normalized space are rescaled to real units.
+#       - p_j standard errors are obtained by error propagation through the
+#         softmax Jacobian (calculate_p_errors).
+#
+#    6) Goodness-of-fit metrics:
+#       - SSE, R², adjusted R².
+#       - Information criteria: AIC, AICc, BIC.
+#
+#    7) Outlier detection:
+#       - ROUT-inspired robust z-score:
+#           residuals = y_true - y_pred
+#           MAD-based robust σ → z-scores
+#           |z| > 2.5 → outlier.
+#       - Outliers are highlighted and excluded from the mean curve used as
+#         visual summary across replicates.
+#
+# 4. Model selection strategy (information criteria)
+#    - For each model (Boltzmann or Gompertz) and each number of phases n:
+#        → a fit is computed, and AIC, AICc, BIC are stored.
+#    - The script chooses ONE information criterion based on N (number of
+#      observations) and k_max (largest number of parameters among tested
+#      models), following the logic of Table 1 in the preprint:
+#        * If N ≤ 200 and N/k_max < 40 → use AIC.
+#        * If N ≤ 200 and N/k_max ≥ 40 → use AICc.
+#        * If N  > 200 and k_max is large → use BIC (parsimony).
+#      (see choose_information_criterion).
+#
+#    - Once the criterion is chosen, the "best" number of phases is the FIRST
+#      local minimum along the sequence of phases:
+#        - While the criterion decreases with additional phases, we keep going.
+#        - As soon as it stops improving (equal or worse), we select the
+#          previous minimum (select_first_local_min_index).
+#
+# 5. Data handling pipeline
+#    - Input:
+#        • CSV or XLSX with columns in pairs:
+#            t1, y1, t2, y2, ..., tN, yN
+#        • Each pair defines one replicate.
+#    - process_data:
+#        1) Drops completely empty columns.
+#        2) For each pair of columns:
+#             - Converts to numeric and removes NaN.
+#             - Stores each replicate as {t, y, name}.
+#        3) Concatenates all replicates into flat arrays (t_flat, y_flat) and
+#           sorts them by time.
+#
+#    - calculate_mean_with_outliers:
+#        • Given the global fit θ, predicts y for all points, flags outliers,
+#          and computes a time-binned mean (and std) without outliers for
+#          visualization purposes.
+#
+# 6. Streamlit UI architecture
+#    - Sidebar:
+#        • Language selection (English, Portuguese, French).
+#        • Response type (generic, product, substrate, biomass).
+#        • File uploader and maximum number of phases to test.
+#
+#    - Main area:
+#        • App title and description.
+#        • Reference section with arXiv and GitHub badges.
+#        • Instructions (expander) for the expected file format.
+#        • When a file is loaded:
+#            - process_data is called.
+#            - On "RUN ANALYSIS", the app opens two tabs:
+#                (1) Gompertz (Eq. 32)
+#                (2) Boltzmann (Eq. 31)
+#            - For each model and each phase count:
+#                • fit_model_auto is executed.
+#                • display_single_fit shows:
+#                    - Raw replicates
+#                    - Outliers
+#                    - Mean ± std without outliers
+#                    - Global fit
+#                    - Individual phase contributions
+#                    - Tables with parameters, standard errors, and metrics.
+#            - A summary table of metrics versus number of phases is built.
+#            - The automatic criterion (AIC/AICc/BIC) is clearly reported,
+#              along with N, k_min, k_max, and N/k_max.
+#            - The selected number of phases (first local minimum) is
+#              highlighted.
+#            - plot_metrics_summary displays a graph of AIC/AICc/BIC and
+#              adjusted R² versus number of phases, with SVG download buttons.
+#
+# 7. Reproducibility and usage notes
+#    - Random seed is fixed (SEED_VALUE = 42) to make DE reproducible.
+#    - The code assumes reasonably smooth sigmoidal-like data and may require
+#      enough data points (N > number of parameters) to compute a stable
+#      covariance matrix.
+#    - The logic and parameter names strictly follow Eq. 31 and 32 of the
+#      preprint; do not rename them if you are comparing with the paper.
+# ==============================================================================
+
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -574,7 +726,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
 
-        # Réplicas: marcadores brancos com borda preta
+        # Replicates: white markers with black edge
         for rep in replicates:
             ax.scatter(
                 rep['t'],
@@ -598,7 +750,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
                 zorder=5
             )
 
-        # Média + barra de erro só se houver múltiplas réplicas
+        # Mean + error bar only if there are multiple replicates
         if len(replicates) > 1:
             ax.errorbar(
                 stats_df['t_round'],
@@ -688,11 +840,11 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
 
 def choose_information_criterion(N, k_max):
     """
-    Escolhe AIC, AICc ou BIC com base em N e k, conforme Tabela 1 do artigo.
+    Chooses AIC, AICc or BIC based on N and k_max, following Table 1 of the paper.
     - N <= 200:
         - N/k_max < 40 → AIC
         - N/k_max >= 40 → AICc
-    - N  > 200 e k_max grande → BIC (parcimônia).
+    - N  > 200 and k_max large → BIC (parsimony).
     """
     dof_ratio = N / max(k_max, 1)
     if N <= 200:
@@ -704,16 +856,16 @@ def choose_information_criterion(N, k_max):
         if k_max > 40:
             return "BIC"
         else:
-            # N grande, mesmo com k moderado, ainda é razoável penalizar com BIC
+            # Large N, even with moderate k, still justifies using BIC penalty
             return "BIC"
 
 def select_first_local_min_index(values, tol=1e-9):
     """
-    Retorna o índice do primeiro mínimo local (no sentido do artigo):
-    varre na ordem das fases; enquanto o critério melhora (diminui), segue.
-    Na primeira vez que o valor deixa de melhorar (fica igual ou aumenta),
-    retorna o índice do melhor até aquele ponto.
-    Exemplo: [100, 50, 75, 10] → índice 1 (2 fases).
+    Returns the index of the first local minimum (in the sense of the paper):
+    scans phases in order; as long as the criterion improves (decreases), it
+    continues. At the first point where the value stops improving (becomes
+    equal or higher), it returns the index of the best value up to that point.
+    Example: [100, 50, 75, 10] → index 1 (2 phases).
     """
     if not values:
         return 0
@@ -722,7 +874,7 @@ def select_first_local_min_index(values, tol=1e-9):
         if values[i] < values[best_idx] - tol:
             best_idx = i
         elif values[i] >= values[best_idx] - tol:
-            # parou de melhorar (igual ou pior) → retorna mínimo anterior
+            # Stopped improving (equal or worse) → return previous minimum
             break
     return best_idx
 
@@ -834,7 +986,7 @@ def main():
                             if results_list:
                                 st.markdown(f"### {TEXTS['table_title'][lang]}")
 
-                                # N e k_max para escolha do critério (Tabela 1)
+                                # N and k_max used to choose information criterion (Table 1)
                                 N = len(y_flat)
                                 k_values = [len(r['theta']) for r in results_list]
                                 k_min, k_max = min(k_values), max(k_values)
@@ -842,7 +994,7 @@ def main():
 
                                 ic_values = [r['metrics'][ic_name] for r in results_list]
 
-                                # Primeiro mínimo local do critério escolhido
+                                # First local minimum of the chosen criterion
                                 best_idx = select_first_local_min_index(ic_values)
                                 best_n = results_list[best_idx]['n_phases']
 
@@ -880,7 +1032,7 @@ def main():
                                     hide_index=True
                                 )
 
-                                # Mensagem clara sobre o critério e graus de liberdade
+                                # Clear message about the criterion and degrees of freedom
                                 ratio = N / k_max
                                 st.info(
                                     f"Critério de seleção de modelo: **{ic_name}** "
@@ -903,3 +1055,150 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+import streamlit.components.v1 as components
+
+# ==============================================================================
+# 7. FOOTER
+# ==============================================================================
+
+profile_pic_url = "https://github.com/gusmock.png"
+st.markdown("---")
+
+footer_html = f"""
+<style>
+    /* Main Footer Container */
+    .footer-container {{
+        width: 100%;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #444;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 20px 0;
+    }}
+    
+    /* Photo and Text Area */
+    .profile-section {{
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        margin-bottom: 20px;
+        max-width: 800px;
+    }}
+    
+    /* Mobile responsiveness */
+    @media (max-width: 600px) {{
+        .profile-section {{
+            flex-direction: column;
+        }}
+    }}
+
+    .profile-img {{
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid #f0f2f6;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }}
+
+    .profile-info {{
+        text-align: left;
+    }}
+    
+    @media (max-width: 600px) {{
+        .profile-info {{ text-align: center; }}
+    }}
+
+    .profile-info h2 {{
+        margin: 0;
+        font-size: 16px;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }}
+    
+    .profile-info h4 {{
+        margin: 5px 0;
+        font-size: 18px;
+        color: #222;
+        font-weight: 700;
+    }}
+    
+    .profile-info p {{
+        margin: 0;
+        font-size: 13px;
+        color: #666;
+        line-height: 1.4;
+    }}
+
+    /* Personal Badges Container */
+    .social-badges {{
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 10px;
+    }}
+    
+    .social-badges a img {{
+        height: 26px;
+        border-radius: 4px;
+        transition: transform 0.2s, opacity 0.2s;
+    }}
+    
+    .social-badges a img:hover {{
+        transform: translateY(-2px);
+        opacity: 0.9;
+    }}
+</style>
+
+<div class="footer-container">
+    
+    <div class="profile-section">
+        <img src="{profile_pic_url}" class="profile-img" alt="Gustavo Mockaitis">
+        
+        <div class="profile-info">
+            <h2>GBMA / FEAGRI / UNICAMP</h2>
+            <h4>Dev: Prof. Dr. Gustavo Mockaitis</h4>
+            <p>
+                Interdisciplinary Research Group of Biotechnology Applied to the Agriculture and Environment<br>
+                School of Agricultural Engineering, University of Campinas.<br>
+                Campinas, SP, Brazil.
+            </p>
+        </div>
+    </div>
+
+    <div class="social-badges">
+        <a href="https://orcid.org/0000-0002-4231-1056" target="_blank">
+            <img src="https://img.shields.io/badge/ORCID-iD-A6CE39?style=for-the-badge&logo=orcid&logoColor=white" alt="ORCID">
+        </a>
+        <a href="https://scholar.google.com/citations?user=yR3UvuoAAAAJ&hl=en&oi=ao" target="_blank">
+            <img src="https://img.shields.io/badge/Scholar-Profile-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white" alt="Google Scholar">
+        </a>
+        <a href="https://www.researchgate.net/profile/Gustavo-Mockaitis" target="_blank">
+            <img src="https://img.shields.io/badge/ResearchGate-Profile-00CCBB?style=for-the-badge&logo=researchgate&logoColor=white" alt="ResearchGate">
+        </a>
+        <a href="http://lattes.cnpq.br/1400402042483439" target="_blank">
+            <img src="https://img.shields.io/badge/Lattes-CV-003399?style=for-the-badge&logo=brasil&logoColor=white" alt="Lattes CV">
+        </a>
+        <a href="https://www.linkedin.com/in/gustavo-mockaitis/" target="_blank">
+            <img src="https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn">
+        </a>
+        <a href="https://www.webofscience.com/wos/author/record/J-7107-2019" target="_blank">
+            <img src="https://img.shields.io/badge/Web_of_Science-Profile-5E33BF?style=for-the-badge&logo=clarivate&logoColor=white" alt="Web of Science">
+        </a>
+        <a href="http://feagri.unicamp.br/mockaitis" target="_blank">
+            <img src="https://img.shields.io/badge/UNICAMP-Institutional-CC0000?style=for-the-badge&logo=google-academic&logoColor=white" alt="UNICAMP">
+        </a>
+    </div>
+
+</div>
+"""
+
+components.html(footer_html, height=280, scrolling=False)
