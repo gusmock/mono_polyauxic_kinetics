@@ -1,31 +1,31 @@
 """
-                                                                                               @@@@                      
-                    ::++        ++..                                       ######  ########  @@@@@@@@                   
-                    ++++      ..++++                                     ##########  ########  @@@@                    
-                    ++++++    ++++++                                 #####  ########  ##########  ####                  
-          ++        ++++++++++++++++      ++++                    ########  ########  ########   ########                
-        ++++++mm::++++++++++++++++++++  ++++++--                ##########  ########  ########  ##########              
-          ++++++++++mm::########::++++++++++++                ##  ##########  ######  ######   ##########  ##            
-            ++++++::####        ####++++++++                 #####  ########  ######  ######  ########  #######            
-          --++++MM##      ####      ##::++++                ########  ########  ####  ####   ########  ##########          
-    ++--  ++++::##    ##    ##  ..MM  ##++++++  ::++       ###########  ######  ####  ####  ######  ##############         
-  --++++++++++##    ##          @@::  mm##++++++++++          ###########  ###### ##  ####  ####  ##############        
-    ++++++++::##    ##          ##      ##++++++++++      ###   ###########  ####  ##  ##  ####  ############    ##        
-        ++++@@++              --        ##++++++          ######    ########  ##          ##  ########    #########      
-        ++++##..      MM  ..######--    ##::++++          ##########      ####              ######    #############      
-        ++++@@++    ####  ##########    ##++++++          ################                  ######################      
-    ++++++++::##          ##########    ##++++++++++      ##################                  #################  @@@@@  
-  ::++++++++++##    ##      ######    mm##++++++++++                                                            @@@@@@@
-    mm++::++++++##  ##++              ##++++++++++mm        ################                  #################  @@@@@  
-          ++++++####                ##::++++                ##############                    ##################        
-            ++++++MM##@@        ####::++++++                 #######    ######              ##################          
-          ++++++++++++@@########++++++++++++mm                #     ########  ##          ##  ##############            
-        mm++++++++++++++++++++++++++++--++++++                  ##########  ############  ####  ########                
-          ++::      ++++++++++++++++      ++++                    ######  ######################  ####                  
-                    ++++++    ++++++                                    ##################    ####                      
-                    ++++      ::++++                                    ##############  @@@@@                         
-                    ++++        ++++                                                   @@@@@@@                          
-                                                                                        @@@@@ 
+                                                                                               @@@@                      
+                    ::++        ++..                                       ######  ########  @@@@@@@@                   
+                    ++++      ..++++                                     ##########  ########  @@@@                    
+                    ++++++    ++++++                                 #####  ########  ##########  ####                  
+          ++        ++++++++++++++++      ++++                    ########  ########  ########   ########                
+        ++++++mm::++++++++++++++++++++  ++++++--                ##########  ########  ########  ##########              
+          ++++++++++mm::########::++++++++++++                ##  ##########  ######  ######   ##########  ##            
+            ++++++::####        ####++++++++                 #####  ########  ######  ######  ########  #######            
+          --++++MM##      ####      ##::++++                ########  ########  ####  ####   ########  ##########          
+    ++--  ++++::##    ##    ##  ..MM  ##++++++  ::++       ###########  ######  ####  ####  ######  ##############         
+  --++++++++++##    ##          @@::  mm##++++++++++          ###########  ###### ##  ####  ####  ##############        
+    ++++++++::##    ##          ##      ##++++++++++      ###   ###########  ####  ##  ##  ####  ############    ##        
+        ++++@@++              --        ##++++++          ######    ########  ##          ##  ########    #########      
+        ++++##..      MM  ..######--    ##::++++          ##########      ####              ######    #############      
+        ++++@@++    ####  ##########    ##++++++          ################                  ######################      
+    ++++++++::##          ##########    ##++++++++++      ##################                  #################  @@@@@  
+  ::++++++++++##    ##      ######    mm##++++++++++                                                            @@@@@@@
+    mm++::++++++##  ##++              ##++++++++++mm        ################                  #################  @@@@@  
+          ++++++####                ##::++++                ##############                    ##################        
+            ++++++MM##@@        ####::++++++                 #######    ######              ##################          
+          ++++++++++++@@########++++++++++++mm                #     ########  ##          ##  ##############            
+        mm++++++++++++++++++++++++++++--++++++                  ##########  ############  ####  ########                
+          ++::      ++++++++++++++++      ++++                    ######  ######################  ####                  
+                    ++++++    ++++++                                    ##################    ####                      
+                    ++++      ::++++                                    ##############  @@@@@                         
+                    ++++        ++++                                                   @@@@@@@                          
+                                                                                        @@@@@ 
 
 """
 
@@ -207,6 +207,22 @@ TEXTS = {
         "en": "ROUT Q (Max FDR %)",
         "pt": "ROUT Q (FDR máx. %)",
         "fr": "ROUT Q (FDR max. %)"
+    },
+    # --- NEW TEXTS: Constraints ---
+    "constraints_header": {
+        "en": "Constraints",
+        "pt": "Restrições",
+        "fr": "Contraintes"
+    },
+    "force_yi": {
+        "en": "Force y_i = 0",
+        "pt": "Forçar y_i = 0",
+        "fr": "Forcer y_i = 0"
+    },
+    "force_yf": {
+        "en": "Force y_f = 0",
+        "pt": "Forçar y_f = 0",
+        "fr": "Forcer y_f = 0"
     }
 }
 
@@ -284,6 +300,11 @@ def polyauxic_model(t, theta, model_func, n_phases):
 
 def sse_loss(theta, t, y, model_func, n_phases):
     """Sum of Squared Errors Loss function."""
+    lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
+    # CONSTRAINT: Chronological ordering (lambda_1 < lambda_2 < ... < lambda_n)
+    if np.any(np.diff(lambda_) <= 0):
+        return 1e12
+
     y_pred = polyauxic_model(t, theta, model_func, n_phases)
     if np.any(y_pred < -0.1 * np.max(np.abs(y))):
         return 1e12
@@ -291,6 +312,11 @@ def sse_loss(theta, t, y, model_func, n_phases):
 
 def robust_loss(theta, t, y, model_func, n_phases):
     """Soft L1 robust loss (for ROUT pre-fit)."""
+    lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
+    # CONSTRAINT: Chronological ordering (lambda_1 < lambda_2 < ... < lambda_n)
+    if np.any(np.diff(lambda_) <= 0):
+        return 1e12
+
     y_pred = polyauxic_model(t, theta, model_func, n_phases)
     if np.any(y_pred < -0.1 * np.max(np.abs(y))):
         return 1e12
@@ -412,7 +438,7 @@ def calculate_p_errors(z_vals, cov_z):
 # 2. FITTING ENGINE
 # ==============================================================================
 
-def fit_model_auto(t_data, y_data, model_func, n_phases):
+def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False):
     """Main fitting function (SSE-based)."""
     SEED_VALUE = 42
     np.random.seed(SEED_VALUE)
@@ -430,6 +456,13 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     theta0_norm = np.zeros_like(theta_smart)
     theta0_norm[0] = theta_smart[0] / y_scale
     theta0_norm[1] = theta_smart[1] / y_scale
+    
+    # Override guesses if forced
+    if force_yi:
+        theta0_norm[0] = 0.0
+    if force_yf:
+        theta0_norm[1] = 0.0
+
     theta0_norm[2 : 2 + n_phases] = 0.0
     theta0_norm[2 + n_phases : 2 + 2 * n_phases] = theta_smart[2 + n_phases : 2 + 2 * n_phases] / (y_scale / t_scale)
     theta0_norm[2 + 2 * n_phases : 2 + 3 * n_phases] = theta_smart[2 + 2 * n_phases : 2 + 3 * n_phases] / t_scale
@@ -438,9 +471,26 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
     init_pop = np.tile(theta0_norm, (pop_size, 1))
     init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
 
+    # Enforce exact zero in population if forced
+    if force_yi:
+        init_pop[:, 0] = 0.0
+    if force_yf:
+        init_pop[:, 1] = 0.0
+
     bounds = []
-    bounds.append((-0.2, 1.5))   # y_i_norm
-    bounds.append((0.0, 2.0))    # y_f_norm
+    
+    # y_i bounds
+    if force_yi:
+        bounds.append((0.0, 1e-10)) # Effectively 0
+    else:
+        bounds.append((-0.2, 1.5))
+    
+    # y_f bounds
+    if force_yf:
+        bounds.append((0.0, 1e-10)) # Effectively 0
+    else:
+        bounds.append((0.0, 2.0))
+        
     for _ in range(n_phases):
         bounds.append((-10, 10))     # z
     for _ in range(n_phases):
@@ -534,7 +584,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases):
         "y_pred": y_pred
     }
 
-def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases):
+def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False):
     """
     Robust pre-fit (Soft L1) used only to detect outliers (ROUT FDR).
     No SE / information criteria here.
@@ -555,6 +605,13 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases):
     theta0_norm = np.zeros_like(theta_smart)
     theta0_norm[0] = theta_smart[0] / y_scale
     theta0_norm[1] = theta_smart[1] / y_scale
+    
+    # Override guesses if forced
+    if force_yi:
+        theta0_norm[0] = 0.0
+    if force_yf:
+        theta0_norm[1] = 0.0
+        
     theta0_norm[2 : 2 + n_phases] = 0.0
     theta0_norm[2 + n_phases : 2 + 2 * n_phases] = theta_smart[2 + n_phases : 2 + 2 * n_phases] / (y_scale / t_scale)
     theta0_norm[2 + 2 * n_phases : 2 + 3 * n_phases] = theta_smart[2 + 2 * n_phases : 2 + 3 * n_phases] / t_scale
@@ -563,9 +620,26 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases):
     init_pop = np.tile(theta0_norm, (pop_size, 1))
     init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
 
+    # Enforce exact zero in population if forced
+    if force_yi:
+        init_pop[:, 0] = 0.0
+    if force_yf:
+        init_pop[:, 1] = 0.0
+
     bounds = []
-    bounds.append((-0.2, 1.5))   # y_i_norm
-    bounds.append((0.0, 2.0))    # y_f_norm
+    
+    # y_i bounds
+    if force_yi:
+        bounds.append((0.0, 1e-10))
+    else:
+        bounds.append((-0.2, 1.5))
+    
+    # y_f bounds
+    if force_yf:
+        bounds.append((0.0, 1e-10))
+    else:
+        bounds.append((0.0, 2.0))
+        
     for _ in range(n_phases):
         bounds.append((-10, 10))     # z
     for _ in range(n_phases):
@@ -957,6 +1031,20 @@ def main():
             value=1.0,
             step=0.1
         )
+    
+    # --- NEW: Constraints ---
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"### {TEXTS['constraints_header'][lang]}")
+    
+    # Force y_i = 0
+    force_yi = st.sidebar.checkbox(TEXTS['force_yi'][lang], value=False)
+    
+    # Force y_f = 0 (disabled if y_i is active)
+    force_yf = st.sidebar.checkbox(TEXTS['force_yf'][lang], value=False, disabled=force_yi)
+    
+    # Logic safety: if yi is forced, yf cannot be True
+    if force_yi:
+        force_yf = False
 
     if file:
         try:
@@ -992,11 +1080,11 @@ def main():
 
                                         # --- Outlier pipeline applied to loaded data ---
                                         if outlier_method_key == "none":
-                                            res = fit_model_auto(t_flat, y_flat, func, n)
+                                            res = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
 
                                         elif outlier_method_key == "simple":
                                             # 1) Pre-fit with SSE
-                                            res_pre = fit_model_auto(t_flat, y_flat, func, n)
+                                            res_pre = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
                                             if res_pre:
                                                 y_pred_pre = res_pre["y_pred"]
                                                 mask = detect_outliers(y_flat, y_pred_pre)
@@ -1005,13 +1093,13 @@ def main():
                                                 if np.any(mask) and (len(y_flat[~mask]) > n_params + 5):
                                                     t_clean = t_flat[~mask]
                                                     y_clean = y_flat[~mask]
-                                                    res = fit_model_auto(t_clean, y_clean, func, n)
+                                                    res = fit_model_auto(t_clean, y_clean, func, n, force_yi=force_yi, force_yf=force_yf)
                                                 else:
                                                     res = res_pre
 
                                         elif outlier_method_key == "rout":
                                             # 1) Robust pre-fit
-                                            res_robust = fit_model_auto_robust_pre(t_flat, y_flat, func, n)
+                                            res_robust = fit_model_auto_robust_pre(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
                                             if res_robust:
                                                 y_pred_pre = res_robust["y_pred"]
                                                 mask = detect_outliers_rout_rigorous(y_flat, y_pred_pre, Q=rout_q)
@@ -1019,9 +1107,9 @@ def main():
                                                 if np.any(mask) and (len(y_flat[~mask]) > n_params + 5):
                                                     t_clean = t_flat[~mask]
                                                     y_clean = y_flat[~mask]
-                                                    res = fit_model_auto(t_clean, y_clean, func, n)
+                                                    res = fit_model_auto(t_clean, y_clean, func, n, force_yi=force_yi, force_yf=force_yf)
                                                 else:
-                                                    res = fit_model_auto(t_flat, y_flat, func, n)
+                                                    res = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
 
                                         # ------------------------------------------------
 
