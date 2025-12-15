@@ -28,66 +28,61 @@
                                                                                         @@@@@ 
 
 -------------------------------------------------------------------------------
-PIPELINE DESCRIPTION & COMPUTATIONAL WORKFLOW
+POLYAUXIC MODELING PLATFORM: COMPUTATIONAL WORKFLOW & THEORETICAL FRAMEWORK
 -------------------------------------------------------------------------------
 
-1. DATA INGESTION & PREPROCESSING:
-   - The user uploads a CSV or XLSX file containing time-series data.
-   - The system detects pairs of columns (Time, Response) to handle multiple 
-     biological replicates automatically.
-   - Data is flattened and sorted for processing, while keeping replicate 
-     structure for visualization.
+1. DATA INGESTION & NORMALIZATION
+   - The user uploads experimental data (CSV/XLSX). Time (t) and response (y) are 
+     normalized by their maximum values to ensure numerical stability during 
+     optimization.
+   - Reference: Mockaitis, G. (2025). Mono and Polyauxic Growth Kinetic Models. 
+     ArXiv: 2507.05960.
 
-2. NORMALIZATION:
-   - To ensure numerical stability during optimization, time (t) and response (y) 
-     values are normalized by their maximum values (t_scale, y_scale).
-   - This maps the search space to a predictable range (~0.0 to 1.0).
+2. MATHEMATICAL MODELS (Sigmoidal Functions)
+   - The platform utilizes unified, mechanistic reparameterizations of classic 
+     sigmoidal equations.
+   - **Boltzmann:** Originally for phase transitions [Boltzmann, 1872], adapted 
+     here to define max rate (r_max) and lag time (lambda) [Eq. 31].
+   - **Gompertz:** Originally for mortality [Gompertz, 1825], widely used in 
+     microbiology [Zwietering et al., 1990], reparameterized for asymmetry [Eq. 32].
+   - **Polyauxic Growth:** Modeled as a weighted sum of 'n' monoauxic phases 
+     [Mockaitis et al., 2020]. The weighting factors (p_j) are constrained via 
+     a Softmax transformation [Eq. 33] to ensure they sum to 1.
 
-3. HEURISTIC INITIALIZATION (smart_initial_guess):
-   - The first derivative of the data (dy/dt) is calculated and smoothed.
-   - Peaks in the derivative are identified to estimate the position (lambda) 
-     and magnitude (r_max) of potential growth phases.
-   - Initial guesses for y_i and y_f are derived from the data's start/end 
-     trend (allowing for both growth and decay).
+3. HEURISTIC INITIALIZATION
+   - To avoid local minima, initial estimates are derived automatically by analyzing 
+     peaks in the first derivative (dy/dt) of the data. This provides biologically 
+     plausible starting points for the rates (r_max) and inflection points (lambda).
 
-4. OUTLIER DETECTION (Optional):
-   - Methods: 
-     a) None: Use all data.
-     b) Simple: Iterative removal based on Median Absolute Deviation (MAD) 
-        Z-scores > 2.5.
-     c) ROUT (Robust Regression and Outlier Removal):
-        - Step 1: Perform a robust pre-fit using the 'Soft L1' (Charbonnier) 
-          loss function. This minimizes the influence of extreme points.
-        - Step 2: Calculate residuals and robust standard deviation (RSDR).
-        - Step 3: Compute t-scores and P-values for each point.
-        - Step 4: Apply Benjamini-Hochberg False Discovery Rate (FDR) control 
-          (Q parameter) to identify outliers.
+4. ROBUST FITTING STRATEGY (Two-Stage Optimization)
+   - **Stage 1 (Global):** Differential Evolution (DE) [Storn & Price, 1997]. A 
+     stochastic, population-based method used to explore the global parameter space 
+     and avoid local optima common in multi-modal polyauxic landscapes.
+   - **Stage 2 (Local):** L-BFGS-B [Byrd et al., 1995]. A gradient-based algorithm 
+     applied to refine the parameters with high precision, strictly enforcing bound 
+     constraints (e.g., non-negative rates).
 
-5. GLOBAL OPTIMIZATION (Differential Evolution):
-   - The objective function (SSE or Soft L1) is minimized using Differential 
-     Evolution (DE).
-   - DE is a stochastic, population-based method ideal for avoiding local 
-     minima in multi-modal landscapes (common in polyauxic models).
-   - Constraints (e.g., lambda_1 < lambda_2) are enforced via penalty terms 
-     in the loss function.
+5. OUTLIER DETECTION (ROUT Method)
+   - Based on the premise that biological data often follow a heavy-tailed distribution due 
+     to experimental error.
+   - **Pre-fit:** Uses a Robust Loss Function (Charbonnier/Soft L1) [Charbonnier et al., 1994] 
+     instead of Least Squares to minimize the influence of extreme points.
+   - **Detection:** Applies the ROUT method [Motulsky & Brown, 2006], utilizing the 
+     False Discovery Rate (FDR) [Benjamini & Hochberg, 1995] to identify outliers 
+     statistically inconsistent with the model.
 
-6. LOCAL REFINEMENT (L-BFGS-B):
-   - The best solution from DE is used as the starting point for the L-BFGS-B 
-     algorithm.
-   - This gradient-based method polishes the parameters to high precision 
-     while strictly respecting bounds (e.g., non-negative rates).
+6. MODEL SELECTION (Parsimony)
+   - To prevent overparameterization, the system fits models from 1 to 'n' phases.
+   - Selection is guided by Information Criteria:
+     - **AIC (Akaike):** [Akaike, 1974]
+     - **AICc (Corrected):** For small sample sizes [Hurvich & Tsai, 1989].
+     - **BIC (Bayesian):** For larger datasets, prioritizing parsimony [Schwarz, 1978].
 
-7. MODEL SELECTION (Information Criteria):
-   - The system fits models with increasing number of phases (1 to max_phases).
-   - For each fit, AIC, AICc, and BIC are calculated.
-   - The 'Best Model' is suggested based on the first local minimum of the 
-     appropriate criterion (AICc for small samples, BIC for large/parsimonious).
-
-8. UNCERTAINTY QUANTIFICATION:
-   - Standard Errors (SE) for parameters are estimated using the Hessian matrix 
-     (numerically approximated) and the residual variance.
-   - Errors for derived parameters (like phase fraction 'p') are propagated 
-     using the Delta Method.
+7. UNCERTAINTY QUANTIFICATION
+   - Parameter uncertainties (Standard Errors) are estimated via the Hessian matrix 
+     (calculated numerically) and the residual variance.
+   - Errors for derived parameters (like phase weights) are propagated using the 
+     Delta Method [Oehlert, 1992].
 
 -------------------------------------------------------------------------------
 """
@@ -551,7 +546,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     if force_yi:
         bounds.append((0.0, 1e-10)) # Effectively 0
     else:
-        bounds.append((-0.2, 1.5))
+        bounds.append((0.0, 1.5)) # CHANGED: Strictly non-negative
     
     # y_f bounds
     if force_yf:
@@ -701,7 +696,7 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     if force_yi:
         bounds.append((0.0, 1e-10))
     else:
-        bounds.append((-0.2, 1.5))
+        bounds.append((0.0, 1.5)) # CHANGED: Strictly non-negative
     
     # y_f bounds
     if force_yf:
