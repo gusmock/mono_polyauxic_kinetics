@@ -29,6 +29,72 @@
 
 """
 
+"""
+-------------------------------------------------------------------------------
+PIPELINE DESCRIPTION & COMPUTATIONAL WORKFLOW
+-------------------------------------------------------------------------------
+
+1. DATA INGESTION & PREPROCESSING:
+   - The user uploads a CSV or XLSX file containing time-series data.
+   - The system detects pairs of columns (Time, Response) to handle multiple 
+     biological replicates automatically.
+   - Data is flattened and sorted for processing, while keeping replicate 
+     structure for visualization.
+
+2. NORMALIZATION:
+   - To ensure numerical stability during optimization, time (t) and response (y) 
+     values are normalized by their maximum values (t_scale, y_scale).
+   - This maps the search space to a predictable range (~0.0 to 1.0).
+
+3. HEURISTIC INITIALIZATION (smart_initial_guess):
+   - The first derivative of the data (dy/dt) is calculated and smoothed.
+   - Peaks in the derivative are identified to estimate the position (lambda) 
+     and magnitude (r_max) of potential growth phases.
+   - Initial guesses for y_i and y_f are derived from the data's start/end 
+     trend (allowing for both growth and decay).
+
+4. OUTLIER DETECTION (Optional):
+   - Methods: 
+     a) None: Use all data.
+     b) Simple: Iterative removal based on Median Absolute Deviation (MAD) 
+        Z-scores > 2.5.
+     c) ROUT (Robust Regression and Outlier Removal):
+        - Step 1: Perform a robust pre-fit using the 'Soft L1' (Charbonnier) 
+          loss function. This minimizes the influence of extreme points.
+        - Step 2: Calculate residuals and robust standard deviation (RSDR).
+        - Step 3: Compute t-scores and P-values for each point.
+        - Step 4: Apply Benjamini-Hochberg False Discovery Rate (FDR) control 
+          (Q parameter) to identify outliers.
+
+5. GLOBAL OPTIMIZATION (Differential Evolution):
+   - The objective function (SSE or Soft L1) is minimized using Differential 
+     Evolution (DE).
+   - DE is a stochastic, population-based method ideal for avoiding local 
+     minima in multi-modal landscapes (common in polyauxic models).
+   - Constraints (e.g., lambda_1 < lambda_2) are enforced via penalty terms 
+     in the loss function.
+
+6. LOCAL REFINEMENT (L-BFGS-B):
+   - The best solution from DE is used as the starting point for the L-BFGS-B 
+     algorithm.
+   - This gradient-based method polishes the parameters to high precision 
+     while strictly respecting bounds (e.g., non-negative rates).
+
+7. MODEL SELECTION (Information Criteria):
+   - The system fits models with increasing number of phases (1 to max_phases).
+   - For each fit, AIC, AICc, and BIC are calculated.
+   - The 'Best Model' is suggested based on the first local minimum of the 
+     appropriate criterion (AICc for small samples, BIC for large/parsimonious).
+
+8. UNCERTAINTY QUANTIFICATION:
+   - Standard Errors (SE) for parameters are estimated using the Hessian matrix 
+     (numerically approximated) and the residual variance.
+   - Errors for derived parameters (like phase fraction 'p') are propagated 
+     using the Delta Method.
+
+-------------------------------------------------------------------------------
+"""
+
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -403,8 +469,17 @@ def smart_initial_guess(t, y, n_phases):
         })
     guesses.sort(key=lambda x: x['lambda'])
     theta_guess = np.zeros(2 + 3 * n_phases)
-    theta_guess[0] = np.min(y)
-    theta_guess[1] = np.max(y)
+    
+    # Updated: Detect trend to allow decay (remove implicit yi < yf constraint)
+    if np.mean(y[:len(y)//5]) < np.mean(y[-len(y)//5:]):
+         # Growth trend
+         theta_guess[0] = np.min(y)
+         theta_guess[1] = np.max(y)
+    else:
+         # Decay trend (or ambiguous)
+         theta_guess[0] = np.max(y)
+         theta_guess[1] = np.min(y)
+
     theta_guess[2 : 2 + n_phases] = 0.0
     for i in range(n_phases):
         theta_guess[2 + n_phases + i] = guesses[i]['r_max']
@@ -492,7 +567,8 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     for _ in range(n_phases):
         bounds.append((0.0, 500.0))  # r_max_norm
     for _ in range(n_phases):
-        bounds.append((-0.1, 1.2))   # lambda_norm
+        # Changed: Ensure lambda >= 0 (and naturally lambda_1 >= 0)
+        bounds.append((0.0, 1.2))    # lambda_norm
 
     res_de = differential_evolution(
         sse_loss,
@@ -641,7 +717,8 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     for _ in range(n_phases):
         bounds.append((0.0, 500.0))  # r_max_norm
     for _ in range(n_phases):
-        bounds.append((-0.1, 1.2))   # lambda_norm
+        # Changed: Ensure lambda >= 0 (and naturally lambda_1 >= 0)
+        bounds.append((0.0, 1.2))    # lambda_norm
 
     res_de = differential_evolution(
         robust_loss,
