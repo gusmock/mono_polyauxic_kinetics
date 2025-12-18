@@ -475,7 +475,11 @@ def smart_initial_guess(t, y, n_phases):
     theta_guess = np.zeros(2 + 3 * n_phases)
     
     # Updated: Detect trend to allow decay (remove implicit yi < yf constraint)
-    if np.mean(y[:len(y)//5]) < np.mean(y[-len(y)//5:]):
+    n_slice = max(1, len(y) // 5) 
+    mean_start = np.mean(y[:n_slice])
+    mean_end = np.mean(y[-n_slice:])
+    
+    if float(mean_start) < float(mean_end):
          # Growth trend
          theta_guess[0] = np.min(y)
          theta_guess[1] = np.max(y)
