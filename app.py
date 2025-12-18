@@ -290,7 +290,8 @@ TEXTS = {
     "table_col_value": {"en": "Value", "pt": "Valor", "fr": "Valeur"},
     "table_col_param": {"en": "Param", "pt": "Parâm", "fr": "Param"},
     "table_col_val": {"en": "Val", "pt": "Valor", "fr": "Val"},
-    "table_col_se": {"en": "SE", "pt": "EP", "fr": "ET"}
+    "table_col_se": {"en": "SE", "pt": "EP", "fr": "ET"},
+    "table_col_phase": {"en": "Phase", "pt": "Fase", "fr": "Phase"}
 }
 
 # Variable Labels Configuration (Using neutral keys)
@@ -765,7 +766,12 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
 
 def process_data(df):
     """Processes DataFrame detecting replicates in pairs of columns."""
-    df = df.dropna(axis=1, how='all')
+    # Remove empty columns only if they are entirely empty, but avoid dropping duplicate names issues
+    # Better to just iterate based on index
+    
+    # Ensure index is clean
+    df = df.reset_index(drop=True)
+    
     num_cols = df.shape[1]
     num_replicates = num_cols // 2
     
@@ -775,12 +781,20 @@ def process_data(df):
     
     for i in range(num_replicates):
         # Use iloc to select columns by position, ensuring we get a Series (1D)
-        t_col = df.iloc[:, 2 * i]
-        y_col = df.iloc[:, 2 * i + 1]
+        # We explicitly access .values to bypass any pandas Index ambiguity
+        t_col_raw = df.iloc[:, 2 * i].values
+        y_col_raw = df.iloc[:, 2 * i + 1].values
         
-        # Force numeric conversion and flattening using to_numpy() for robustness
-        t_vals = pd.to_numeric(t_col, errors='coerce').to_numpy().flatten()
-        y_vals = pd.to_numeric(y_col, errors='coerce').to_numpy().flatten()
+        # Force conversion to 1D numpy array of floats
+        t_vals = pd.to_numeric(t_col_raw, errors='coerce')
+        y_vals = pd.to_numeric(y_col_raw, errors='coerce')
+        
+        # Ensure they are flat numpy arrays (defensive programming)
+        if hasattr(t_vals, 'to_numpy'): t_vals = t_vals.to_numpy()
+        if hasattr(y_vals, 'to_numpy'): y_vals = y_vals.to_numpy()
+            
+        t_vals = np.array(t_vals).flatten()
+        y_vals = np.array(y_vals).flatten()
         
         mask = ~np.isnan(t_vals) & ~np.isnan(y_vals)
         t_clean = t_vals[mask]
@@ -792,8 +806,16 @@ def process_data(df):
         
     t_flat = np.array(all_t)
     y_flat = np.array(all_y)
-    idx_sort = np.argsort(t_flat)
-    return t_flat[idx_sort], y_flat[idx_sort], replicates
+    
+    # Ensure t_flat is also flat in case extend did something weird (unlikely)
+    t_flat = t_flat.flatten()
+    y_flat = y_flat.flatten()
+    
+    if len(t_flat) > 0:
+        idx_sort = np.argsort(t_flat)
+        return t_flat[idx_sort], y_flat[idx_sort], replicates
+    else:
+        return np.array([]), np.array([]), []
 
 def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     """Calculates mean excluding outliers based on the model fit."""
@@ -840,7 +862,8 @@ def plot_final_summary(replicates, best_results, lang):
     colors = {'Gompertz': 'tab:blue', 'Boltzmann': 'tab:orange'}
     
     # 3. Plot curves
-    t_max = max([r['t'].max() for r in replicates])
+    all_t = [r['t'].max() for r in replicates]
+    t_max = max(all_t) if all_t else 1.0
     t_smooth = np.linspace(0, t_max, 300)
     
     for model_name, res in best_results.items():
@@ -1027,22 +1050,22 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
         rows = []
         for i, ph in enumerate(phases):
             rows.append({
-                "F": i + 1,
+                TEXTS['table_col_phase'][lang]: i + 1,
                 "p": ph['p'],
-                "SE p": ph['SE p'],
+                f"{TEXTS['table_col_se'][lang]} p": ph['SE p'],
                 rate_label: ph['r_max'],
-                f"SE {rate_label}": ph['r_max_se'],
+                f"{TEXTS['table_col_se'][lang]} {rate_label}": ph['r_max_se'],
                 "λ": ph['lambda'],
-                "SE λ": ph['lambda_se']
+                f"{TEXTS['table_col_se'][lang]} λ": ph['lambda_se']
             })
         st.dataframe(
             pd.DataFrame(rows).style.format({
                 "p": "{:.4f}",
-                "SE p": "{:.4f}",
+                f"{TEXTS['table_col_se'][lang]} p": "{:.4f}",
                 rate_label: "{:.4f}",
-                f"SE {rate_label}": "{:.4f}",
+                f"{TEXTS['table_col_se'][lang]} {rate_label}": "{:.4f}",
                 "λ": "{:.4f}",
-                "SE λ": "{:.4f}"
+                f"{TEXTS['table_col_se'][lang]} λ": "{:.4f}"
             }),
             hide_index=True
         )
