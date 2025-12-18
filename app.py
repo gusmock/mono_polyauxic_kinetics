@@ -774,13 +774,13 @@ def process_data(df):
     replicates = []
     
     for i in range(num_replicates):
-        # Robust selection using iloc to avoid duplicate column name issues
-        t_vals_raw = df.iloc[:, 2 * i]
-        y_vals_raw = df.iloc[:, 2 * i + 1]
+        # Use iloc to select columns by position, ensuring we get a Series (1D)
+        t_col = df.iloc[:, 2 * i]
+        y_col = df.iloc[:, 2 * i + 1]
         
-        # Explicit conversion to numpy arrays and flattening
-        t_vals = pd.to_numeric(t_vals_raw, errors='coerce').values.flatten()
-        y_vals = pd.to_numeric(y_vals_raw, errors='coerce').values.flatten()
+        # Force numeric conversion and flattening using to_numpy() for robustness
+        t_vals = pd.to_numeric(t_col, errors='coerce').to_numpy().flatten()
+        y_vals = pd.to_numeric(y_col, errors='coerce').to_numpy().flatten()
         
         mask = ~np.isnan(t_vals) & ~np.isnan(y_vals)
         t_clean = t_vals[mask]
