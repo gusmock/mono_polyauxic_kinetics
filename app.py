@@ -86,7 +86,6 @@ POLYAUXIC MODELING PLATFORM: COMPUTATIONAL WORKFLOW & THEORETICAL FRAMEWORK
 
 -------------------------------------------------------------------------------
 """
-
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -94,11 +93,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize, differential_evolution
 from scipy.signal import find_peaks
-from scipy.stats import t as t_dist  # <-- NEW: for ROUT FDR
+from scipy.stats import t as t_dist
 import io
-import re
-import os
-from datetime import datetime
 
 # ==============================================================================
 # 0. CONFIGURATION & GLOBAL SETTINGS
@@ -117,7 +113,7 @@ plt.rcParams.update({
     'mathtext.fontset': 'stix'
 })
 
-# Languages Configuration (with flags)
+# Languages Configuration
 LANGUAGES = {
     "🇬🇧 English": "en",
     "🇧🇷 Português (BR)": "pt",
@@ -279,7 +275,22 @@ TEXTS = {
         "en": "Force y_f = 0",
         "pt": "Forçar y_f = 0",
         "fr": "Forcer y_f = 0"
-    }
+    },
+    "summary_header_used": {
+        "en": "{0} used",
+        "pt": "{0} usado",
+        "fr": "{0} utilisé"
+    },
+    "info_selection_criteria": {
+        "en": "Model selection criteria: **{0}** (N = {1}, k_min = {2}, k_max = {3}, N/k_max = {4:.1f}). The selected number of phases is {5} (first local minimum of {0}).",
+        "pt": "Critério de seleção de modelo: **{0}** (N = {1}, k_min = {2}, k_max = {3}, N/k_max = {4:.1f}). O número de fases selecionado é {5} (primeiro mínimo local de {0}).",
+        "fr": "Critère de sélection du modèle : **{0}** (N = {1}, k_min = {2}, k_max = {3}, N/k_max = {4:.1f}). Le nombre de phases sélectionné est {5} (premier minimum local de {0})."
+    },
+    "table_col_metric": {"en": "Metric", "pt": "Métrica", "fr": "Métrique"},
+    "table_col_value": {"en": "Value", "pt": "Valor", "fr": "Valeur"},
+    "table_col_param": {"en": "Param", "pt": "Parâm", "fr": "Param"},
+    "table_col_val": {"en": "Val", "pt": "Valor", "fr": "Val"},
+    "table_col_se": {"en": "SE", "pt": "EP", "fr": "ET"}
 }
 
 # Variable Labels Configuration (Using neutral keys)
@@ -755,25 +766,30 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
 def process_data(df):
     """Processes DataFrame detecting replicates in pairs of columns."""
     df = df.dropna(axis=1, how='all')
-    cols = df.columns.tolist()
+    num_cols = df.shape[1]
+    num_replicates = num_cols // 2
+    
     all_t = []
     all_y = []
     replicates = []
-    num_replicates = len(cols) // 2
+    
     for i in range(num_replicates):
-        t_col = cols[2 * i]
-        y_col = cols[2 * i + 1]
+        # Robust selection using iloc to avoid duplicate column name issues
+        t_vals_raw = df.iloc[:, 2 * i]
+        y_vals_raw = df.iloc[:, 2 * i + 1]
         
-        # Flattening here solves the "Ambiguous Truth Value" error if df[col] returns duplicate columns
-        t_vals = pd.to_numeric(df[t_col], errors='coerce').values.flatten()
-        y_vals = pd.to_numeric(df[y_col], errors='coerce').values.flatten()
+        # Explicit conversion to numpy arrays and flattening
+        t_vals = pd.to_numeric(t_vals_raw, errors='coerce').values.flatten()
+        y_vals = pd.to_numeric(y_vals_raw, errors='coerce').values.flatten()
         
         mask = ~np.isnan(t_vals) & ~np.isnan(y_vals)
         t_clean = t_vals[mask]
         y_clean = y_vals[mask]
+        
         all_t.extend(t_clean)
         all_y.extend(y_clean)
         replicates.append({'t': t_clean, 'y': y_clean, 'name': f'Replica {i + 1}'})
+        
     t_flat = np.array(all_t)
     y_flat = np.array(all_y)
     idx_sort = np.argsort(t_flat)
@@ -925,7 +941,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
 
-        # Réplicas: marcadores brancos com borda preta
+        # Replicates: white markers with black edge
         for rep in replicates:
             ax.scatter(
                 rep['t'],
@@ -949,7 +965,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
                 zorder=5
             )
 
-        # Média + barra de erro só se houver múltiplas réplicas
+        # Mean + error bar only if multiple replicates
         if len(replicates) > 1:
             ax.errorbar(
                 stats_df['t_round'],
@@ -998,10 +1014,15 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
         st.pyplot(fig)
 
     with c_data:
+        # Translated DataFrame for Globals
         df_glob = pd.DataFrame(
-            {"Param": [yi_name, yf_name], "Val": [y_i, y_f], "SE": [y_i_se, y_f_se]}
+            {
+                TEXTS['table_col_param'][lang]: [yi_name, yf_name], 
+                TEXTS['table_col_val'][lang]: [y_i, y_f], 
+                TEXTS['table_col_se'][lang]: [y_i_se, y_f_se]
+            }
         )
-        st.dataframe(df_glob.style.format({"Val": "{:.4f}", "SE": "{:.4f}"}), hide_index=True)
+        st.dataframe(df_glob.style.format({TEXTS['table_col_val'][lang]: "{:.4f}", TEXTS['table_col_se'][lang]: "{:.4f}"}), hide_index=True)
 
         rows = []
         for i, ph in enumerate(phases):
@@ -1028,10 +1049,12 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
 
         m = res['metrics']
         df_met = pd.DataFrame(
-            {"Metric": ["R²", "R² Adj", "AIC", "AICc", "BIC"],
-             "Value": [m['R2'], m['R2_adj'], m['AIC'], m['AICc'], m['BIC']]}
+            {
+                TEXTS['table_col_metric'][lang]: ["R²", "R² Adj", "AIC", "AICc", "BIC"],
+                TEXTS['table_col_value'][lang]: [m['R2'], m['R2_adj'], m['AIC'], m['AICc'], m['BIC']]
+            }
         )
-        st.dataframe(df_met.style.format({"Value": "{:.4f}"}), hide_index=True)
+        st.dataframe(df_met.style.format({TEXTS['table_col_value'][lang]: "{:.4f}"}), hide_index=True)
 
 # ==============================================================================
 # 5. INFORMATION CRITERIA SELECTION HELPERS
@@ -1288,7 +1311,7 @@ def main():
                                         "AIC": m['AIC'],
                                         "AICc": m['AICc'],
                                         "BIC": m['BIC'],
-                                        f"{ic_name} usado": ic_values[i]
+                                        TEXTS['summary_header_used'][lang].format(ic_name): ic_values[i]
                                     })
 
                                 summary_df = pd.DataFrame(summary_data)
@@ -1306,7 +1329,7 @@ def main():
                                         "AIC": "{:.4f}",
                                         "AICc": "{:.4f}",
                                         "BIC": "{:.4f}",
-                                        f"{ic_name} usado": "{:.4f}"
+                                        TEXTS['summary_header_used'][lang].format(ic_name): "{:.4f}"
                                     }),
                                     hide_index=True
                                 )
@@ -1314,10 +1337,7 @@ def main():
                                 # Mensagem clara sobre o critério e graus de liberdade
                                 ratio = N / k_max
                                 st.info(
-                                    f"Critério de seleção de modelo: **{ic_name}** "
-                                    f"(N = {N}, k_min = {k_min}, k_max = {k_max}, N/k_max = {ratio:.1f}). "
-                                    f"O número de fases selecionado é {best_n} "
-                                    f"pelo primeiro mínimo local de {ic_name}."
+                                    TEXTS['info_selection_criteria'][lang].format(ic_name, N, k_min, k_max, ratio, best_n)
                                 )
 
                                 st.success(
