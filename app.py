@@ -763,8 +763,11 @@ def process_data(df):
     for i in range(num_replicates):
         t_col = cols[2 * i]
         y_col = cols[2 * i + 1]
-        t_vals = pd.to_numeric(df[t_col], errors='coerce').values
-        y_vals = pd.to_numeric(df[y_col], errors='coerce').values
+        
+        # Flattening here solves the "Ambiguous Truth Value" error if df[col] returns duplicate columns
+        t_vals = pd.to_numeric(df[t_col], errors='coerce').values.flatten()
+        y_vals = pd.to_numeric(df[y_col], errors='coerce').values.flatten()
+        
         mask = ~np.isnan(t_vals) & ~np.isnan(y_vals)
         t_clean = t_vals[mask]
         y_clean = y_vals[mask]
@@ -840,41 +843,6 @@ def plot_final_summary(replicates, best_results, lang):
 
     # 4. Plot outliers from the absolute best model
     if best_overall_res is not None:
-        y_pred_all = polyauxic_model(t_smooth, best_overall_res['theta'], best_overall_func, best_overall_res['n_phases'])
-        # Re-detect outliers on ALL data points using the best model
-        all_t = []
-        all_y = []
-        for rep in replicates:
-            all_t.extend(rep['t'])
-            all_y.extend(rep['y'])
-        all_t = np.array(all_t)
-        all_y = np.array(all_y)
-        
-        y_pred_points = polyauxic_model(all_t, best_overall_res['theta'], best_overall_func, best_overall_res['n_phases'])
-        # Use simple or ROUT based on user selection? 
-        # Here we visualize outliers present in the result object which were detected during fit
-        # Note: res['outliers'] corresponds to sorted flattened data.
-        # We need to map it back or just use the mask from the result if we had the original sorted arrays.
-        # Simpler: Use the outliers stored in the result object (which matches t_flat/y_flat order)
-        
-        # To display strictly what was found:
-        # We need t_flat and y_flat from the main scope. We can pass them or re-process.
-        # For visualization purposes, let's highlight points that match the outlier mask in the Best Result.
-        # The result object has 'outliers' mask corresponding to the data used for fit.
-        
-        # Since we don't have the exact t_flat here easily without passing it, let's assume the fit was good
-        # and highlight points with large residuals on the graph relative to the best curve.
-        
-        # ACTUALLY, 'best_overall_res' contains 'outliers' boolean array corresponding to the fitted data.
-        # But we need the X,Y coordinates of those outliers.
-        # The 'res' object doesn't store t_data/y_data.
-        # However, the outlier mask length matches the input data length.
-        pass # Without t_flat, we can't plot exact outliers from the mask reliably here.
-             # Improvement: We will rely on re-calculating residuals for visualization or just showing curves.
-             # The user asked to "inform all outliers that might be present".
-             # Let's add text annotation or just leave the curves and data.
-             # Given the complexity of mapping back without t_flat, we will list the count in the title.
-             
         outlier_count = np.sum(best_overall_res['outliers'])
         ax.set_title(f"Best Fit Summary (Outliers detected by best model: {outlier_count})", fontsize=12)
 
@@ -1073,22 +1041,19 @@ def choose_information_criterion(N, k_max):
     """
     Escolhe AIC, AICc ou BIC com base em N e k, conforme Tabela 1 do artigo.
     - N <= 200:
-        - N/k_max < 40 → AIC
-        - N/k_max >= 40 → AICc
-    - N  > 200 e k_max grande → BIC (parcimônia).
+        - N/k < 40 -> AICc (Small sample correction)
+        - N/k >= 40 -> AIC
+    - N > 200 e k grande -> BIC (Parsimony).
     """
     dof_ratio = N / max(k_max, 1)
     if N <= 200:
         if dof_ratio < 40:
-            return "AIC"
-        else:
             return "AICc"
-    else:
-        if k_max > 40:
-            return "BIC"
         else:
-            # N grande, mesmo com k moderado, ainda é razoável penalizar com BIC
-            return "BIC"
+            return "AIC"
+    else:
+        # For large N, if k is large, BIC is safer. If k is small, BIC is also fine.
+        return "BIC"
 
 def select_first_local_min_index(values, tol=1e-9):
     """
@@ -1096,7 +1061,7 @@ def select_first_local_min_index(values, tol=1e-9):
     varre na ordem das fases; enquanto o critério melhora (diminui), segue.
     Na primeira vez que o valor deixa de melhorar (fica igual ou aumenta),
     retorna o índice do melhor até aquele ponto.
-    Exemplo: [100, 50, 75, 10] → índice 1 (2 fases).
+    Exemplo: [100, 50, 75, 10] -> índice 1 (2 fases).
     """
     if not values:
         return 0
@@ -1105,7 +1070,7 @@ def select_first_local_min_index(values, tol=1e-9):
         if values[i] < values[best_idx] - tol:
             best_idx = i
         elif values[i] >= values[best_idx] - tol:
-            # parou de melhorar (igual ou pior) → retorna mínimo anterior
+            # parou de melhorar (igual ou pior) -> retorna mínimo anterior
             break
     return best_idx
 
