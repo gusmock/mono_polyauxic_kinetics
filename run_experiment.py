@@ -4,7 +4,7 @@ import os
 import polyauxic_lib as lib 
 
 # ================= CONFIGURATION =================
-DATASET_FOLDER = "datasets/"  # Place your 15 CSV files here
+DATASET_FOLDER = "datasets/"  # Place your CSV files here
 OUTPUT_FILE = "final_experiment_results.csv"
 
 # EXPERIMENTAL FACTORS
@@ -16,31 +16,6 @@ CONSTRAINTS = [False, True]  # False = Floating yi, True = Forced yi=0
 FDR_LEVELS = [0.5, 1.0, 1.5] # ROUT Q values
 THRESHOLDS = [0.0, 2.0]      # Factor D: Strict vs Conservative IC selection
 
-# DATASET MAP (Example - User must update this)
-# Format: "filename.csv": "Class_Category"
-DATASET_MAP = {
-    # Class 1: First-order-like
-    "dataset_01.csv": "First_Order",
-    "dataset_02.csv": "First_Order",
-    "dataset_03.csv": "First_Order",
-    "dataset_04.csv": "First_Order",
-    "dataset_05.csv": "First_Order",
-    
-    # Class 2: Replicates
-    "dataset_06.csv": "Replicates",
-    "dataset_07.csv": "Replicates",
-    "dataset_08.csv": "Replicates",
-    "dataset_09.csv": "Replicates",
-    "dataset_10.csv": "Replicates",
-    
-    # Class 3: Unfinished
-    "dataset_11.csv": "Unfinished",
-    "dataset_12.csv": "Unfinished",
-    "dataset_13.csv": "Unfinished",
-    "dataset_14.csv": "Unfinished",
-    "dataset_15.csv": "Unfinished",
-}
-
 # ================= MAIN LOOP =================
 def run_batch():
     all_results = []
@@ -49,17 +24,33 @@ def run_batch():
         print(f"Error: Folder '{DATASET_FOLDER}' not found. Please create it and add your CSV files.")
         return
 
-    print("Starting Experimental Run...")
-    print(f"Total Conditions per Dataset: {len(MODELS) * len(CONSTRAINTS) * len(FDR_LEVELS) * len(THRESHOLDS)}")
+    # DYNAMIC DATASET MAPPING
+    # Scans the folder and assigns class based on filename patterns
+    print("Scanning dataset folder...")
+    dataset_files = [f for f in os.listdir(DATASET_FOLDER) if f.endswith(".csv") or f.endswith(".xlsx")]
+    
+    if not dataset_files:
+        print("No CSV or XLSX files found in 'datasets/' folder.")
+        return
+
+    print(f"Found {len(dataset_files)} datasets. Starting Experimental Run...")
     
     # Loop 1: Datasets (Block)
-    for filename, class_type in DATASET_MAP.items():
+    for filename in dataset_files:
         filepath = os.path.join(DATASET_FOLDER, filename)
         
-        if not os.path.exists(filepath):
-            print(f"  [Skipped] File not found: {filename}")
+        # Determine Class based on filename
+        lower_name = filename.lower()
+        if "replicates" in lower_name:
+            class_type = "Replicates"
+        elif "1storder" in lower_name:
+            class_type = "First_Order"
+        elif "unfinished" in lower_name:
+            class_type = "Unfinished"
+        else:
+            print(f"  [Warning] Unknown class for file '{filename}'. Skipping.")
             continue
-            
+
         print(f"  Processing {filename} ({class_type})...")
         
         try:
@@ -166,7 +157,6 @@ def run_batch():
                             "R2_Adj": winner['metrics']['R2_adj'],
                             "SSE": winner['metrics']['SSE'],
                             "Avg_SE_Rate": avg_se_rate,
-                            # Save outliers count for verification
                             "Outliers_Detected": np.sum(winner['outliers'])
                         })
 
