@@ -855,8 +855,10 @@ def plot_final_summary(replicates, best_results, lang):
     fig, ax = plt.subplots(figsize=(8, 5))
     
     # 1. Plot raw data
-    for rep in replicates:
-        ax.scatter(rep['t'], rep['y'], facecolors='white', edgecolors='black', alpha=0.6, s=20, label='Data' if rep == replicates[0] else "")
+    # CHANGED: Use enumerate(replicates) to avoid dictionary comparison error
+    for i, rep in enumerate(replicates):
+        label_txt = 'Data' if i == 0 else ""
+        ax.scatter(rep['t'], rep['y'], facecolors='white', edgecolors='black', alpha=0.6, s=20, label=label_txt)
         
     # 2. Determine absolute best model for outliers
     best_aic_val = float('inf')
