@@ -482,7 +482,6 @@ def select_first_local_min_index(values, threshold=0.0):
             best_idx = i
         else:
             # If the improvement is marginal (<= threshold), we stop and keep the simpler model.
-            # This implements the "First Local Minimum" logic relative to the threshold.
             break
             
     return best_idx
