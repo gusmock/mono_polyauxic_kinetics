@@ -1,191 +1,244 @@
-"""
-                                                                                               @@@@                      
-                    ::++        ++..                                       ######  ########  @@@@@@@@                   
-                    ++++      ..++++                                     ##########  ########  @@@@                    
-                    ++++++    ++++++                                 #####  ########  ##########  ####                  
-          ++        ++++++++++++++++      ++++                    ########  ########  ########   ########                
-        ++++++mm::++++++++++++++++++++  ++++++--                ##########  ########  ########  ##########              
-          ++++++++++mm::########::++++++++++++                ##  ##########  ######  ######   ##########  ##            
-            ++++++::####        ####++++++++                 #####  ########  ######  ######  ########  #######            
-          --++++MM##      ####      ##::++++                ########  ########  ####  ####   ########  ##########          
-    ++--  ++++::##    ##    ##  ..MM  ##++++++  ::++       ###########  ######  ####  ####  ######  ##############         
-  --++++++++++##    ##          @@::  mm##++++++++++          ###########  ###### ##  ####  ####  ##############        
-    ++++++++::##    ##          ##      ##++++++++++      ###   ###########  ####  ##  ##  ####  ############    ##        
-        ++++@@++              --        ##++++++          ######    ########  ##          ##  ########    #########      
-        ++++##..      MM  ..######--    ##::++++          ##########      ####              ######    #############      
-        ++++@@++    ####  ##########    ##++++++          ################                  ######################      
-    ++++++++::##          ##########    ##++++++++++      ##################                  #################  @@@@@  
-  ::++++++++++##    ##      ######    mm##++++++++++                                                            @@@@@@@
-    mm++::++++++##  ##++              ##++++++++++mm        ################                  #################  @@@@@  
-          ++++++####                ##::++++                ##############                    ##################        
-            ++++++MM##@@        ####::++++++                 #######    ######              ##################          
-          ++++++++++++@@########++++++++++++mm                #     ########  ##          ##  ##############            
-        mm++++++++++++++++++++++++++++--++++++                  ##########  ############  ####  ########                
-          ++::      ++++++++++++++++      ++++                    ######  ######################  ####                  
-                    ++++++    ++++++                                    ##################    ####                      
-                    ++++      ::++++                                    ##############  @@@@@                         
-                    ++++        ++++                                                   @@@@@@@                          
-                                                                                        @@@@@ 
-
-"""
-import streamlit as st
-import pandas as pd
 import numpy as np
-import polyauxic_lib as lib
-import matplotlib.pyplot as plt
-import seaborn as sns
-import io
+import pandas as pd
+from scipy.optimize import minimize, differential_evolution
+from scipy.signal import find_peaks
+from scipy.stats import t as t_dist
 
-# ================= CONFIGURAÇÃO =================
-st.set_page_config(page_title="Experimento de Estabilidade (Seeds)", layout="wide")
+# ==============================================================================
+# 1. MODELOS
+# ==============================================================================
 
-st.title("🧪 Análise de Estabilidade Numérica (Seeds)")
-st.markdown("""
-Esta ferramenta avalia a robustez dos modelos variando a **Semente Aleatória (Seed)**.
-* **FDR:** Fixado em 1.0%
-* **Seeds:** 5 sementes diferentes por condição
-* **Objetivo:** Gerar superfície de resposta (Heatmap) da variação do AICc.
-""")
+def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
+    delta_y = y_f - y_i
+    if abs(delta_y) < 1e-9: delta_y = 1e-9
+    p_safe = max(p_j, 1e-12)
+    numerator = 4.0 * r_max_j * (lambda_j - t)
+    denominator = delta_y * p_safe
+    exponent = (numerator / denominator) + 2.0
+    exponent = np.clip(exponent, -500.0, 500.0)
+    return p_safe / (1.0 + np.exp(exponent))
 
-# ================= SIDEBAR =================
-st.sidebar.header("Configurações")
-uploaded_files = st.sidebar.file_uploader(
-    "Carregar Datasets (CSV/XLSX)", 
-    accept_multiple_files=True, 
-    type=["csv", "xlsx"]
-)
+def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
+    delta_y = y_f - y_i
+    if abs(delta_y) < 1e-9: delta_y = 1e-9
+    p_safe = max(p_j, 1e-12)
+    numerator = r_max_j * np.e * (lambda_j - t)
+    denominator = delta_y * p_safe
+    exponent = (numerator / denominator) + 1.0
+    exponent = np.clip(exponent, -500.0, 500.0)
+    return p_safe * np.exp(-np.exp(exponent))
 
-# SEEDS CONFIG
-SEEDS = [42, 123, 777, 2024, 9999]
-FIXED_FDR = 1.0
-st.sidebar.info(f"FDR fixado em {FIXED_FDR}%")
-st.sidebar.info(f"Seeds: {SEEDS}")
-
-# MODELOS
-st.sidebar.subheader("Modelos")
-use_gompertz = st.sidebar.checkbox("Gompertz", True)
-use_boltzmann = st.sidebar.checkbox("Boltzmann", True)
-
-# RESTRIÇÕES
-st.sidebar.subheader("Restrições")
-use_floating = st.sidebar.checkbox("Floating (Livre)", True)
-use_forced = st.sidebar.checkbox("Forced (yi=0)", True)
-
-# ================= EXECUÇÃO =================
-if st.button("🚀 INICIAR EXPERIMENTO", type="primary"):
-    if not uploaded_files:
-        st.error("Por favor, carregue pelo menos um arquivo.")
-        st.stop()
-        
-    MODELS = []
-    if use_gompertz: MODELS.append(("Gompertz", lib.gompertz_term_eq32))
-    if use_boltzmann: MODELS.append(("Boltzmann", lib.boltzmann_term_eq31))
+def polyauxic_model(t, theta, model_func, n_phases):
+    t = np.asarray(t, dtype=float)
+    y_i, y_f = theta[0], theta[1]
+    z = theta[2 : 2 + n_phases]
+    r_max = theta[2 + n_phases : 2 + 2 * n_phases]
+    lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
     
-    CONSTRAINTS = []
-    if use_floating: CONSTRAINTS.append(False)
-    if use_forced: CONSTRAINTS.append(True)
+    z_shift = z - np.max(z)
+    exp_z = np.exp(z_shift)
+    p = exp_z / np.sum(exp_z)
     
-    if not MODELS or not CONSTRAINTS:
-        st.error("Selecione pelo menos um modelo e uma restrição.")
-        st.stop()
+    sum_phases = 0.0
+    for j in range(n_phases):
+        sum_phases += model_func(t, y_i, y_f, p[j], r_max[j], lambda_[j])
+    return y_i + (y_f - y_i) * sum_phases
 
-    # Barra de Progresso
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+# ==============================================================================
+# 2. FUNÇÕES AUXILIARES
+# ==============================================================================
+
+def sse_loss(theta, t, y, model_func, n_phases):
+    y_pred = polyauxic_model(t, theta, model_func, n_phases)
+    if np.any(y_pred < -0.1 * np.max(np.abs(y))): return 1e12
+    return np.sum((y - y_pred) ** 2)
+
+def robust_loss(theta, t, y, model_func, n_phases):
+    y_pred = polyauxic_model(t, theta, model_func, n_phases)
+    residuals = y - y_pred
+    loss = 2.0 * (np.sqrt(1.0 + residuals**2) - 1.0)
+    return np.sum(loss)
+
+def smart_initial_guess(t, y, n_phases):
+    dy = np.gradient(y, t)
+    dy_smooth = np.convolve(dy, np.ones(5)/5, mode='same')
+    min_dist = max(1, len(t) // (n_phases * 4))
+    peaks, props = find_peaks(dy_smooth, height=np.max(dy_smooth)*0.1, distance=min_dist)
     
-    total_steps = len(uploaded_files) * len(MODELS) * len(CONSTRAINTS) * len(SEEDS)
-    step = 0
-    all_results = []
-    
-    # LOOP PRINCIPAL
-    for file_obj in uploaded_files:
-        filename = file_obj.name
-        
-        # Identificar Classe
-        lower = filename.lower()
-        if "replicates" in lower: c_type = "Replicates"
-        elif "1storder" in lower: c_type = "First_Order"
-        elif "unfinished" in lower: c_type = "Unfinished"
-        else: c_type = "Outros"
-        
-        # Ler Dados
-        try:
-            if filename.endswith(".xlsx"): df = pd.read_excel(file_obj)
-            else: df = pd.read_csv(file_obj)
-            t_flat, y_flat, _ = lib.process_data(df)
-            if len(t_flat) == 0: continue
-        except Exception as e:
-            st.warning(f"Erro ao ler {filename}: {e}")
-            continue
+    guesses = []
+    if len(peaks) > 0:
+        sorted_indices = np.argsort(props['peak_heights'])[::-1]
+        best_peaks = peaks[sorted_indices][:n_phases]
+        for p_idx in best_peaks:
+            guesses.append({'lambda': t[p_idx], 'r_max': dy_smooth[p_idx]})
             
-        for model_name, model_func in MODELS:
-            for force_yi in CONSTRAINTS:
-                for seed in SEEDS:
-                    step += 1
-                    progress_bar.progress(min(step / total_steps, 1.0))
-                    status_text.text(f"Processando: {filename} | {model_name} | Seed {seed}")
-                    
-                    # OTIMIZAÇÃO (Busca Melhor AICc entre 1-5 fases)
-                    best_res = None
-                    best_val = np.inf
-                    
-                    for n in range(1, 6):
-                        # 1. Outliers
-                        res_pre = lib.fit_model_auto_robust_pre(t_flat, y_flat, model_func, n, force_yi, False, seed)
-                        if res_pre:
-                            mask = lib.detect_outliers_rout_rigorous(y_flat, res_pre['y_pred'], Q=FIXED_FDR)
-                            t_c = t_flat[~mask] if np.any(mask) else t_flat
-                            y_c = y_flat[~mask] if np.any(mask) else y_flat
-                            
-                            # 2. Fit Final
-                            res = lib.fit_model_auto(t_c, y_c, model_func, n, force_yi, False, seed)
-                            if res and res['metrics']['AICc'] < best_val:
-                                best_val = res['metrics']['AICc']
-                                best_res = res
-                                best_res['outliers'] = np.sum(mask)
-
-                    if best_res:
-                        all_results.append({
-                            "Dataset": filename,
-                            "Class": c_type,
-                            "Model": model_name,
-                            "Constraint": "Forced" if force_yi else "Floating",
-                            "Seed": seed,
-                            "AICc": best_res['metrics']['AICc'],
-                            "SSE": best_res['metrics']['SSE'],
-                            "Outliers": best_res['outliers']
-                        })
+    while len(guesses) < n_phases:
+        t_span = t.max() - t.min()
+        guesses.append({
+            'lambda': t.min() + t_span * (len(guesses)+1)/(n_phases+1),
+            'r_max': (np.max(y)-np.min(y))/(t_span/n_phases)
+        })
+    guesses.sort(key=lambda x: x['lambda'])
     
-    progress_bar.empty()
-    status_text.success("Experimento Concluído!")
-    
-    # ================= RESULTADOS =================
-    if all_results:
-        df_res = pd.DataFrame(all_results)
-        
-        # 1. Tabela
-        st.subheader("Resultados Brutos")
-        st.dataframe(df_res)
-        
-        # Download CSV
-        csv = df_res.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Baixar CSV Completo", csv, "seed_results.csv", "text/csv")
-        
-        # 2. HEATMAP (Superfície de Resposta)
-        st.subheader("Superfície de Resposta: Estabilidade (Desvio Padrão do AICc)")
-        
-        stability = df_res.groupby(['Dataset', 'Model', 'Constraint'])['AICc'].std().reset_index()
-        stability.rename(columns={'AICc': 'StdDev_AICc'}, inplace=True)
-        stability['Config'] = stability['Model'] + " (" + stability['Constraint'] + ")"
-        
-        heatmap_data = stability.pivot(index="Dataset", columns="Config", values="StdDev_AICc")
-        
-        fig, ax = plt.subplots(figsize=(10, 8))
-        sns.heatmap(heatmap_data, annot=True, cmap="viridis", fmt=".2f", ax=ax)
-        plt.title(f"Instabilidade do Modelo (StdDev entre {len(SEEDS)} seeds)")
-        plt.ylabel("Dataset")
-        plt.xlabel("Configuração do Modelo")
-        st.pyplot(fig)
-        
+    theta_guess = np.zeros(2 + 3 * n_phases)
+    n_slice = max(1, len(y)//5)
+    mean_start, mean_end = np.mean(y[:n_slice]), np.mean(y[-n_slice:])
+    if mean_start < mean_end:
+         theta_guess[0], theta_guess[1] = np.min(y), np.max(y)
     else:
-        st.warning("Nenhum resultado gerado.")
+         theta_guess[0], theta_guess[1] = np.max(y), np.min(y)
+
+    for i in range(n_phases):
+        theta_guess[2 + n_phases + i] = guesses[i]['r_max']
+        theta_guess[2 + 2 * n_phases + i] = guesses[i]['lambda']
+    return theta_guess
+
+def setup_bounds(n_phases, force_yi, force_yf):
+    bounds = []
+    bounds.append((0.0, 1e-10) if force_yi else (0.0, 1.5)) 
+    bounds.append((0.0, 1e-10) if force_yf else (0.0, 2.0))
+    for _ in range(n_phases): bounds.append((-10, 10))    
+    for _ in range(n_phases): bounds.append((0.0, 500.0)) 
+    for _ in range(n_phases): bounds.append((0.0, 1.2))   
+    return bounds
+
+def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False, seed=42):
+    """Ajuste final usando SSE com SEED configurável."""
+    np.random.seed(seed)
+    n_params = 2 + 3 * n_phases
+    if len(t_data) <= n_params: return None
+
+    t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
+    y_scale = np.max(y_data) if np.max(y_data) > 0 else 1.0
+    t_norm, y_norm = t_data / t_scale, y_data / y_scale
+
+    theta_smart = smart_initial_guess(t_data, y_data, n_phases)
+    theta0_norm = np.zeros_like(theta_smart)
+    theta0_norm[0] = theta_smart[0] / y_scale
+    theta0_norm[1] = theta_smart[1] / y_scale
+    theta0_norm[2:2+n_phases] = 0.0 
+    theta0_norm[2+n_phases:2+2*n_phases] = theta_smart[2+n_phases:2+2*n_phases] / (y_scale/t_scale)
+    theta0_norm[2+2*n_phases:2+3*n_phases] = theta_smart[2+2*n_phases:2+3*n_phases] / t_scale
+
+    bounds = setup_bounds(n_phases, force_yi, force_yf)
+    pop_size = 50
+    init_pop = np.tile(theta0_norm, (pop_size, 1))
+    init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
+    if force_yi: init_pop[:, 0] = 0.0
+    if force_yf: init_pop[:, 1] = 0.0
+
+    res_de = differential_evolution(
+        sse_loss, bounds, args=(t_norm, y_norm, model_func, n_phases),
+        maxiter=3000, popsize=pop_size, init=init_pop, strategy='best1bin',
+        seed=seed, polish=True, tol=1e-6
+    )
+
+    res_opt = minimize(
+        sse_loss, res_de.x, args=(t_norm, y_norm, model_func, n_phases),
+        method='L-BFGS-B', bounds=bounds, tol=1e-10
+    )
+
+    theta_norm = res_opt.x
+    theta_real = np.zeros_like(theta_norm)
+    theta_real[0:2] = theta_norm[0:2] * y_scale
+    theta_real[2:2+n_phases] = theta_norm[2:2+n_phases]
+    theta_real[2+n_phases:2+2*n_phases] = theta_norm[2+n_phases:2+2*n_phases] * (y_scale/t_scale)
+    theta_real[2+2*n_phases:2+3*n_phases] = theta_norm[2+2*n_phases:2+3*n_phases] * t_scale
+
+    y_pred = polyauxic_model(t_data, theta_real, model_func, n_phases)
+    sse = np.sum((y_data - y_pred) ** 2)
+    n_len = len(y_data)
+    k = len(theta_real)
+    if sse <= 1e-12: sse = 1e-12
+    aicc = n_len * np.log(sse/n_len) + 2*k + (2*k*(k+1))/(n_len-k-1) if (n_len-k-1)>0 else np.inf
+
+    return {"n_phases": n_phases, "theta": theta_real, "metrics": {"SSE": sse, "AICc": aicc}, "y_pred": y_pred}
+
+def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False, seed=42):
+    """Pré-ajuste para detecção de outliers."""
+    np.random.seed(seed)
+    n_params = 2 + 3 * n_phases
+    if len(t_data) <= n_params: return None
+    
+    t_scale = np.max(t_data) if np.max(t_data) > 0 else 1.0
+    y_scale = np.max(y_data) if np.max(y_data) > 0 else 1.0
+    t_norm, y_norm = t_data / t_scale, y_data / y_scale
+
+    theta_smart = smart_initial_guess(t_data, y_data, n_phases)
+    theta0_norm = np.zeros_like(theta_smart)
+    theta0_norm[0] = theta_smart[0] / y_scale
+    theta0_norm[1] = theta_smart[1] / y_scale
+    theta0_norm[2:2+n_phases] = 0.0 
+    theta0_norm[2+n_phases:2+2*n_phases] = theta_smart[2+n_phases:2+2*n_phases] / (y_scale/t_scale)
+    theta0_norm[2+2*n_phases:2+3*n_phases] = theta_smart[2+2*n_phases:2+3*n_phases] / t_scale
+
+    bounds = setup_bounds(n_phases, force_yi, force_yf)
+    pop_size = 50
+    init_pop = np.tile(theta0_norm, (pop_size, 1))
+    init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
+    if force_yi: init_pop[:, 0] = 0.0
+    if force_yf: init_pop[:, 1] = 0.0
+
+    res_de = differential_evolution(
+        robust_loss, bounds, args=(t_norm, y_norm, model_func, n_phases),
+        maxiter=3000, popsize=pop_size, init=init_pop, strategy='best1bin',
+        seed=seed, polish=True, tol=1e-6
+    )
+    
+    res_opt = minimize(
+        robust_loss, res_de.x, args=(t_norm, y_norm, model_func, n_phases),
+        method='L-BFGS-B', bounds=bounds, tol=1e-10
+    )
+
+    theta_norm = res_opt.x
+    theta_real = np.zeros_like(theta_norm)
+    theta_real[0:2] = theta_norm[0:2] * y_scale
+    theta_real[2:2+n_phases] = theta_norm[2:2+n_phases]
+    theta_real[2+n_phases:2+2*n_phases] = theta_norm[2+n_phases:2+2*n_phases] * (y_scale/t_scale)
+    theta_real[2+2*n_phases:2+3*n_phases] = theta_norm[2+2*n_phases:2+3*n_phases] * t_scale
+
+    y_pred = polyauxic_model(t_data, theta_real, model_func, n_phases)
+    return {"theta": theta_real, "y_pred": y_pred}
+
+def detect_outliers_rout_rigorous(y_true, y_pred, Q=1.0):
+    residuals = y_true - y_pred
+    n = residuals.size
+    if n < 3: return np.zeros_like(residuals, dtype=bool)
+
+    med_res = np.median(residuals)
+    mad_res = np.median(np.abs(residuals - med_res))
+    rsdr = 1.4826 * mad_res if mad_res > 1e-12 else 1e-12
+
+    t_scores = residuals / rsdr
+    df = max(n - 1, 1)
+    p_values = 2.0 * (1.0 - t_dist.cdf(np.abs(t_scores), df=df))
+
+    alpha = Q / 100.0
+    sort_idx = np.argsort(p_values)
+    p_sorted = p_values[sort_idx]
+    i = np.arange(1, n + 1)
+    bh_thresholds = (i / n) * alpha
+    
+    below = p_sorted <= bh_thresholds
+    if not np.any(below): return np.zeros_like(residuals, dtype=bool)
+
+    k_max = np.max(np.where(below)[0])
+    p_crit = p_sorted[k_max]
+    return p_values <= p_crit
+
+def process_data(df):
+    df = df.reset_index(drop=True)
+    num_replicates = df.shape[1] // 2
+    all_t, all_y = [], []
+    for i in range(num_replicates):
+        t = pd.to_numeric(df.iloc[:, 2*i], errors='coerce').values
+        y = pd.to_numeric(df.iloc[:, 2*i+1], errors='coerce').values
+        mask = ~np.isnan(t) & ~np.isnan(y)
+        all_t.extend(t[mask])
+        all_y.extend(y[mask])
+    t_flat = np.array(all_t).flatten()
+    y_flat = np.array(all_y).flatten()
+    if len(t_flat) > 0:
+        idx = np.argsort(t_flat)
+        return t_flat[idx], y_flat[idx], []
+    return np.array([]), np.array([]), []
