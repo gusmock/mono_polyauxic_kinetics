@@ -669,8 +669,9 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     Robust pre-fit (Soft L1) used only to detect outliers (ROUT FDR).
     No SE / information criteria here.
     """
-    SEED_VALUE = 42
-    np.random.seed(SEED_VALUE)
+    # Seed value as a random value
+    # SEED_VALUE = 42
+    # np.random.seed(SEED_VALUE)
 
     n_params = 2 + 3 * n_phases
     if len(t_data) <= n_params:
