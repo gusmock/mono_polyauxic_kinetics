@@ -519,7 +519,7 @@ def calculate_p_errors(z_vals, cov_z):
 
 def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False):
     """Main fitting function (SSE-based)."""
-    SEED_VALUE = 42
+    SEED_VALUE = none
     np.random.seed(SEED_VALUE)
 
     n_params = 2 + 3 * n_phases
@@ -669,9 +669,9 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     Robust pre-fit (Soft L1) used only to detect outliers (ROUT FDR).
     No SE / information criteria here.
     """
-    # Seed value as a random value
-    # SEED_VALUE = 42
-    # np.random.seed(SEED_VALUE)
+    
+    SEED_VALUE = none
+    np.random.seed(SEED_VALUE)
 
     n_params = 2 + 3 * n_phases
     if len(t_data) <= n_params:
