@@ -122,11 +122,6 @@ LANGUAGES = {
 
 # UI Text Dictionary
 TEXTS = {
-    "zenodo_cite": {
-        "en": "Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0) [Software]. Zenodo.",
-        "pt": "Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0) [Software]. Zenodo.",
-        "fr": "Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0) [Logiciel]. Zenodo."
-    },
     "app_title": {
         "en": "Polyauxic Modeling Platform",
         "pt": "Plataforma de Modelagem Poliauxica",
@@ -141,6 +136,11 @@ TEXTS = {
         "en": "Reference Paper & Source:",
         "pt": "Artigo de Referência e Fonte:",
         "fr": "Article de Référence et Source :"
+    },
+    "zenodo_cite": {
+        "en": "Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0) [Software]. Zenodo.",
+        "pt": "Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0) [Software]. Zenodo.",
+        "fr": "Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0) [Logiciel]. Zenodo."
     },
     "instructions_header": {
         "en": "Instructions & File Format",
@@ -202,7 +202,7 @@ TEXTS = {
     "info_upload": {
         "en": "Please upload a file to start.",
         "pt": "Por favor, carregue um arquivo para começar.",
-        "fr": "Veuillez télécharger un fichier pour commencer."
+        "fr": "Veuillez télécharger un fichier para commencer."
     },
     "data_loaded": {
         "en": "Data Loaded: {0} replicates identified. Total points: {1}",
@@ -332,7 +332,7 @@ VAR_LABELS = {
 # ==============================================================================
 
 def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
-    """Boltzmann model term (Eq. 31)."""
+    """Boltzmann model term (Eq. 31 from the reference paper)."""
     delta_y = y_f - y_i
     if abs(delta_y) < 1e-9:
         delta_y = 1e-9
@@ -344,7 +344,7 @@ def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
     return p_safe / (1.0 + np.exp(exponent))
 
 def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
-    """Gompertz model term (Eq. 32)."""
+    """Gompertz model term (Eq. 32 from the reference paper)."""
     delta_y = y_f - y_i
     if abs(delta_y) < 1e-9:
         delta_y = 1e-9
@@ -356,24 +356,28 @@ def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
     return p_safe * np.exp(-np.exp(exponent))
 
 def polyauxic_model(t, theta, model_func, n_phases):
-    """Global polyauxic model summation."""
+    """Global polyauxic model: Summation of weighted phases."""
     t = np.asarray(t, dtype=float)
     y_i = theta[0]
     y_f = theta[1]
     z = theta[2 : 2 + n_phases]
     r_max = theta[2 + n_phases : 2 + 2 * n_phases]
     lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
+    
+    # Softmax transformation for weights p
     z_shift = z - np.max(z)
     exp_z = np.exp(z_shift)
     p = exp_z / np.sum(exp_z)
+    
     sum_phases = 0.0
     for j in range(n_phases):
         sum_phases += model_func(t, y_i, y_f, p[j], r_max[j], lambda_[j])
     return y_i + (y_f - y_i) * sum_phases
 
 def sse_loss(theta, t, y, model_func, n_phases):
-    """Sum of Squared Errors Loss function."""
+    """Sum of Squared Errors (SSE) Loss function."""
     lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
+    # Constraint: non-decreasing inflection points
     if np.any(np.diff(lambda_) <= 0):
         return 1e12
 
@@ -383,7 +387,7 @@ def sse_loss(theta, t, y, model_func, n_phases):
     return np.sum((y - y_pred) ** 2)
 
 def robust_loss(theta, t, y, model_func, n_phases):
-    """Soft L1 robust loss (for ROUT pre-fit)."""
+    """Soft L1 robust loss (used for ROUT pre-fit step)."""
     lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
     if np.any(np.diff(lambda_) <= 0):
         return 1e12
@@ -392,11 +396,12 @@ def robust_loss(theta, t, y, model_func, n_phases):
     if np.any(y_pred < -0.1 * np.max(np.abs(y))):
         return 1e12
     residuals = y - y_pred
+    # Lorentzian-like loss
     loss = 2.0 * (np.sqrt(1.0 + residuals**2) - 1.0)
     return np.sum(loss)
 
 def numerical_hessian(func, theta, args, epsilon=1e-5):
-    """Numerical Hessian calculation."""
+    """Calculates Numerical Hessian for Standard Error estimation."""
     k = len(theta)
     hess = np.zeros((k, k))
     for i in range(k):
@@ -413,7 +418,7 @@ def numerical_hessian(func, theta, args, epsilon=1e-5):
     return hess
 
 def detect_outliers(y_true, y_pred):
-    """ROUT-based outlier detection (simple MAD z-score > 2.5)."""
+    """Simple outlier detection based on MAD (Z-score > 2.5)."""
     residuals = y_true - y_pred
     median_res = np.median(residuals)
     mad = np.median(np.abs(residuals - median_res))
@@ -423,10 +428,8 @@ def detect_outliers(y_true, y_pred):
 
 def detect_outliers_rout_rigorous(y_true, y_pred, Q=1.0):
     """
-    ROUT (Rigorous) with FDR control:
-    - Robust scale via MAD.
-    - t-like scores -> p-values via Student t.
-    - Benjamini–Hochberg FDR at Q%.
+    ROUT (Rigorous) Method with FDR control.
+    Uses robust scale via MAD and Benjamini-Hochberg FDR at Q%.
     """
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
@@ -459,7 +462,7 @@ def detect_outliers_rout_rigorous(y_true, y_pred, Q=1.0):
     return mask_outliers
 
 def smart_initial_guess(t, y, n_phases):
-    """Initial parameter guessing based on derivatives."""
+    """Heuristic initial parameter estimation using derivatives."""
     dy = np.gradient(y, t)
     dy_smooth = np.convolve(dy, np.ones(5) / 5, mode='same')
     min_dist = max(1, len(t) // (n_phases * 4))
@@ -479,17 +482,17 @@ def smart_initial_guess(t, y, n_phases):
     guesses.sort(key=lambda x: x['lambda'])
     theta_guess = np.zeros(2 + 3 * n_phases)
     
-    # Updated: Detect trend to allow decay (remove implicit yi < yf constraint)
+    # Detect trend to set initial y_i and y_f
     n_slice = max(1, len(y) // 5) 
     mean_start = np.mean(y[:n_slice])
     mean_end = np.mean(y[-n_slice:])
     
     if float(mean_start) < float(mean_end):
-         # Growth trend
+         # Growth
          theta_guess[0] = np.min(y)
          theta_guess[1] = np.max(y)
     else:
-         # Decay trend (or ambiguous)
+         # Decay
          theta_guess[0] = np.max(y)
          theta_guess[1] = np.min(y)
 
@@ -500,7 +503,7 @@ def smart_initial_guess(t, y, n_phases):
     return theta_guess
 
 def calculate_p_errors(z_vals, cov_z):
-    """Standard error calculation for p (Softmax)."""
+    """Standard error propagation for p (Softmax weights)."""
     exps = np.exp(z_vals - np.max(z_vals))
     p = exps / np.sum(exps)
     n = len(p)
@@ -523,7 +526,11 @@ def calculate_p_errors(z_vals, cov_z):
 # ==============================================================================
 
 def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False):
-    """Main fitting function (SSE-based)."""
+    """
+    Main fitting function.
+    Uses Differential Evolution (Global) + L-BFGS-B (Local).
+    Calculates statistics (SE, AIC, BIC).
+    """
     SEED_VALUE = 42
     np.random.seed(SEED_VALUE)
 
@@ -555,23 +562,21 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     init_pop = np.tile(theta0_norm, (pop_size, 1))
     init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
 
-    # Enforce exact zero in population if forced
     if force_yi:
         init_pop[:, 0] = 0.0
     if force_yf:
         init_pop[:, 1] = 0.0
 
     bounds = []
-    
     # y_i bounds
     if force_yi:
-        bounds.append((0.0, 1e-10)) # Effectively 0
+        bounds.append((0.0, 1e-10))
     else:
-        bounds.append((0.0, 1.5)) # CHANGED: Strictly non-negative
+        bounds.append((0.0, 1.5)) 
     
     # y_f bounds
     if force_yf:
-        bounds.append((0.0, 1e-10)) # Effectively 0
+        bounds.append((0.0, 1e-10))
     else:
         bounds.append((0.0, 2.0))
         
@@ -580,7 +585,6 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     for _ in range(n_phases):
         bounds.append((0.0, 500.0))  # r_max_norm
     for _ in range(n_phases):
-        # Changed: Ensure lambda >= 0 (and naturally lambda_1 >= 0)
         bounds.append((0.0, 1.2))    # lambda_norm
 
     res_de = differential_evolution(
@@ -671,8 +675,8 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
 
 def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False):
     """
-    Robust pre-fit (Soft L1) used only to detect outliers (ROUT FDR).
-    No SE / information criteria here.
+    Robust pre-fit (Soft L1) used exclusively for outlier detection.
+    Does not calculate standard errors.
     """
     SEED_VALUE = 42
     np.random.seed(SEED_VALUE)
@@ -691,7 +695,6 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     theta0_norm[0] = theta_smart[0] / y_scale
     theta0_norm[1] = theta_smart[1] / y_scale
     
-    # Override guesses if forced
     if force_yi:
         theta0_norm[0] = 0.0
     if force_yf:
@@ -705,33 +708,28 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     init_pop = np.tile(theta0_norm, (pop_size, 1))
     init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
 
-    # Enforce exact zero in population if forced
     if force_yi:
         init_pop[:, 0] = 0.0
     if force_yf:
         init_pop[:, 1] = 0.0
 
     bounds = []
-    
-    # y_i bounds
     if force_yi:
         bounds.append((0.0, 1e-10))
     else:
-        bounds.append((0.0, 1.5)) # CHANGED: Strictly non-negative
+        bounds.append((0.0, 1.5))
     
-    # y_f bounds
     if force_yf:
         bounds.append((0.0, 1e-10))
     else:
         bounds.append((0.0, 2.0))
         
     for _ in range(n_phases):
-        bounds.append((-10, 10))     # z
+        bounds.append((-10, 10))
     for _ in range(n_phases):
-        bounds.append((0.0, 500.0))  # r_max_norm
+        bounds.append((0.0, 500.0))
     for _ in range(n_phases):
-        # Changed: Ensure lambda >= 0 (and naturally lambda_1 >= 0)
-        bounds.append((0.0, 1.2))    # lambda_norm
+        bounds.append((0.0, 1.2))
 
     res_de = differential_evolution(
         robust_loss,
@@ -775,12 +773,7 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
 
 def process_data(df):
     """Processes DataFrame detecting replicates in pairs of columns."""
-    # Remove empty columns only if they are entirely empty, but avoid dropping duplicate names issues
-    # Better to just iterate based on index
-    
-    # Ensure index is clean
     df = df.reset_index(drop=True)
-    
     num_cols = df.shape[1]
     num_replicates = num_cols // 2
     
@@ -789,16 +782,12 @@ def process_data(df):
     replicates = []
     
     for i in range(num_replicates):
-        # Use iloc to select columns by position, ensuring we get a Series (1D)
-        # We explicitly access .values to bypass any pandas Index ambiguity
         t_col_raw = df.iloc[:, 2 * i].values
         y_col_raw = df.iloc[:, 2 * i + 1].values
         
-        # Force conversion to 1D numpy array of floats
         t_vals = pd.to_numeric(t_col_raw, errors='coerce')
         y_vals = pd.to_numeric(y_col_raw, errors='coerce')
         
-        # Ensure they are flat numpy arrays (defensive programming)
         if hasattr(t_vals, 'to_numpy'): t_vals = t_vals.to_numpy()
         if hasattr(y_vals, 'to_numpy'): y_vals = y_vals.to_numpy()
             
@@ -813,12 +802,8 @@ def process_data(df):
         all_y.extend(y_clean)
         replicates.append({'t': t_clean, 'y': y_clean, 'name': f'Replica {i + 1}'})
         
-    t_flat = np.array(all_t)
-    y_flat = np.array(all_y)
-    
-    # Ensure t_flat is also flat in case extend did something weird (unlikely)
-    t_flat = t_flat.flatten()
-    y_flat = y_flat.flatten()
+    t_flat = np.array(all_t).flatten()
+    y_flat = np.array(all_y).flatten()
     
     if len(t_flat) > 0:
         idx_sort = np.argsort(t_flat)
@@ -827,7 +812,7 @@ def process_data(df):
         return np.array([]), np.array([]), []
 
 def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
-    """Calculates mean excluding outliers based on the model fit."""
+    """Calculates mean statistics excluding detected outliers."""
     all_data = []
     for rep in replicates:
         for t, y in zip(rep['t'], rep['y']):
@@ -849,7 +834,7 @@ def plot_raw_data(replicates, lang):
     fig, ax = plt.subplots(figsize=(8, 4))
     for rep in replicates:
         ax.scatter(rep['t'], rep['y'], facecolors='white', edgecolors='black', alpha=0.8, s=20)
-    ax.set_title("Experimental Data / Dados Experimentais", fontsize=12)
+    ax.set_title("Experimental Data", fontsize=12)
     ax.set_xlabel(TEXTS['axis_time'][lang])
     ax.set_ylabel("Response (y)")
     ax.grid(True, linestyle=':', alpha=0.3)
@@ -859,20 +844,15 @@ def plot_final_summary(replicates, best_results, lang):
     """Plots raw data + best fits for Gompertz and Boltzmann."""
     fig, ax = plt.subplots(figsize=(8, 5))
     
-    # 1. Plot raw data
-    # CHANGED: Use enumerate(replicates) to avoid dictionary comparison error
     for i, rep in enumerate(replicates):
         label_txt = 'Data' if i == 0 else ""
         ax.scatter(rep['t'], rep['y'], facecolors='white', edgecolors='black', alpha=0.6, s=20, label=label_txt)
         
-    # 2. Determine absolute best model for outliers
     best_aic_val = float('inf')
     best_overall_res = None
-    best_overall_func = None
     
     colors = {'Gompertz': 'tab:blue', 'Boltzmann': 'tab:orange'}
     
-    # 3. Plot curves
     all_t = [r['t'].max() for r in replicates]
     t_max = max(all_t) if all_t else 1.0
     t_smooth = np.linspace(0, t_max, 300)
@@ -882,16 +862,13 @@ def plot_final_summary(replicates, best_results, lang):
         func = gompertz_term_eq32 if model_name == "Gompertz" else boltzmann_term_eq31
         y_smooth = polyauxic_model(t_smooth, res['theta'], func, res['n_phases'])
         
-        # Check for best overall (using AICc)
         if res['metrics']['AICc'] < best_aic_val:
             best_aic_val = res['metrics']['AICc']
             best_overall_res = res
-            best_overall_func = func
             
         label = f"{model_name}: {res['n_phases']} phases (AICc: {res['metrics']['AICc']:.1f})"
         ax.plot(t_smooth, y_smooth, linewidth=2, color=colors.get(model_name, 'black'), label=label)
 
-    # 4. Plot outliers from the absolute best model
     if best_overall_res is not None:
         outlier_count = np.sum(best_overall_res['outliers'])
         ax.set_title(f"Best Fit Summary (Outliers detected by best model: {outlier_count})", fontsize=12)
@@ -942,6 +919,7 @@ def plot_metrics_summary(results_list, model_name, lang):
     st.pyplot(fig)
 
 def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels, rate_label, lang):
+    """Displays detailed results for a single fit."""
     n = res['n_phases']
     theta = res['theta']
     se = res['se']
@@ -975,7 +953,6 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     with c_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
 
-        # Replicates: white markers with black edge
         for rep in replicates:
             ax.scatter(
                 rep['t'],
@@ -999,7 +976,6 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
                 zorder=5
             )
 
-        # Mean + error bar only if multiple replicates
         if len(replicates) > 1:
             ax.errorbar(
                 stats_df['t_round'],
@@ -1048,7 +1024,6 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
         st.pyplot(fig)
 
     with c_data:
-        # Translated DataFrame for Globals
         df_glob = pd.DataFrame(
             {
                 TEXTS['table_col_param'][lang]: [yi_name, yf_name], 
@@ -1096,11 +1071,8 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
 
 def choose_information_criterion(N, k_max):
     """
-    Escolhe AIC, AICc ou BIC com base em N e k, conforme Tabela 1 do artigo.
-    - N <= 200:
-        - N/k < 40 -> AICc (Small sample correction)
-        - N/k >= 40 -> AIC
-    - N > 200 e k grande -> BIC (Parsimony).
+    Selects AIC, AICc or BIC based on sample size N and parameters k.
+    Follows Table 1 from the reference paper.
     """
     dof_ratio = N / max(k_max, 1)
     if N <= 200:
@@ -1109,16 +1081,12 @@ def choose_information_criterion(N, k_max):
         else:
             return "AIC"
     else:
-        # For large N, if k is large, BIC is safer. If k is small, BIC is also fine.
         return "BIC"
 
 def select_first_local_min_index(values, tol=1e-9):
     """
-    Retorna o índice do primeiro mínimo local (no sentido do artigo):
-    varre na ordem das fases; enquanto o critério melhora (diminui), segue.
-    Na primeira vez que o valor deixa de melhorar (fica igual ou aumenta),
-    retorna o índice do melhor até aquele ponto.
-    Exemplo: [100, 50, 75, 10] -> índice 1 (2 fases).
+    Selects the first local minimum index.
+    Iterates through phases; stops when metric improvement ceases.
     """
     if not values:
         return 0
@@ -1127,7 +1095,6 @@ def select_first_local_min_index(values, tol=1e-9):
         if values[i] < values[best_idx] - tol:
             best_idx = i
         elif values[i] >= values[best_idx] - tol:
-            # parou de melhorar (igual ou pior) -> retorna mínimo anterior
             break
     return best_idx
 
@@ -1148,13 +1115,14 @@ def main():
     # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
 
-    # References with Badges (Flexbox Layout)
+    # --- REFERENCES SECTION WITH BADGES ---
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
 
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
     
+    # Placeholder for Altmetric badge (simulation until DOI is indexed)
     altmetric_placeholder = "https://d1bxh8uas1mnw7.cloudfront.net/assets/no-mentions-badge-53c29b4e76a6f6955743a6d400e93297.png"
 
     badge_html = f"""
@@ -1191,6 +1159,7 @@ def main():
     """
     
     components.html(badge_html, height=150)
+
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
     st.markdown("---")
@@ -1214,7 +1183,7 @@ def main():
     file = st.sidebar.file_uploader(TEXTS['upload_label'][lang], type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5)
 
-    # --- NEW: Outlier handling configuration (trilingual) ---
+    # --- Outlier handling configuration ---
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"### {TEXTS['sidebar_outlier_header'][lang]}")
     outlier_options_keys = ["none", "simple", "rout"]
@@ -1233,17 +1202,13 @@ def main():
             step=0.1
         )
     
-    # --- NEW: Constraints ---
+    # --- Constraints ---
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"### {TEXTS['constraints_header'][lang]}")
     
-    # Force y_i = 0
     force_yi = st.sidebar.checkbox(TEXTS['force_yi'][lang], value=False)
-    
-    # Force y_f = 0 (disabled if y_i is active)
     force_yf = st.sidebar.checkbox(TEXTS['force_yf'][lang], value=False, disabled=force_yi)
     
-    # Logic safety: if yi is forced, yf cannot be True
     if force_yi:
         force_yf = False
 
@@ -1258,17 +1223,15 @@ def main():
             if not replicates:
                 st.error(TEXTS['error_cols'][lang])
             else:
-                # --- NEW: Placeholder for Top Graph ---
+                # --- Top Graph ---
                 graph_placeholder = st.empty()
                 with graph_placeholder:
                     plot_raw_data(replicates, lang)
-                # -------------------------------------
 
                 st.success(TEXTS['data_loaded'][lang].format(len(replicates), len(t_flat)))
                 if st.button(TEXTS['run_button'][lang]):
                     st.divider()
                     
-                    # Store best results globally for the top graph update
                     best_results_global = {"Gompertz": None, "Boltzmann": None}
                     
                     tab1, tab2 = st.tabs(
@@ -1289,7 +1252,7 @@ def main():
 
                                         res = None
 
-                                        # --- Outlier pipeline applied to loaded data ---
+                                        # --- Outlier pipeline ---
                                         if outlier_method_key == "none":
                                             res = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
 
@@ -1300,7 +1263,6 @@ def main():
                                                 y_pred_pre = res_pre["y_pred"]
                                                 mask = detect_outliers(y_flat, y_pred_pre)
                                                 n_params = 2 + 3 * n
-                                                # Require some margin of points after removal
                                                 if np.any(mask) and (len(y_flat[~mask]) > n_params + 5):
                                                     t_clean = t_flat[~mask]
                                                     y_clean = y_flat[~mask]
@@ -1342,19 +1304,15 @@ def main():
                             if results_list:
                                 st.markdown(f"### {TEXTS['table_title'][lang]}")
 
-                                # N e k_max para escolha do critério (Tabela 1)
                                 N = len(y_flat)
                                 k_values = [len(r['theta']) for r in results_list]
                                 k_min, k_max = min(k_values), max(k_values)
                                 ic_name = choose_information_criterion(N, k_max)
 
                                 ic_values = [r['metrics'][ic_name] for r in results_list]
-
-                                # Primeiro mínimo local do critério escolhido
                                 best_idx = select_first_local_min_index(ic_values)
                                 best_n = results_list[best_idx]['n_phases']
                                 
-                                # Store for top graph update
                                 best_results_global[model_name] = results_list[best_idx]
 
                                 summary_data = []
@@ -1391,10 +1349,8 @@ def main():
                                     hide_index=True
                                 )
 
-                                # Mensagem clara sobre o critério e graus de liberdade
-                                ratio = N / k_max
                                 st.info(
-                                    TEXTS['info_selection_criteria'][lang].format(ic_name, N, k_min, k_max, ratio, best_n)
+                                    TEXTS['info_selection_criteria'][lang].format(ic_name, N, k_min, k_max, N / k_max, best_n)
                                 )
 
                                 st.success(
@@ -1404,10 +1360,9 @@ def main():
                                 st.markdown(f"### {TEXTS['graph_summary_title'][lang]}")
                                 plot_metrics_summary(results_list, model_name, lang)
 
-                    # --- UPDATE TOP GRAPH WITH RESULTS ---
+                    # --- UPDATE TOP GRAPH ---
                     with graph_placeholder:
                         plot_final_summary(replicates, best_results_global, lang)
-                    # -------------------------------------
 
         except Exception as e:
             st.error(TEXTS['error_proc'][lang].format(e))
@@ -1418,8 +1373,6 @@ if __name__ == "__main__":
     main()
 
 
-import streamlit.components.v1 as components
-
 # ==============================================================================
 # 7. FOOTER
 # ==============================================================================
@@ -1427,10 +1380,11 @@ import streamlit.components.v1 as components
 profile_pic_url = "https://github.com/gusmock.png"
 st.markdown("---")
 
-footer_html = f"""
+# CSS defined separately to avoid f-string SyntaxError with curly braces
+footer_css = """
 <style>
     /* Main Footer Container */
-    .footer-container {{
+    .footer-container {
         width: 100%;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         color: #444;
@@ -1439,10 +1393,10 @@ footer_html = f"""
         align-items: center;
         text-align: center;
         padding: 20px 0;
-    }}
+    }
     
     /* Photo and Text Area */
-    .profile-section {{
+    .profile-section {
         display: flex;
         flex-direction: row;
         align-items: center;
@@ -1450,75 +1404,78 @@ footer_html = f"""
         gap: 20px;
         margin-bottom: 20px;
         max-width: 800px;
-    }}
+    }
     
     /* Mobile responsiveness */
-    @media (max-width: 600px) {{
-        .profile-section {{
+    @media (max-width: 600px) {
+        .profile-section {
             flex-direction: column;
-        }}
-    }}
+        }
+    }
 
-    .profile-img {{
+    .profile-img {
         width: 90px;
         height: 90px;
         border-radius: 50%;
         object-fit: cover;
         border: 3px solid #f0f2f6;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }}
+    }
 
-    .profile-info {{
+    .profile-info {
         text-align: left;
-    }}
+    }
     
-    @media (max-width: 600px) {{
-        .profile-info {{ text-align: center; }}
-    }}
+    @media (max-width: 600px) {
+        .profile-info { text-align: center; }
+    }
 
-    .profile-info h2 {{
+    .profile-info h2 {
         margin: 0;
         font-size: 16px;
         color: #888;
         text-transform: uppercase;
         letter-spacing: 1px;
-    }}
+    }
     
-    .profile-info h4 {{
+    .profile-info h4 {
         margin: 5px 0;
         font-size: 18px;
         color: #222;
         font-weight: 700;
-    }}
+    }
     
-    .profile-info p {{
+    .profile-info p {
         margin: 0;
         font-size: 13px;
         color: #666;
         line-height: 1.4;
-    }}
+    }
 
     /* Personal Badges Container */
-    .social-badges {{
+    .social-badges {
         display: flex;
         flex-wrap: wrap;
         justify-content: center;
         gap: 8px;
         margin-top: 10px;
-    }}
+    }
     
-    .social-badges a img {{
+    .social-badges a img {
         height: 26px;
         border-radius: 4px;
         transition: transform 0.2s, opacity 0.2s;
-    }}
+    }
     
-    .social-badges a img:hover {{
+    .social-badges a img:hover {
         transform: translateY(-2px);
         opacity: 0.9;
-    }}
+    }
 </style>
+"""
 
+# HTML Content (using f-string for python variables)
+footer_html = f"""
 <div class="footer-container">
     
     <div class="profile-section">
@@ -1562,4 +1519,4 @@ footer_html = f"""
 </div>
 """
 
-components.html(footer_html, height=280, scrolling=False)
+components.html(footer_css + footer_html, height=280, scrolling=False)
