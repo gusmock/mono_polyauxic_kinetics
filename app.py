@@ -1371,8 +1371,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
 # ==============================================================================
 # 7. FOOTER
 # ==============================================================================
@@ -1380,7 +1378,7 @@ if __name__ == "__main__":
 profile_pic_url = "https://github.com/gusmock.png"
 st.markdown("---")
 
-# CSS defined separately to avoid f-string SyntaxError with curly braces
+# We define the CSS in a standard string variable to avoid f-string syntax collisions
 footer_css = """
 <style>
     /* Main Footer Container */
@@ -1474,7 +1472,7 @@ footer_css = """
 </style>
 """
 
-# HTML Content (using f-string for python variables)
+# We use an f-string ONLY for the HTML part where Python variables are needed
 footer_html = f"""
 <div class="footer-container">
     
@@ -1519,4 +1517,5 @@ footer_html = f"""
 </div>
 """
 
+# Render combined CSS and HTML
 components.html(footer_css + footer_html, height=280, scrolling=False)
