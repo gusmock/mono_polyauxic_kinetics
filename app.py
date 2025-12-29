@@ -1174,7 +1174,7 @@ def main():
         </div>
 
         <div style="display: flex; align-items: center; gap: 15px;">
-            <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{zenodo_doi}' data-hide-no-mentions='true'></div>
+            <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{zenodo_doi}' data-hide-no-mentions='false'></div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
                 {TEXTS['zenodo_cite'][lang]}
