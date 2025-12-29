@@ -122,6 +122,11 @@ LANGUAGES = {
 
 # UI Text Dictionary
 TEXTS = {
+    "zenodo_cite": {
+        "en": "Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0) [Software]. Zenodo.",
+        "pt": "Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0) [Software]. Zenodo.",
+        "fr": "Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0) [Logiciel]. Zenodo."
+    },
     "app_title": {
         "en": "Polyauxic Modeling Platform",
         "pt": "Plataforma de Modelagem Poliauxica",
@@ -1146,22 +1151,45 @@ def main():
     # References with Badges (Flexbox Layout)
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
 
-    badge_html = """
-    <div style="display: flex; align-items: center; gap: 15px;">
-        <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
-        <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
-            Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
+    # Variáveis do Zenodo
+    zenodo_doi = "10.5281/zenodo.18025828"
+    zenodo_url = f"https://doi.org/{zenodo_doi}"
+    # Badge estilo Shields.io para combinar com o do ArXiv
+    zenodo_badge_img = f"https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
+
+    badge_html = f"""
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+        
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
+            <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
+                Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
+            </div>
+            <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
+                <img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv">
+            </a>
+            <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
+                <img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub">
+            </a>
         </div>
-        <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
-            <img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv">
-        </a>
-        <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
-            <img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub">
-        </a>
+
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{zenodo_doi}' data-hide-no-mentions='true'></div>
+            
+            <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
+                {TEXTS['zenodo_cite'][lang]}
+            </div>
+            
+            <a href="{zenodo_url}" target="_blank">
+                <img src="{zenodo_badge_img}" alt="Zenodo DOI">
+            </a>
+        </div>
+
         <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
     </div>
     """
-    components.html(badge_html, height=80)
+    
+    components.html(badge_html, height=150)
 
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
