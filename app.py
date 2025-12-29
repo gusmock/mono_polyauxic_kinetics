@@ -1151,19 +1151,10 @@ def main():
     # References with Badges (Flexbox Layout)
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
 
-    # Variáveis do Zenodo
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
-    # Badge estilo Shields.io para combinar com o do ArXiv
-    zenodo_badge_img = f"https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
-
-    badge_html = f"""
-    zenodo_doi = "10.5281/zenodo.18025828"
-    zenodo_url = f"https://doi.org/{zenodo_doi}"
-    zenodo_badge_img = f"https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
+    zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
     
-    # Imagem estática do Altmetric (Score 0) para simulação de layout
-    # Use esta variável enquanto o DOI não for publicado/indexado
     altmetric_placeholder = "https://d1bxh8uas1mnw7.cloudfront.net/assets/no-mentions-badge-53c29b4e76a6f6955743a6d400e93297.png"
 
     badge_html = f"""
