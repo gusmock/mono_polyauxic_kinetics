@@ -1134,7 +1134,7 @@ def main():
             </div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
-                Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
+                Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.
             </div>
             
             <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
