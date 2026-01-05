@@ -1117,7 +1117,7 @@ def main():
 
    # --- REFERENCES SECTION WITH BADGES ---
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
-
+   
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
@@ -1126,7 +1126,12 @@ def main():
     <div style="display: flex; flex-direction: column; gap: 12px;">
         
         <div style="display: flex; align-items: center; gap: 15px;">
-            <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
+            <div class='altmetric-embed' 
+                 data-badge-type='donut' 
+                 data-badge-popover='right' 
+                 data-arxiv-id='2507.05960' 
+                 data-hide-no-mentions='true'>
+            </div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
                 Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
@@ -1161,8 +1166,8 @@ def main():
         <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
     </div>
     """
-    
-    components.html(badge_html, height=200)
+
+    components.html(badge_html, height=210)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
