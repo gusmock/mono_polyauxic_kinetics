@@ -1115,22 +1115,40 @@ def main():
     # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
 
-   # --- REFERENCES SECTION WITH BADGES ---
+  # --- REFERENCES SECTION WITH FULL METRICS SUITE ---
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
    
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
 
+    arxiv_doi = "10.48550/arXiv.2507.05960"
+
     badge_html = f"""
-    <div style="display: flex; flex-direction: column; gap: 12px;">
+    <div style="display: flex; flex-direction: column; gap: 15px;">
         
         <div style="display: flex; align-items: center; gap: 15px;">
-            <div class='altmetric-embed' 
-                 data-badge-type='donut' 
-                 data-badge-popover='right' 
-                 data-arxiv-id='2507.05960' 
-                 data-hide-no-mentions='true'>
+            
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div class='altmetric-embed' 
+                     data-badge-type='donut' 
+                     data-badge-popover='right' 
+                     data-arxiv-id='2507.05960' 
+                     data-hide-no-mentions='true'>
+                </div>
+                
+                <a href="https://plu.mx/plum/a/?arxiv=2507.05960" 
+                   class="plumx-plum-print-popup" 
+                   data-popup="right" 
+                   data-size="medium"
+                   data-pass-hidden-categories="true">
+                </a>
+
+                <span class="__dimensions_badge_embed__" 
+                      data-doi="{arxiv_doi}" 
+                      data-style="small_rectangle" 
+                      data-hide-zero-citations="false">
+                </span>
             </div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
@@ -1147,11 +1165,26 @@ def main():
 
         <div style="display: flex; align-items: center; gap: 15px;">
             
-            <div class='altmetric-embed' 
-                 data-badge-type='donut' 
-                 data-badge-popover='right' 
-                 data-doi='{zenodo_doi}' 
-                 data-hide-no-mentions='false'>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div class='altmetric-embed' 
+                     data-badge-type='donut' 
+                     data-badge-popover='right' 
+                     data-doi='{zenodo_doi}' 
+                     data-hide-no-mentions='false'>
+                </div>
+
+                <a href="https://plu.mx/plum/a/?doi={zenodo_doi}" 
+                   class="plumx-plum-print-popup" 
+                   data-popup="right" 
+                   data-size="medium"
+                   data-pass-hidden-categories="true">
+                </a>
+
+                <span class="__dimensions_badge_embed__" 
+                      data-doi="{zenodo_doi}" 
+                      data-style="small_rectangle"
+                      data-hide-zero-citations="false">
+                </span>
             </div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
@@ -1164,10 +1197,12 @@ def main():
         </div>
 
         <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
+        <script type="text/javascript" src="//cdn.plu.mx/widget-popup.js"></script>
+        <script async src="https://badge.dimensions.ai/badge.js" charset="utf-8"></script>
     </div>
     """
-
-    components.html(badge_html, height=210)
+    
+    components.html(badge_html, height=230)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
