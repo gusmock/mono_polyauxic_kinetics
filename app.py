@@ -1115,24 +1115,23 @@ def main():
     # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
 
-    # --- REFERENCES SECTION WITH BADGES ---
+   # --- REFERENCES SECTION WITH BADGES ---
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
 
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
-    
-    # Placeholder for Altmetric badge (simulation until DOI is indexed)
-    altmetric_placeholder = "https://d1bxh8uas1mnw7.cloudfront.net/assets/no-mentions-badge-53c29b4e76a6f6955743a6d400e93297.png"
 
     badge_html = f"""
     <div style="display: flex; flex-direction: column; gap: 12px;">
         
         <div style="display: flex; align-items: center; gap: 15px;">
             <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
+            
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
                 Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
             </div>
+            
             <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
                 <img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv">
             </a>
@@ -1143,7 +1142,7 @@ def main():
 
         <div style="display: flex; align-items: center; gap: 15px;">
             
-            <img src="{altmetric_placeholder}" style="width: 64px; height: 64px;" alt="Altmetric Waiting">
+            <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{zenodo_doi}' data-hide-no-mentions='false'></div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
                 {TEXTS['zenodo_cite'][lang]}
@@ -1158,7 +1157,7 @@ def main():
     </div>
     """
     
-    components.html(badge_html, height=150)
+    components.html(badge_html, height=200)
 
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
