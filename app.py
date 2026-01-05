@@ -1118,6 +1118,7 @@ def main():
    # --- REFERENCES SECTION WITH BADGES ---
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
 
+    # Definição das variáveis do Zenodo
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
@@ -1127,11 +1128,9 @@ def main():
         
         <div style="display: flex; align-items: center; gap: 15px;">
             <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
-            
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
                 Mockaitis, G. (2025) Mono and Polyauxic Growth Kinetic Models. ArXiv: 2507.05960, 24 p.
             </div>
-            
             <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
                 <img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv">
             </a>
@@ -1142,7 +1141,12 @@ def main():
 
         <div style="display: flex; align-items: center; gap: 15px;">
             
-            <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{zenodo_doi}' data-hide-no-mentions='false'></div>
+            <div class='altmetric-embed' 
+                 data-badge-type='donut' 
+                 data-badge-popover='right' 
+                 data-doi='{zenodo_doi}' 
+                 data-hide-no-mentions='false'>
+            </div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
                 {TEXTS['zenodo_cite'][lang]}
