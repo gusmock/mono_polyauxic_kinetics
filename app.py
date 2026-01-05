@@ -1146,7 +1146,7 @@ def main():
 
                 <span class="__dimensions_badge_embed__" 
                       data-doi="{arxiv_doi}" 
-                      data-style="small_rectangle" 
+                      data-style="small_circle" 
                       data-hide-zero-citations="false">
                 </span>
             </div>
@@ -1182,7 +1182,7 @@ def main():
 
                 <span class="__dimensions_badge_embed__" 
                       data-doi="{zenodo_doi}" 
-                      data-style="small_rectangle"
+                      data-style="small_circle"
                       data-hide-zero-citations="false">
                 </span>
             </div>
