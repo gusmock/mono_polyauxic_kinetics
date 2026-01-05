@@ -1202,7 +1202,7 @@ def main():
     </div>
     """
     
-    components.html(badge_html, height=230)
+    components.html(badge_html, height=190)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
