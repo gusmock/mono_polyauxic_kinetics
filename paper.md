@@ -77,7 +77,11 @@ The **Polyauxic Modeling Platform** establishes a computational standard for ana
 
 Originally developed for bioenergy research, the software now serves the broader metabolic engineering community, particularly for non-conventional organisms with complex regulation. By building on the Scientific Python ecosystem (`scipy`, `pandas`), it integrates seamlessly into modern data workflows.
 
-Crucially, the platform lowers the barrier to advanced modeling. Decoupling the core library from the Streamlit visualization layer allows experimentalists to validate hypotheses via the web interface, while computational biologists can utilize the modular library for high-throughput analysis. By standardizing outlier handling and constraints, the platform serves as a foundational tool for reproducibility in fermentation science.
+The platform lowers the barrier to advanced modeling. Decoupling the core library from the Streamlit visualization layer allows experimentalists to validate hypotheses via the web interface, while computational biologists can utilize the modular library for high-throughput analysis. By standardizing outlier handling and constraints, the platform serves as a foundational tool for reproducibility in fermentation science.
+
+# AI Usage Statement
+
+During the preparation of this work, Artificial Intelligence tools based on Large Language Models (LLMs) were used exclusively to assist with text refinement, structural organization of the manuscript, and code debugging. All scientific concepts, experimental designs, data analysis, and final validation of the results are the sole responsibility of the human authors.
 
 # Acknowledgements
 
