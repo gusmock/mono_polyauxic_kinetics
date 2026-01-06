@@ -1123,7 +1123,7 @@ def main():
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
     arxiv_doi = "10.48550/arXiv.2507.05960"
     
-    badge_col_width = "180px"  # Fixed width for the badge column
+    badge_col_width = "210px"  # Fixed width for the badge column
     badge_min_height = "55px"  # Minimum height for rows to prevent collapse
 
     badge_html = f"""
@@ -1232,6 +1232,13 @@ def main():
                        data-size="medium"
                        data-pass-hidden-categories="true">
                     </a>
+                    <!--
+                    <span class="__dimensions_badge_embed__" 
+                      data-doi="{zenodo_doi}" 
+                      data-style="small_circle"
+                      data-hide-zero-citations="false">
+                   </span>
+                   -->
                 </div>
                 
                 <div class="citation-text">
@@ -1252,7 +1259,7 @@ def main():
     </html>
     """
     
-    components.html(badge_html, height=2100)
+    components.html(badge_html, height=210)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
