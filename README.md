@@ -8,7 +8,7 @@
 
 **Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics**
 
-This repository contains the source code for the **Polyauxic Modeling Platform**, a computational tool designed to fit semi-mechanistic kinetic models to complex microbial growth data. It implements the framework described in the paper *Mono- and Polyauxic Growth Kinetics* (Mockaitis, 2025), capable of resolving multi-phasic (polyauxic) behavior in datasets common to environmental biotechnology and industrial bioprocesses.
+This repository contains the source code for the **Polyauxic Modeling Platform**, a computational tool designed to fit semi-mechanistic kinetic models to complex microbial growth data. It implements the framework described in the preprint paper *Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics* (Mockaitis, 2025), capable of resolving multi-phasic (polyauxic) behavior in datasets common to environmental biotechnology and industrial bioprocesses.
 
 ## 📖 Table of Contents
 
