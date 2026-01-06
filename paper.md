@@ -68,8 +68,8 @@ Solving these non-linear problems requires navigating a complex landscape. The s
 ## 3. Statistical Analysis
 
 To prevent overfitting, the software implements a rigorous framework:
-* **Outlier Detection:** A Z-score based filter flags data points deviating significantly from local trends prior to fitting.
-* **Model Selection:** Parsimony is evaluated using Akaike (AIC/AICc) [@Akaike:1974] and Bayesian Information Criteria (BIC) [@Schwarz:1978]. While AIC prioritizes predictive accuracy, BIC imposes stronger penalties for parameter count, aiding the selection of the optimal phase number ($n$).
+1.  **Outlier Detection:** A Z-score based filter flags data points deviating significantly from local trends prior to fitting.
+2.  **Model Selection:** Parsimony is evaluated using Akaike (AIC/AICc) [@Akaike:1974] and Bayesian Information Criteria (BIC) [@Schwarz:1978]. While AIC prioritizes predictive accuracy, BIC imposes stronger penalties for parameter count, aiding the selection of the optimal phase number ($n$).
 
 # Research Impact Statement
 
