@@ -1116,97 +1116,143 @@ def main():
     st.info(TEXTS['intro_desc'][lang])
 
   # --- REFERENCES SECTION WITH FULL METRICS SUITE ---
-    st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
     
+    ref_header_text = TEXTS['paper_ref'][lang] # The header text
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
-
     arxiv_doi = "10.48550/arXiv.2507.05960"
-
-    # --- LAYOUT CONTROLS ---
-    badge_col_width = "210px"   # Reserves horizontal space for badges
-    badge_min_height = "90px"   # Reserves vertical space (prevents row collapse)
+    
+    badge_col_width = "180px"  # Fixed width for the badge column
+    badge_min_height = "55px"  # Minimum height for rows to prevent collapse
 
     badge_html = f"""
-    <div style="display: flex; flex-direction: column; gap: 15px;">
-        
-        <div style="display: flex; align-items: center; gap: 15px;">
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            /* Reset defaults to match Streamlit's look */
+            body {{
+                font-family: "Source Sans Pro", sans-serif; 
+                margin: 0;
+                padding: 0;
+                color: rgb(49, 51, 63); /* Streamlit default text color */
+                overflow: visible;      /* Helps with rendering limits */
+            }}
             
-            <div style="display: flex; align-items: center; gap: 8px; 
-                        min-width: {badge_col_width}; 
-                        min-height: {badge_min_height};">
-                
-                <div class='altmetric-embed' 
-                     data-badge-type='donut' 
-                     data-badge-popover='right' 
-                     data-arxiv-id='2507.05960' 
-                     data-hide-no-mentions='true'>
-                </div>
-                
-                <a href="https://plu.mx/plum/a/?arxiv=2507.05960" 
-                   class="plumx-plum-print-popup" 
-                   data-popup="right" 
-                   data-size="medium"
-                   data-pass-hidden-categories="true">
-                </a>
+            /* Style for the Header (formerly st.markdown) */
+            .ref-header {{
+                font-size: 16px;
+                font-weight: 700;
+                margin-bottom: 15px; /* Control gap between Header and Row 1 here */
+            }}
 
-                <span class="__dimensions_badge_embed__" 
-                      data-doi="{arxiv_doi}" 
-                      data-style="small_circle" 
-                      data-hide-zero-citations="false">
-                </span>
-            </div>
-            
-            <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
-                Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.
-            </div>
-            
-            <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
-                <img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv">
-            </a>
-            <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
-                <img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub">
-            </a>
+            /* Container for the rows */
+            .rows-container {{
+                display: flex;
+                flex-direction: column;
+                gap: 15px; /* Vertical gap between Row 1 and Row 2 */
+            }}
+
+            .row {{
+                display: flex; 
+                align-items: center; 
+                gap: 15px;
+            }}
+
+            .badge-wrapper {{
+                display: flex; 
+                align-items: center; 
+                gap: 8px; 
+                min-width: {badge_col_width}; 
+                min-height: {badge_min_height};
+            }}
+
+            .citation-text {{
+                font-family: 'Times New Roman', serif; 
+                font-size: 16px;
+                line-height: 1.4;
+            }}
+        </style>
+    </head>
+    <body>
+        
+        <div class="ref-header">
+            {ref_header_text}
         </div>
 
-        <div style="display: flex; align-items: center; gap: 15px;">
-            
-            <div style="display: flex; align-items: center; gap: 8px; 
-                        min-width: {badge_col_width}; 
-                        min-height: {badge_min_height};">
-                
-                <div class='altmetric-embed' 
-                     data-badge-type='donut' 
-                     data-badge-popover='right' 
-                     data-doi='{zenodo_doi}' 
-                     data-hide-no-mentions='false'>
-                </div>
+        <div class="rows-container">
+            <div class="row">
+                <div class="badge-wrapper">
+                    <div class='altmetric-embed' 
+                         data-badge-type='donut' 
+                         data-badge-popover='right' 
+                         data-arxiv-id='2507.05960' 
+                         data-hide-no-mentions='true'>
+                    </div>
+                    
+                    <a href="https://plu.mx/plum/a/?arxiv=2507.05960" 
+                       class="plumx-plum-print-popup" 
+                       data-popup="right" 
+                       data-size="medium"
+                       data-pass-hidden-categories="true">
+                    </a>
 
-                <a href="https://plu.mx/plum/a/?doi={zenodo_doi}" 
-                   class="plumx-plum-print-popup" 
-                   data-popup="right" 
-                   data-size="medium"
-                   data-pass-hidden-categories="true">
+                    <span class="__dimensions_badge_embed__" 
+                          data-doi="{arxiv_doi}" 
+                          data-style="small_circle" 
+                          data-hide-zero-citations="false">
+                    </span>
+                </div>
+                
+                <div class="citation-text">
+                    Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.
+                </div>
+                
+                <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
+                    <img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv">
+                </a>
+                <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
+                    <img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub">
                 </a>
             </div>
-            
-            <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
-                {TEXTS['zenodo_cite'][lang]}
+
+            <div class="row">
+                <div class="badge-wrapper">
+                    <div class='altmetric-embed' 
+                         data-badge-type='donut' 
+                         data-badge-popover='right' 
+                         data-doi='{zenodo_doi}' 
+                         data-hide-no-mentions='false'>
+                    </div>
+
+                    <a href="https://plu.mx/plum/a/?doi={zenodo_doi}" 
+                       class="plumx-plum-print-popup" 
+                       data-popup="right" 
+                       data-size="medium"
+                       data-pass-hidden-categories="true">
+                    </a>
+                </div>
+                
+                <div class="citation-text">
+                    {TEXTS['zenodo_cite'][lang]}
+                </div>
+                
+                <a href="{zenodo_url}" target="_blank">
+                    <img src="{zenodo_badge_img}" alt="Zenodo DOI">
+                </a>
             </div>
-            
-            <a href="{zenodo_url}" target="_blank">
-                <img src="{zenodo_badge_img}" alt="Zenodo DOI">
-            </a>
         </div>
 
         <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
         <script type="text/javascript" src="//cdn.plu.mx/widget-popup.js"></script>
         <script async src="https://badge.dimensions.ai/badge.js" charset="utf-8"></script>
-    </div>
+
+    </body>
+    </html>
     """
     
-    components.html(badge_html, height=200)
+    components.html(badge_html, height=2100)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
