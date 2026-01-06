@@ -1179,12 +1179,13 @@ def main():
                    data-size="medium"
                    data-pass-hidden-categories="true">
                 </a>
-
+                <!--
                 <span class="__dimensions_badge_embed__" 
                       data-doi="{zenodo_doi}" 
                       data-style="small_circle"
                       data-hide-zero-citations="false">
                 </span>
+                -->
             </div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
