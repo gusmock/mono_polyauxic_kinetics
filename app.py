@@ -1125,7 +1125,7 @@ def main():
     arxiv_doi = "10.48550/arXiv.2507.05960"
 
     # Define a consistent width for the badge container so text aligns
-    badge_col_width = "180px" 
+    badge_col_width = "210px" 
 
     badge_html = f"""
     <div style="display: flex; flex-direction: column; gap: 15px;">
