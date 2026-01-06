@@ -1117,19 +1117,22 @@ def main():
 
   # --- REFERENCES SECTION WITH FULL METRICS SUITE ---
     st.markdown(f"**{TEXTS['paper_ref'][lang]}**")
-   
+    
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
 
     arxiv_doi = "10.48550/arXiv.2507.05960"
 
+    # Define a consistent width for the badge container so text aligns
+    badge_col_width = "180px" 
+
     badge_html = f"""
     <div style="display: flex; flex-direction: column; gap: 15px;">
         
         <div style="display: flex; align-items: center; gap: 15px;">
             
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: {badge_col_width};">
                 <div class='altmetric-embed' 
                      data-badge-type='donut' 
                      data-badge-popover='right' 
@@ -1165,7 +1168,7 @@ def main():
 
         <div style="display: flex; align-items: center; gap: 15px;">
             
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: {badge_col_width};">
                 <div class='altmetric-embed' 
                      data-badge-type='donut' 
                      data-badge-popover='right' 
@@ -1179,14 +1182,8 @@ def main():
                    data-size="medium"
                    data-pass-hidden-categories="true">
                 </a>
-                <!--
-                <span class="__dimensions_badge_embed__" 
-                      data-doi="{zenodo_doi}" 
-                      data-style="small_circle"
-                      data-hide-zero-citations="false">
-                </span>
-                -->
-            </div>
+                
+                </div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
                 {TEXTS['zenodo_cite'][lang]}
