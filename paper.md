@@ -65,7 +65,7 @@ The package is structured into a modular library (`polyauxic_lib.py`) handling t
 
 The tool allows researchers to compare conflicting hypotheses (e.g., "Is this growth profile diauxic or triauxic?") by fitting models with $n=1$ to $n=5$ phases and comparing them via Information Criteria (AICc).
 
-![Comparison of model fits. The tool automatically identifies the number of phases and highlights outliers.](docs/polyauxic_screenshot.png)
+![Comparison of model fits. The tool automatically identifies the number of phases and highlights outliers.](polyauxic_screenshot.png)
 
 # Acknowledgements
 
