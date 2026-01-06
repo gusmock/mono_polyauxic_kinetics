@@ -128,9 +128,9 @@ TEXTS = {
         "fr": "Plateforme de Modélisation Polyauxique"
     },
     "intro_desc": {
-        "en": "This application performs advanced non-linear regression for microbial growth kinetics. It identifies mono- and polyauxic behaviors using robust statistical methods (Lorentzian loss, ROUT outlier detection) and selects models via Information Criteria (AIC, AICc, BIC).",
-        "pt": "Este aplicativo realiza regressão não-linear avançada para cinética microbiana. Identifica comportamentos mono e poliauxicos usando métodos estatísticos robustos (perda Lorentziana, outliers ROUT) e seleciona modelos via Critérios de Informação (AIC, AICc, BIC).",
-        "fr": "Cette application effectue une régression non linéaire avancée pour la cinétique microbienne. Elle identifie les comportements mono- et polyauxiques à l'aide de méthodes robustes (perte Lorentzienne, ROUT) et sélectionne les modèles via Critères d'Information (AIC, AICc, BIC)."
+        "en": "This application performs advanced non-linear regression for microbial growth kinetics. It identifies mono- and polyauxic behaviors using robust statistical methods (Charbonnier loss, ROUT outlier detection) and selects models via Information Criteria (AIC, AICc, BIC).",
+        "pt": "Este aplicativo realiza regressão não-linear avançada para cinética microbiana. Identifica comportamentos mono e poliauxicos usando métodos estatísticos robustos (Charbonnier, outliers ROUT) e seleciona modelos via Critérios de Informação (AIC, AICc, BIC).",
+        "fr": "Cette application effectue une régression non linéaire avancée pour la cinétique microbienne. Elle identifie les comportements mono- et polyauxiques à l'aide de méthodes robustes (Charbonnier, ROUT) et sélectionne les modèles via Critères d'Information (AIC, AICc, BIC)."
     },
     "paper_ref": {
         "en": "Reference Paper & Source:",
