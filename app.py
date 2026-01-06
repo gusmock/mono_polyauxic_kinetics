@@ -1126,7 +1126,7 @@ def main():
 
     # --- LAYOUT CONTROLS ---
     badge_col_width = "210px"   # Reserves horizontal space for badges
-    badge_min_height = "80px"   # Reserves vertical space (prevents row collapse)
+    badge_min_height = "100px"   # Reserves vertical space (prevents row collapse)
 
     badge_html = f"""
     <div style="display: flex; flex-direction: column; gap: 15px;">
@@ -1206,7 +1206,7 @@ def main():
     </div>
     """
     
-    components.html(badge_html, height=230)
+    components.html(badge_html, height=190)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
