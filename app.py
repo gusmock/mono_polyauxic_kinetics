@@ -1124,15 +1124,19 @@ def main():
 
     arxiv_doi = "10.48550/arXiv.2507.05960"
 
-    # Define a consistent width for the badge container so text aligns
-    badge_col_width = "210px" 
+    # --- LAYOUT CONTROLS ---
+    badge_col_width = "210px"   # Reserves horizontal space for badges
+    badge_min_height = "80px"   # Reserves vertical space (prevents row collapse)
 
     badge_html = f"""
     <div style="display: flex; flex-direction: column; gap: 15px;">
         
         <div style="display: flex; align-items: center; gap: 15px;">
             
-            <div style="display: flex; align-items: center; gap: 8px; min-width: {badge_col_width};">
+            <div style="display: flex; align-items: center; gap: 8px; 
+                        min-width: {badge_col_width}; 
+                        min-height: {badge_min_height};">
+                
                 <div class='altmetric-embed' 
                      data-badge-type='donut' 
                      data-badge-popover='right' 
@@ -1168,7 +1172,10 @@ def main():
 
         <div style="display: flex; align-items: center; gap: 15px;">
             
-            <div style="display: flex; align-items: center; gap: 8px; min-width: {badge_col_width};">
+            <div style="display: flex; align-items: center; gap: 8px; 
+                        min-width: {badge_col_width}; 
+                        min-height: {badge_min_height};">
+                
                 <div class='altmetric-embed' 
                      data-badge-type='donut' 
                      data-badge-popover='right' 
@@ -1182,8 +1189,7 @@ def main():
                    data-size="medium"
                    data-pass-hidden-categories="true">
                 </a>
-                
-                </div>
+            </div>
             
             <div style="font-family: 'Times New Roman', serif; font-size: 16px;">
                 {TEXTS['zenodo_cite'][lang]}
