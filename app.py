@@ -1142,7 +1142,7 @@ def main():
             
             /* Style for the Header (formerly st.markdown) */
             .ref-header {{
-                font-size: 16px;
+                font-size: 18px;
                 font-weight: 700;
                 margin-bottom: 15px; /* Control gap between Header and Row 1 here */
             }}
