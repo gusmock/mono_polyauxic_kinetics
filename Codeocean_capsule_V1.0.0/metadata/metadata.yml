@@ -1,0 +1,16 @@
+metadata_version: 1
+name: Polyauxic Modeling Platform (v1.0.0)
+description: Polyauxic Modeling Plataform is an open-source Python package designed
+  for the robust kinetic modeling of mono- and polyauxic microbial growth. Addressing
+  the limitations of standard single-phase analysis, this software implements semi-mechanistic
+  reformulations of Boltzmann and Gompertz equations to extract biologically interpretable
+  parameters from complex datasets. The computational workflow integrates a hybrid
+  optimization pipeline, combining Differential Evolution for global search with L-BFGS-B
+  for local refinement, alongside the ROUT method for outlier detection and information
+  criteria (AIC, BIC) for automated phase selection. This modular framework ensures
+  reproducibility and numerical stability, providing researchers in environmental
+  biotechnology a powerful tool to analyze multiphasic substrate degradation dynamics.
+authors:
+- name: Gustavo Mockaitis
+  affiliations:
+  - name: University of Campinas
