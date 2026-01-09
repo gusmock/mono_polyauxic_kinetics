@@ -1,6 +1,7 @@
 # Polyauxic Modeling Platform
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18025828.svg)](https://doi.org/10.5281/zenodo.18025828)
+[![DOI](https://img.shields.io/badge/DOI-10.24433/CO.0225069.v1-blue)](https://doi.org/10.24433/CO.0225069.v1)
+[![DOI](https://img.shields.io/badge/DOI-10.5281/zenodo.18025828-indigo)](https://doi.org/10.5281/zenodo.18025828)
 [![ArXiv](https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg)](https://arxiv.org/abs/2507.05960)
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://monopolyauxickinetics-test.streamlit.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
