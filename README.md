@@ -28,13 +28,13 @@ Microbial growth in complex substrates often exhibits multiphasic (polyauxic) be
 
 This tool bridges the gap between empirical curve fitting and mechanistic modeling by:
 
-1. Extracting explicit kinetic parameters: **Maximum Specific Rate ($$r_{max,j}$$)** and **Lag Phase ($$\lambda$$)**.
+1. Extracting explicit kinetic parameters: **Maximum Specific Rate ($$r_{max,j}$$)** and **Lag Phase ($$\lambda_{j}$$)**.
 2. Employing a robust two-stage optimization pipeline to avoid local minima.
 3. Automatically detecting statistical outliers using the ROUT method.
 
 ## 📐 Theoretical Framework
 
-The platform models polyauxic growth as a summation of  distinct growth phases. The weighting factors ($$p_j$$) scale the contribution of each phase to the total amplitude .
+The platform models polyauxic growth as a summation of  distinct growth phases. The weighting factors ($$p_{j}$$) scale the contribution of each phase to the total amplitude .
 
 ### The Polyauxic Equation
 
@@ -58,14 +58,14 @@ $$ y(x)=y_{i}+(y_{f}-y_{i})\cdot\sum_{j=1}^{n}p_{j}\cdot e^{-e^{\frac{r_{max,j}\
 
 ## ✨ Features
 
-* **Heuristic Initialization:** Automatically estimates initial parameters (, ) by analyzing peaks in the first derivative of the input data to avoid arbitrary starting points.
+* **Heuristic Initialization:** Automatically estimates initial parameters ($$r_{max,j}$$, $$\lambda_{j}$$) by analyzing peaks in the first derivative of the input data to avoid arbitrary starting points.
 * **Hybrid Optimization Pipeline:**
 * **Global Search:** Uses **Differential Evolution (DE)** to navigate the high-dimensional, multimodal parameter space of polyauxic models.
 * **Local Refinement:** Applies **L-BFGS-B** for precise convergence and strict bound enforcement (non-negative rates).
 
 
 * **Robust Outlier Detection:** Implements the **ROUT method** (Robust Regression and Outlier Removal) using a Charbonnier loss function and False Discovery Rate (FDR) control to identify experimental anomalies without subjective bias.
-* **Model Parsimony:** Automatically selects the optimal number of phases () using Information Criteria: **AIC**, **AICc** (for small sample sizes), and **BIC**.
+* **Model Parsimony:** Automatically selects the optimal number of phases ($$n$$) using Information Criteria: **AIC**, **AICc** (for small sample sizes), and **BIC**.
 * **Uncertainty Quantification:** Estimates standard errors via the Hessian matrix and propagates errors for derived parameters using the Delta method.
 
 ## 💻 Installation
