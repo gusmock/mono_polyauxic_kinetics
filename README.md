@@ -28,13 +28,13 @@ Microbial growth in complex substrates often exhibits multiphasic (polyauxic) be
 
 This tool bridges the gap between empirical curve fitting and mechanistic modeling by:
 
-1. Extracting explicit kinetic parameters: **Maximum Specific Rate ()** and **Lag Phase ()**.
+1. Extracting explicit kinetic parameters: **Maximum Specific Rate ($$r_{max,j}$$)** and **Lag Phase ($$\lambda$$)**.
 2. Employing a robust two-stage optimization pipeline to avoid local minima.
 3. Automatically detecting statistical outliers using the ROUT method.
 
 ## 📐 Theoretical Framework
 
-The platform models polyauxic growth as a summation of  distinct growth phases. The weighting factors () scale the contribution of each phase to the total amplitude .
+The platform models polyauxic growth as a summation of  distinct growth phases. The weighting factors ($$p_j$$) scale the contribution of each phase to the total amplitude .
 
 ### The Polyauxic Equation
 
@@ -130,7 +130,11 @@ If you use this software or the underlying methodology in your research, please 
 
 **Software (Zenodo):**
 
-> Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0). *Zenodo*. https://www.google.com/url?sa=E&source=gmail&q=https://doi.org/10.5281/zenodo.18025828
+> Mockaitis, G. (2025). Polyauxic Modeling Platform (v1.0.0). *Zenodo*. https://doi.org/10.5281/zenodo.18025828
+
+**Source Code Capsule (Codeocean):**
+
+> Mockaitis, G. (2026). Polyauxic Modeling Platform (v1.0.0). *Codeocean*. https://doi.org/10.24433/CO.0225069.v1
 
 **BibTeX:**
 
@@ -153,6 +157,15 @@ If you use this software or the underlying methodology in your research, please 
   url          = {[https://doi.org/10.5281/zenodo.18025828](https://doi.org/10.5281/zenodo.18025828)}
 }
 
+@software{codeocean2025capsule,
+  author       = {Mockaitis, Gustavo},
+  title        = {Polyauxic Modeling Platform (v1.0.0)},
+  year         = 2026,
+  publisher    = {Code Ocean},
+  doi          = {10.24433/CO.0225069.v1},
+  url          = {[https://doi.org/10.24433/CO.0225069.v1](https://doi.org/10.24433/CO.0225069.v1)}
+}
+
 ```
 
 ## 👨‍🔬 Author
@@ -166,7 +179,3 @@ Campinas, SP, Brazil.
 ## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
-
-```
-
-```
