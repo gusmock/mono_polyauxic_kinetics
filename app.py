@@ -4,6 +4,12 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import io
+import os
+import hashlib
+import socket
+from datetime import datetime
+from streamlit.web.server.websocket_headers import _get_websocket_headers
+import uuid
 
 # Import Core Logic from your separated file
 from polyauxic_core import (
@@ -19,6 +25,99 @@ from polyauxic_core import (
     detect_outliers,
     detect_outliers_rout_rigorous
 )
+
+# ==============================================================================
+# LOGGING & DATA STORAGE UTILS
+# ==============================================================================
+
+def get_user_identifier():
+    """
+    Tenta obter o IP. Se falhar ou for localhost, retorna um ID único persistente para a sessão.
+    """
+    # 1. Se já definimos um ID para esta sessão, retorna ele imediatamente
+    if "user_id_persistent" in st.session_state:
+        return st.session_state["user_id_persistent"]
+
+    detected_id = None
+
+    # 2. Tenta obter o IP real via cabeçalhos (funciona no Streamlit Cloud/Docker)
+    try:
+        headers = _get_websocket_headers()
+        if headers and "X-Forwarded-For" in headers:
+            # Pega o primeiro IP da lista
+            ip = headers["X-Forwarded-For"].split(",")[0].strip()
+            if ip and ip != "127.0.0.1":
+                detected_id = ip
+    except:
+        pass
+
+    # 3. Se falhou acima, tenta hostname local
+    if not detected_id:
+        try:
+            hostname = socket.gethostname()
+            ip = socket.gethostbyname(hostname)
+            if ip and ip != "127.0.0.1":
+                detected_id = ip
+        except:
+            pass
+
+    # 4. FALLBACK FINAL: Se ainda não temos IP ou é localhost, gera um UUID
+    if not detected_id or detected_id == "127.0.0.1":
+        # Gera um código aleatório curto (ex: a1b2c3d4)
+        detected_id = f"anon_{str(uuid.uuid4())[:8]}"
+
+    # 5. Salva no session_state para não mudar enquanto o usuário usa o app
+    st.session_state["user_id_persistent"] = detected_id
+    
+    return detected_id
+
+def save_uploaded_data(df):
+    """
+    Salva o DataFrame como CSV na pasta /data.
+    Nome: DD-MM-YYYY_IDENTIFICADOR.csv
+    """
+    data_dir = "data"
+    os.makedirs(data_dir, exist_ok=True)
+    
+    # 1. Gerar Hash do conteúdo atual
+    content_csv = df.to_csv(index=False)
+    current_hash = hashlib.md5(content_csv.encode('utf-8')).hexdigest()
+    
+    # 2. Definir nome do arquivo alvo com o NOVO Identificador
+    date_str = datetime.now().strftime("%d-%m-%Y")
+    
+    # --- MUDANÇA AQUI ---
+    user_id = get_user_identifier() 
+    # Sanitizar (trocar caracteres inválidos em nomes de arquivo)
+    safe_id = user_id.replace(":", "_").replace(".", "_")
+    # --------------------
+
+    target_filename = f"{date_str}_{safe_id}.csv"
+    target_path = os.path.join(data_dir, target_filename)
+    
+    # 3. Varrer pasta para verificar duplicatas de CONTEÚDO (Mantém lógica anterior)
+    for filename in os.listdir(data_dir):
+        if filename.endswith(".csv"):
+            file_path = os.path.join(data_dir, filename)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    existing_content = f.read()
+                existing_hash = hashlib.md5(existing_content.encode('utf-8')).hexdigest()
+                
+                # Se o conteúdo é igual, apaga o antigo para "sobrescrever" com o nome novo/atual
+                if existing_hash == current_hash:
+                    if filename != target_filename:
+                        os.remove(file_path)
+            except Exception as e:
+                print(f"Erro ao verificar arquivo {filename}: {e}")
+                continue
+
+    # 4. Salvar
+    try:
+        df.to_csv(target_path, index=False)
+        print(f"Dataset salvo: {target_path}")
+    except Exception as e:
+        st.error(f"Erro ao salvar backup: {e}")
 
 # ==============================================================================
 # 0. CONFIGURATION & GLOBAL SETTINGS
@@ -705,6 +804,8 @@ def main():
                 df = pd.read_csv(file)
             else:
                 df = pd.read_excel(file)
+
+            save_uploaded_data(df)
 
             t_flat, y_flat, replicates = process_data(df)
             if not replicates:
