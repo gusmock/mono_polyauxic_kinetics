@@ -32,98 +32,169 @@ from polyauxic_core import (
 
 def get_user_identifier():
     """
-    Tenta obter o IP. Se falhar ou for localhost, retorna um ID único persistente para a sessão.
+    Attempts to retrieve a unique user identifier (IP address). 
+    If it fails or detects localhost, it generates a persistent unique ID for the session.
     """
-    # 1. Se já definimos um ID para esta sessão, retorna ele imediatamente
+    # 1. Return persistent ID if already defined in the current session
     if "user_id_persistent" in st.session_state:
         return st.session_state["user_id_persistent"]
 
     detected_id = None
 
-    # 2. Tenta obter o IP real via cabeçalhos (funciona no Streamlit Cloud/Docker)
+    # 2. Try to obtain the real IP via headers (useful for Streamlit Cloud/Docker)
     try:
         headers = _get_websocket_headers()
         if headers and "X-Forwarded-For" in headers:
-            # Pega o primeiro IP da lista
             ip = headers["X-Forwarded-For"].split(",")[0].strip()
             if ip and ip != "127.0.0.1":
                 detected_id = ip
-    except:
+    except Exception:
         pass
 
-    # 3. Se falhou acima, tenta hostname local
+    # 3. Fallback: try local hostname
     if not detected_id:
         try:
             hostname = socket.gethostname()
             ip = socket.gethostbyname(hostname)
             if ip and ip != "127.0.0.1":
                 detected_id = ip
-        except:
+        except Exception:
             pass
 
-    # 4. FALLBACK FINAL: Se ainda não temos IP ou é localhost, gera um UUID
+    # 4. Final Fallback: Generate a short UUID for anonymity and localhost
     if not detected_id or detected_id == "127.0.0.1":
-        # Gera um código aleatório curto (ex: a1b2c3d4)
         detected_id = f"anon_{str(uuid.uuid4())[:8]}"
 
-    # 5. Salva no session_state para não mudar enquanto o usuário usa o app
+    # 5. Save to session_state to ensure persistence during app usage
     st.session_state["user_id_persistent"] = detected_id
     
     return detected_id
 
 def save_uploaded_data(df):
     """
-    Salva o DataFrame como CSV na pasta /data.
-    Nome: DD-MM-YYYY_IDENTIFICADOR.csv
+    Saves the uploaded DataFrame as a CSV in the local /data folder.
+    Format: DD-MM-YYYY_IDENTIFIER.csv
+    Includes robust try/except blocks to prevent UI crashes if disk writing fails.
     """
     data_dir = "data"
-    os.makedirs(data_dir, exist_ok=True)
     
-    # 1. Gerar Hash do conteúdo atual
-    content_csv = df.to_csv(index=False)
-    current_hash = hashlib.md5(content_csv.encode('utf-8')).hexdigest()
-    
-    # 2. Definir nome do arquivo alvo com o NOVO Identificador
-    date_str = datetime.now().strftime("%d-%m-%Y")
-    
-    # --- MUDANÇA AQUI ---
-    user_id = get_user_identifier() 
-    # Sanitizar (trocar caracteres inválidos em nomes de arquivo)
-    safe_id = user_id.replace(":", "_").replace(".", "_")
-    # --------------------
-
-    target_filename = f"{date_str}_{safe_id}.csv"
-    target_path = os.path.join(data_dir, target_filename)
-    
-    # 3. Varrer pasta para verificar duplicatas de CONTEÚDO (Mantém lógica anterior)
-    for filename in os.listdir(data_dir):
-        if filename.endswith(".csv"):
-            file_path = os.path.join(data_dir, filename)
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    existing_content = f.read()
-                existing_hash = hashlib.md5(existing_content.encode('utf-8')).hexdigest()
-                
-                # Se o conteúdo é igual, apaga o antigo para "sobrescrever" com o nome novo/atual
-                if existing_hash == current_hash:
-                    if filename != target_filename:
-                        os.remove(file_path)
-            except Exception as e:
-                print(f"Erro ao verificar arquivo {filename}: {e}")
-                continue
-
-    # 4. Salvar
     try:
-        df.to_csv(target_path, index=False)
-        print(f"Dataset salvo: {target_path}")
+        # Create directory if it does not exist (Safe for local environments)
+        os.makedirs(data_dir, exist_ok=True)
     except Exception as e:
-        st.error(f"Erro ao salvar backup: {e}")
+        st.warning(f"Could not create local data directory. Backups will be skipped. Error: {e}")
+        return
+    
+    try:
+        # 1. Generate MD5 hash of the current content to prevent exact duplicates
+        content_csv = df.to_csv(index=False)
+        current_hash = hashlib.md5(content_csv.encode('utf-8')).hexdigest()
+        
+        # 2. Define target filename with the sanitized User Identifier
+        date_str = datetime.now().strftime("%d-%m-%Y")
+        user_id = get_user_identifier() 
+        safe_id = user_id.replace(":", "_").replace(".", "_")
+        target_filename = f"{date_str}_{safe_id}.csv"
+        target_path = os.path.join(data_dir, target_filename)
+        
+        # 3. Scan directory to check for exact content duplicates
+        for filename in os.listdir(data_dir):
+            if filename.endswith(".csv"):
+                file_path = os.path.join(data_dir, filename)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        existing_content = f.read()
+                    existing_hash = hashlib.md5(existing_content.encode('utf-8')).hexdigest()
+                    
+                    # If content matches exactly, remove the old file to overwrite it
+                    if existing_hash == current_hash and filename != target_filename:
+                        os.remove(file_path)
+                except Exception as e:
+                    # Silent pass to not disrupt the user experience
+                    continue
+
+        # 4. Save the new/updated file
+        df.to_csv(target_path, index=False)
+    except Exception as e:
+        st.warning(f"Failed to save local backup file. Process will continue. Error: {e}")
+
+# ==============================================================================
+# EXCEL EXPORT UTILITY
+# ==============================================================================
+
+def generate_excel_report(best_results_global, replicates, param_labels, rate_label):
+    """
+    Generates an Excel file (.xlsx) in memory containing all parameters, 
+    standard errors, and statistics for the best models found.
+    """
+    output = io.BytesIO()
+    
+    # Use xlsxwriter engine to format Excel in memory
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        
+        # Loop through the best results dictionary (Gompertz, Boltzmann)
+        for model_name, res in best_results_global.items():
+            if res is None:
+                continue
+                
+            n = res['n_phases']
+            theta = res['theta']
+            se = res['se']
+            se_p = res['se_p']
+            yi_name, yf_name = param_labels
+            
+            # --- Global Parameters Sheet ---
+            global_params = pd.DataFrame({
+                "Parameter": [yi_name, yf_name, "Phases (n)"],
+                "Value": [theta[0], theta[1], n],
+                "Standard Error (SE)": [se[0], se[1], "N/A"]
+            })
+            global_params.to_excel(writer, sheet_name=f"{model_name}_Global", index=False)
+            
+            # --- Phase Specific Parameters Sheet ---
+            z = theta[2 : 2 + n]
+            r_max = theta[2 + n : 2 + 2 * n]
+            r_max_se = se[2 + n : 2 + 2 * n]
+            lambda_ = theta[2 + 2 * n : 2 + 3 * n]
+            lambda_se = se[2 + 2 * n : 2 + 3 * n]
+            
+            # Calculate proportion 'p' based on z transformation
+            p = np.exp(z - np.max(z))
+            p /= np.sum(p)
+            
+            phase_data = []
+            for i in range(n):
+                phase_data.append({
+                    "Phase": i + 1,
+                    "Proportion (p)": p[i],
+                    "SE (p)": se_p[i],
+                    f"Max Rate ({rate_label})": r_max[i],
+                    f"SE ({rate_label})": r_max_se[i],
+                    "Lag Phase (lambda)": lambda_[i],
+                    "SE (lambda)": lambda_se[i]
+                })
+            
+            phase_df = pd.DataFrame(phase_data)
+            # Sort phases sequentially by lambda (lag time)
+            phase_df = phase_df.sort_values(by="Lag Phase (lambda)").reset_index(drop=True)
+            phase_df.to_excel(writer, sheet_name=f"{model_name}_Phases", index=False)
+            
+            # --- Statistics & Metrics Sheet ---
+            m = res['metrics']
+            metrics_df = pd.DataFrame({
+                "Metric": ["R-squared", "Adjusted R-squared", "SSE", "AIC", "AICc", "BIC"],
+                "Value": [m['R2'], m['R2_adj'], m['SSE'], m['AIC'], m['AICc'], m['BIC']]
+            })
+            metrics_df.to_excel(writer, sheet_name=f"{model_name}_Metrics", index=False)
+
+    return output.getvalue()
+
 
 # ==============================================================================
 # 0. CONFIGURATION & GLOBAL SETTINGS
 # ==============================================================================
 
-# Global Plot Style - Times New Roman 11
+# Global Plot Style - Academic Standard (Times New Roman 11)
 plt.rcParams.update({
     'font.family': 'serif',
     'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif'],
@@ -143,7 +214,7 @@ LANGUAGES = {
     "🇫🇷 Français (CA)": "fr"
 }
 
-# UI Text Dictionary
+# UI Text Dictionary (Truncated here for brevity, keeping all original definitions)
 TEXTS = {
     "app_title": {
         "en": "Polyauxic Modeling Platform",
@@ -251,6 +322,7 @@ TEXTS = {
     },
     "download_plot": {"en": "Download Plot (SVG)", "pt": "Baixar Gráfico (SVG)", "fr": "Télécharger le Graphique (SVG)"},
     "download_summary": {"en": "Download Summary (SVG)", "pt": "Baixar Resumo (SVG)", "fr": "Télécharger le Résumé (SVG)"},
+    "download_excel": {"en": "Download Full Results (.xlsx)", "pt": "Baixar Resultados Completos (.xlsx)", "fr": "Télécharger les Résultats Complets (.xlsx)"},
     "axis_time": {"en": "Time (h/d)", "pt": "Tempo (h/d)", "fr": "Temps (h/j)"},
     "legend_global": {"en": "Global Fit", "pt": "Ajuste Global", "fr": "Ajustement Global"},
     "legend_phase": {"en": "Phase {0}", "pt": "Fase {0}", "fr": "Phase {0}"},
@@ -322,7 +394,7 @@ TEXTS = {
     "table_col_phase": {"en": "Phase", "pt": "Fase", "fr": "Phase"}
 }
 
-# Variable Labels Configuration (Using neutral keys)
+# Variable Labels Configuration
 VAR_LABELS = {
     "generic": {
         "label": {"en": "Generic y(t)", "pt": "Genérico y(t)", "fr": "Générique y(t)"},
@@ -597,6 +669,13 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
 def main():
     st.set_page_config(layout="wide", page_title="Polyauxic Analysis")
 
+    # --- SESSION STATE INITIALIZATION ---
+    # This prevents the app from losing context when download buttons trigger a page rerun.
+    if 'analysis_run' not in st.session_state:
+        st.session_state.analysis_run = False
+    if 'uploaded_file_hash' not in st.session_state:
+        st.session_state.uploaded_file_hash = None
+
     # Sidebar for settings
     st.sidebar.header("Language / Idioma / Langue")
     lang_key = st.sidebar.selectbox("Select Language", list(LANGUAGES.keys()))
@@ -607,139 +686,54 @@ def main():
     # Intro and Instructions
     st.info(TEXTS['intro_desc'][lang])
 
-  # --- REFERENCES SECTION WITH FULL METRICS SUITE ---
-    
-    ref_header_text = TEXTS['paper_ref'][lang] # The header text
+    # --- REFERENCES SECTION WITH FULL METRICS SUITE ---
+    ref_header_text = TEXTS['paper_ref'][lang]
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
     arxiv_doi = "10.48550/arXiv.2507.05960"
     
-    badge_col_width = "210px"  # Fixed width for the badge column
-    badge_min_height = "55px"  # Minimum height for rows to prevent collapse
+    badge_col_width = "210px"
+    badge_min_height = "55px"
 
     badge_html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <style>
-            /* Reset defaults to match Streamlit's look */
-            body {{
-                font-family: "Source Sans Pro", sans-serif; 
-                margin: 0;
-                padding: 0;
-                color: rgb(49, 51, 63); /* Streamlit default text color */
-                overflow: visible;      /* Helps with rendering limits */
-            }}
-            
-            /* Style for the Header (formerly st.markdown) */
-            .ref-header {{
-                font-size: 18px;
-                font-weight: 700;
-                margin-bottom: 15px; /* Control gap between Header and Row 1 here */
-            }}
-
-            /* Container for the rows */
-            .rows-container {{
-                display: flex;
-                flex-direction: column;
-                gap: 15px; /* Vertical gap between Row 1 and Row 2 */
-            }}
-
-            .row {{
-                display: flex; 
-                align-items: center; 
-                gap: 15px;
-            }}
-
-            .badge-wrapper {{
-                display: flex; 
-                align-items: center; 
-                gap: 8px; 
-                min-width: {badge_col_width}; 
-                min-height: {badge_min_height};
-            }}
-
-            .citation-text {{
-                font-family: 'Times New Roman', serif; 
-                font-size: 16px;
-                line-height: 1.4;
-            }}
+            body {{ font-family: "Source Sans Pro", sans-serif; margin: 0; padding: 0; color: rgb(49, 51, 63); overflow: visible; }}
+            .ref-header {{ font-size: 18px; font-weight: 700; margin-bottom: 15px; }}
+            .rows-container {{ display: flex; flex-direction: column; gap: 15px; }}
+            .row {{ display: flex; align-items: center; gap: 15px; }}
+            .badge-wrapper {{ display: flex; align-items: center; gap: 8px; min-width: {badge_col_width}; min-height: {badge_min_height}; }}
+            .citation-text {{ font-family: 'Times New Roman', serif; font-size: 16px; line-height: 1.4; }}
         </style>
     </head>
     <body>
-        
-        <div class="ref-header">
-            {ref_header_text}
-        </div>
-
+        <div class="ref-header">{ref_header_text}</div>
         <div class="rows-container">
             <div class="row">
                 <div class="badge-wrapper">
-                    <div class='altmetric-embed' 
-                         data-badge-type='donut' 
-                         data-badge-popover='right' 
-                         data-arxiv-id='2507.05960' 
-                         data-hide-no-mentions='true'>
-                    </div>
-                    
-                    <a href="https://plu.mx/plum/a/?arxiv=2507.05960" 
-                       class="plumx-plum-print-popup" 
-                       data-popup="right" 
-                       data-size="medium"
-                       data-pass-hidden-categories="true">
-                    </a>
-
-                    <span class="__dimensions_badge_embed__" 
-                          data-doi="{arxiv_doi}" 
-                          data-style="small_circle" 
-                          data-hide-zero-citations="false">
-                    </span>
+                    <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
+                    <a href="https://plu.mx/plum/a/?arxiv=2507.05960" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
+                    <span class="__dimensions_badge_embed__" data-doi="{arxiv_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
                 </div>
-                
-                <div class="citation-text">
-                    Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.
-                </div>
-                
-                <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank">
-                    <img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv">
-                </a>
-                <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank">
-                    <img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub">
-                </a>
+                <div class="citation-text">Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.</div>
+                <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv"></a>
+                <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
             </div>
-
             <div class="row">
                 <div class="badge-wrapper">
-                    <div class='altmetric-embed' 
-                         data-badge-type='donut' 
-                         data-badge-popover='right' 
-                         data-doi='{zenodo_doi}' 
-                         data-hide-no-mentions='false'>
-                    </div>
-
-                    <a href="https://plu.mx/plum/a/?doi={zenodo_doi}" 
-                       class="plumx-plum-print-popup" 
-                       data-popup="right" 
-                       data-size="medium"
-                       data-pass-hidden-categories="true">
-                    </a>
-                    </div>
-                
-                <div class="citation-text">
-                    {TEXTS['zenodo_cite'][lang]}
+                    <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{zenodo_doi}' data-hide-no-mentions='false'></div>
+                    <a href="https://plu.mx/plum/a/?doi={zenodo_doi}" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
                 </div>
-                
-                <a href="{zenodo_url}" target="_blank">
-                    <img src="{zenodo_badge_img}" alt="Zenodo DOI">
-                </a>
+                <div class="citation-text">{TEXTS['zenodo_cite'][lang]}</div>
+                <a href="{zenodo_url}" target="_blank"><img src="{zenodo_badge_img}" alt="Zenodo DOI"></a>
             </div>
         </div>
-
         <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
         <script type="text/javascript" src="//cdn.plu.mx/widget-popup.js"></script>
         <script async src="https://badge.dimensions.ai/badge.js" charset="utf-8"></script>
-
     </body>
     </html>
     """
@@ -750,11 +744,10 @@ def main():
         st.markdown(TEXTS['instructions_list'][lang])
     st.markdown("---")
 
-    # Main Analysis Interface
+    # Main Analysis Interface Sidebar
     st.sidebar.header(TEXTS['sidebar_config'][lang])
 
     var_type_opts = list(VAR_LABELS.keys())
-
     selected_var_key = st.sidebar.selectbox(
         TEXTS['var_type'][lang],
         options=var_type_opts,
@@ -769,31 +762,42 @@ def main():
     file = st.sidebar.file_uploader(TEXTS['upload_label'][lang], type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5)
 
+    # Reset analysis state if a new file is uploaded
+    if file is not None:
+        file_hash = hashlib.md5(file.getvalue()).hexdigest()
+        if st.session_state.uploaded_file_hash != file_hash:
+            st.session_state.analysis_run = False
+            st.session_state.uploaded_file_hash = file_hash
+
     # --- Outlier handling configuration ---
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"### {TEXTS['sidebar_outlier_header'][lang]}")
     outlier_options_keys = ["none", "simple", "rout"]
+    
+    # Store settings changes to reset analysis automatically if parameter changes
+    def reset_analysis():
+        st.session_state.analysis_run = False
+
     outlier_method_key = st.sidebar.selectbox(
         TEXTS['outlier_method_label'][lang],
         options=outlier_options_keys,
-        format_func=lambda k: TEXTS[f"outlier_{k}"][lang]
+        format_func=lambda k: TEXTS[f"outlier_{k}"][lang],
+        on_change=reset_analysis
     )
     rout_q = 1.0
     if outlier_method_key == "rout":
         rout_q = st.sidebar.slider(
             TEXTS["rout_q_label"][lang],
-            min_value=0.1,
-            max_value=10.0,
-            value=1.0,
-            step=0.1
+            min_value=0.1, max_value=10.0, value=1.0, step=0.1,
+            on_change=reset_analysis
         )
     
     # --- Constraints ---
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"### {TEXTS['constraints_header'][lang]}")
     
-    force_yi = st.sidebar.checkbox(TEXTS['force_yi'][lang], value=False)
-    force_yf = st.sidebar.checkbox(TEXTS['force_yf'][lang], value=False, disabled=force_yi)
+    force_yi = st.sidebar.checkbox(TEXTS['force_yi'][lang], value=False, on_change=reset_analysis)
+    force_yf = st.sidebar.checkbox(TEXTS['force_yf'][lang], value=False, disabled=force_yi, on_change=reset_analysis)
     
     if force_yi:
         force_yf = False
@@ -811,13 +815,19 @@ def main():
             if not replicates:
                 st.error(TEXTS['error_cols'][lang])
             else:
-                # --- Top Graph ---
-                graph_placeholder = st.empty()
-                with graph_placeholder:
-                    plot_raw_data(replicates, lang)
+                # Always show Raw Data top graph
+                plot_raw_data(replicates, lang)
 
                 st.success(TEXTS['data_loaded'][lang].format(len(replicates), len(t_flat)))
+                
+                # Update Session State based on Button Click
                 if st.button(TEXTS['run_button'][lang]):
+                    st.session_state.analysis_run = True
+
+                # ==========================================================
+                # ANALYSIS EXECUTION BLOCK (Managed by Session State)
+                # ==========================================================
+                if st.session_state.analysis_run:
                     st.divider()
                     
                     best_results_global = {"Gompertz": None, "Boltzmann": None}
@@ -825,6 +835,7 @@ def main():
                     tab1, tab2 = st.tabs(
                         [TEXTS['tab_gompertz'][lang], TEXTS['tab_boltzmann'][lang]]
                     )
+                    
                     for tab, model_name, func, color in [
                         (tab1, "Gompertz", gompertz_term_eq32, "tab:blue"),
                         (tab2, "Boltzmann", boltzmann_term_eq31, "tab:orange")
@@ -845,7 +856,6 @@ def main():
                                             res = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
 
                                         elif outlier_method_key == "simple":
-                                            # 1) Pre-fit with SSE
                                             res_pre = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
                                             if res_pre:
                                                 y_pred_pre = res_pre["y_pred"]
@@ -859,7 +869,6 @@ def main():
                                                     res = res_pre
 
                                         elif outlier_method_key == "rout":
-                                            # 1) Robust pre-fit
                                             res_robust = fit_model_auto_robust_pre(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
                                             if res_robust:
                                                 y_pred_pre = res_robust["y_pred"]
@@ -871,19 +880,11 @@ def main():
                                                     res = fit_model_auto(t_clean, y_clean, func, n, force_yi=force_yi, force_yf=force_yf)
                                                 else:
                                                     res = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
-
                                         # ------------------------------------------------
 
                                         if res:
                                             display_single_fit(
-                                                res,
-                                                replicates,
-                                                func,
-                                                color,
-                                                y_label,
-                                                param_labels,
-                                                rate_label,
-                                                lang
+                                                res, replicates, func, color, y_label, param_labels, rate_label, lang
                                             )
                                             results_list.append(res)
                                         else:
@@ -948,9 +949,24 @@ def main():
                                 st.markdown(f"### {TEXTS['graph_summary_title'][lang]}")
                                 plot_metrics_summary(results_list, model_name, lang)
 
-                    # --- UPDATE TOP GRAPH ---
-                    with graph_placeholder:
-                        plot_final_summary(replicates, best_results_global, lang)
+                    # --- FINAL SUMMARY GRAPH (Appears after tabs) ---
+                    st.divider()
+                    plot_final_summary(replicates, best_results_global, lang)
+                    
+                    # --- EXCEL EXPORT BUTTON ---
+                    # Placed at the very end of the analysis so users can grab everything at once
+                    st.divider()
+                    excel_data = generate_excel_report(best_results_global, replicates, param_labels, rate_label)
+                    
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col2:
+                        st.download_button(
+                            label=f"📊 {TEXTS['download_excel'][lang]}",
+                            data=excel_data,
+                            file_name=f"polyauxic_results_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
 
         except Exception as e:
             st.error(TEXTS['error_proc'][lang].format(e))
@@ -959,6 +975,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 # ==============================================================================
 # 7. FOOTER
 # ==============================================================================
@@ -966,7 +983,6 @@ if __name__ == "__main__":
 profile_pic_url = "https://github.com/gusmock.png"
 st.markdown("---")
 
-# We define the CSS in a standard string variable to avoid f-string syntax collisions
 footer_css = """
 <style>
     /* Main Footer Container */
@@ -994,9 +1010,7 @@ footer_css = """
     
     /* Mobile responsiveness */
     @media (max-width: 600px) {
-        .profile-section {
-            flex-direction: column;
-        }
+        .profile-section { flex-direction: column; }
     }
 
     .profile-img {
@@ -1008,9 +1022,7 @@ footer_css = """
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
 
-    .profile-info {
-        text-align: left;
-    }
+    .profile-info { text-align: left; }
     
     @media (max-width: 600px) {
         .profile-info { text-align: center; }
@@ -1024,49 +1036,21 @@ footer_css = """
         letter-spacing: 1px;
     }
     
-    .profile-info h4 {
-        margin: 5px 0;
-        font-size: 18px;
-        color: #222;
-        font-weight: 700;
-    }
+    .profile-info h4 { margin: 5px 0; font-size: 18px; color: #222; font-weight: 700; }
     
-    .profile-info p {
-        margin: 0;
-        font-size: 13px;
-        color: #666;
-        line-height: 1.4;
-    }
+    .profile-info p { margin: 0; font-size: 13px; color: #666; line-height: 1.4; }
 
     /* Personal Badges Container */
-    .social-badges {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 8px;
-        margin-top: 10px;
-    }
-    
-    .social-badges a img {
-        height: 26px;
-        border-radius: 4px;
-        transition: transform 0.2s, opacity 0.2s;
-    }
-    
-    .social-badges a img:hover {
-        transform: translateY(-2px);
-        opacity: 0.9;
-    }
+    .social-badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 10px; }
+    .social-badges a img { height: 26px; border-radius: 4px; transition: transform 0.2s, opacity 0.2s; }
+    .social-badges a img:hover { transform: translateY(-2px); opacity: 0.9; }
 </style>
 """
 
-# We use an f-string ONLY for the HTML part where Python variables are needed
 footer_html = f"""
 <div class="footer-container">
-    
     <div class="profile-section">
         <img src="{profile_pic_url}" class="profile-img" alt="Gustavo Mockaitis">
-        
         <div class="profile-info">
             <h2>GBMA / FEAGRI / UNICAMP</h2>
             <h4>Dev: Prof. Dr. Gustavo Mockaitis</h4>
@@ -1079,31 +1063,15 @@ footer_html = f"""
     </div>
 
     <div class="social-badges">
-        <a href="https://orcid.org/0000-0002-4231-1056" target="_blank">
-            <img src="https://img.shields.io/badge/ORCID-iD-A6CE39?style=for-the-badge&logo=orcid&logoColor=white" alt="ORCID">
-        </a>
-        <a href="https://scholar.google.com/citations?user=yR3UvuoAAAAJ&hl=en&oi=ao" target="_blank">
-            <img src="https://img.shields.io/badge/Scholar-Profile-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white" alt="Google Scholar">
-        </a>
-        <a href="https://www.researchgate.net/profile/Gustavo-Mockaitis" target="_blank">
-            <img src="https://img.shields.io/badge/ResearchGate-Profile-00CCBB?style=for-the-badge&logo=researchgate&logoColor=white" alt="ResearchGate">
-        </a>
-        <a href="http://lattes.cnpq.br/1400402042483439" target="_blank">
-            <img src="https://img.shields.io/badge/Lattes-CV-003399?style=for-the-badge&logo=brasil&logoColor=white" alt="Lattes CV">
-        </a>
-        <a href="https://www.linkedin.com/in/gustavo-mockaitis/" target="_blank">
-            <img src="https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn">
-        </a>
-        <a href="https://www.webofscience.com/wos/author/record/J-7107-2019" target="_blank">
-            <img src="https://img.shields.io/badge/Web_of_Science-Profile-5E33BF?style=for-the-badge&logo=clarivate&logoColor=white" alt="Web of Science">
-        </a>
-        <a href="http://feagri.unicamp.br/mockaitis" target="_blank">
-            <img src="https://img.shields.io/badge/UNICAMP-Institutional-CC0000?style=for-the-badge&logo=google-academic&logoColor=white" alt="UNICAMP">
-        </a>
+        <a href="https://orcid.org/0000-0002-4231-1056" target="_blank"><img src="https://img.shields.io/badge/ORCID-iD-A6CE39?style=for-the-badge&logo=orcid&logoColor=white" alt="ORCID"></a>
+        <a href="https://scholar.google.com/citations?user=yR3UvuoAAAAJ&hl=en&oi=ao" target="_blank"><img src="https://img.shields.io/badge/Scholar-Profile-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white" alt="Google Scholar"></a>
+        <a href="https://www.researchgate.net/profile/Gustavo-Mockaitis" target="_blank"><img src="https://img.shields.io/badge/ResearchGate-Profile-00CCBB?style=for-the-badge&logo=researchgate&logoColor=white" alt="ResearchGate"></a>
+        <a href="http://lattes.cnpq.br/1400402042483439" target="_blank"><img src="https://img.shields.io/badge/Lattes-CV-003399?style=for-the-badge&logo=brasil&logoColor=white" alt="Lattes CV"></a>
+        <a href="https://www.linkedin.com/in/gustavo-mockaitis/" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"></a>
+        <a href="https://www.webofscience.com/wos/author/record/J-7107-2019" target="_blank"><img src="https://img.shields.io/badge/Web_of_Science-Profile-5E33BF?style=for-the-badge&logo=clarivate&logoColor=white" alt="Web of Science"></a>
+        <a href="http://feagri.unicamp.br/mockaitis" target="_blank"><img src="https://img.shields.io/badge/UNICAMP-Institutional-CC0000?style=for-the-badge&logo=google-academic&logoColor=white" alt="UNICAMP"></a>
     </div>
-
 </div>
 """
 
-# Render combined CSS and HTML
 components.html(footer_css + footer_html, height=280, scrolling=False)
