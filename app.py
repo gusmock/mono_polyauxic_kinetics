@@ -8,7 +8,7 @@ import os
 import hashlib
 import socket
 from datetime import datetime
-from streamlit.web.server.websocket_headers import _get_websocket_headers
+# from streamlit.web.server.websocket_headers import _get_websocket_headers ###Outdated
 import uuid
 
 # Import Core Logic from your separated file
@@ -43,7 +43,7 @@ def get_user_identifier():
 
     # 2. Try to obtain the real IP via headers (useful for Streamlit Cloud/Docker)
     try:
-        headers = _get_websocket_headers()
+        headers = st.context.headers
         if headers and "X-Forwarded-For" in headers:
             ip = headers["X-Forwarded-For"].split(",")[0].strip()
             if ip and ip != "127.0.0.1":
