@@ -156,17 +156,20 @@ def detect_outliers(y_true, y_pred):
     z_scores = np.abs(residuals - median_res) / sigma_robust
     return z_scores > 2.5
 
-def detect_outliers_rout_rigorous(y_true, y_pred, n_params, Q=1.0):
+def detect_outliers_rout_rigorous(y_true, y_pred, n_params=None, Q=1.0):
     """
     ROUT (Rigorous) Method with FDR control.
-    Updated to use correct degrees of freedom (N - K).
+    Updated to handle optional n_params for backward compatibility.
     """
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
     residuals = y_true - y_pred
     n = residuals.size
     
-    if n <= n_params:
+    # Se a função for chamada externamente sem n_params, assumimos 1 para não quebrar
+    safe_n_params = n_params if n_params is not None else 1
+    
+    if n <= safe_n_params:
         return np.zeros_like(residuals, dtype=bool)
 
     med_res = np.median(residuals)
@@ -174,7 +177,13 @@ def detect_outliers_rout_rigorous(y_true, y_pred, n_params, Q=1.0):
     rsdr = 1.4826 * mad_res if mad_res > 1e-12 else 1e-12
 
     t_scores = residuals / rsdr
-    df = max(n - n_params, 1) # Correção estatística
+    
+    # Usa n_params se fornecido (novo método), senão usa o método antigo (n - 1)
+    if n_params is not None:
+        df = max(n - n_params, 1)
+    else:
+        df = max(n - 1, 1)
+        
     abs_t = np.abs(t_scores)
     p_values = 2.0 * (1.0 - t_dist.cdf(abs_t, df=df))
 
