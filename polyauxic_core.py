@@ -480,7 +480,8 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
         "se": se_real,
         "se_p": se_p,
         "metrics": {"R2": r2, "R2_adj": r2_adj, "SSE": sse, "AIC": aic, "BIC": bic, "AICc": aicc},
-        "y_pred": y_pred # Predição apenas para os dados limpos
+        "y_pred": y_pred,
+        "outliers": np.zeros(len(y_data), dtype=bool)
     }
 
 # ==============================================================================
@@ -527,8 +528,8 @@ def fit_model_pipeline(t_data, y_data, model_func, n_phases, force_yi=False, for
     theta_final = final_results["theta"]
     y_pred_full = polyauxic_model(t_data, theta_final, model_func, n_phases)
     
-    # Adicionar os dados completos ao dicionário de resultados
-    final_results["outliers_mask"] = outliers_mask # Qual ponto original é outlier
+    # Adicionar os dados completos ao dicionário de resultados usando as chaves ORIGINAIS
+    final_results["outliers"] = outliers_mask      # <--- Aqui está a correção (nome original da chave)
     final_results["y_pred_full"] = y_pred_full     # Curva para todo o t_data
     final_results["t_clean"] = t_clean             # Dados que entraram no ajuste
     final_results["y_clean"] = y_clean
