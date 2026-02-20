@@ -1,3 +1,59 @@
+"""                                                                                                                                        
+                                      ++++++              ++++++                                    
+                                      ++++++++          ++++++++                                    
+                                      ++++++++          ++++++++                                    
+                                      ++++++++++      ++++++++++                                    
+                        --++          ++++++++++++++++++++++++++          ++++                      
+                      --++++++        ++++++++++++++++++++++++++        ++++++++                    
+                      ++++++++++::++++++++++++++++++++++++++++++++++--++++++++++                    
+                        ++++++++++++++++++++++--      --++++++++++++++++++++++--                    
+                        ++++++++++++++++--##################..++++++++++++++++                      
+                          ++++++++++++########          ########++++++++++++                        
+                          ++++++++++######                  ######::++++++++                        
+                        --++++++++####        ##  ####    ..    ####++++++++++                      
+              ++++::    ++++++++####      ####@@    ##    --  ##  ####++++++++    ::++++            
+              ++++++++++++++++  ####      ##              ##mmMM  ####  ++++++++++++++++            
+              ++++++++++++++++####                            ##    ####++++++++++++++++            
+              ++++++++++++++::####      ##@@              ####      ####..++++++++++++++            
+                  ++++++++++..##          ##                          ##  ++++++++++                
+                      ++++++####          ++##        ####@@          ####++++++                    
+                      ++++++####                  ############        ####++++++..                  
+                      ++++++####          ####    ##############      ####++++++                    
+                    ++++++++####        ####    ################      ##++++++++++                  
+                ++++++++++++  ##        ##      ################    --##  ++++++++++++              
+            ::++++++++++++++++####                ######    ##..    ####++++++++++++++++--          
+              ++++++++++++++++####    --##        ############      ####++++++++++++++++            
+              ++++++++++++++++::####    ##++          ####        ####--++++++++++++++++            
+                        ++++++++  ####    ##                    ####  ++++++++                      
+                          ++++++++MM####                      ####--++++++++                        
+                          ++++++++++  ######              ######  ++++++++++                        
+                          ++++++++++++  ######################  ++++++++++++                        
+                        ++++++++++++++++++    ##########    ++++++++++++++++++                      
+                      ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                    
+                      ++++++++++    ++++++++++++++++++++++++++++++    ++++++++++                    
+                        ++++++        ++++++++++++++++++++++++++        --++++                      
+                                      ++++++++++++++++++++++++++                                    
+                                      ++++++++++      ++++++++++                                    
+                                      ++++++++          ++++++++                                    
+                                      ++++++++          ++++++++                                    
+                                          ++              ++--                                                                                                                                                                                                          
+
+
+#############################################################################################
+#                                                                                           #
+#                                    GBMA - FEAGRI - UNICAMP                                #
+#      -------------------------------------------------------------------------------      #
+#                                                                                           #
+#                         Interdisciplinary Research Group on Biotechnology                 #
+#                           Applied to the Agriculture and the Environment                  #
+#                                                                                           #
+#                             School of Agricultural Engineering                            #
+#                                    University of Campinas                                 #
+#                                                                                           #
+#############################################################################################
+
+DEV: Prof. Dr. Gustavo Mockaitis
+"""
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize, differential_evolution
@@ -9,7 +65,13 @@ from scipy.stats import t as t_dist
 # ==============================================================================
 
 def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
-    """Boltzmann model term (Eq. 31)."""
+    """
+    [cite_start]Boltzmann model term (Eq. 31)[cite: 750].
+    This represents a single sigmoidal phase of the modified Boltzmann equation.
+    The parameters have direct physical and biological interpretations: 
+    y_i (initial asymptote), y_f (final asymptote), p_j (weighting factor for this phase), 
+    [cite_start]r_max_j (maximum specific reaction rate), and lambda_j (lag phase duration)[cite: 745, 750].
+    """
     delta_y = y_f - y_i
     if abs(delta_y) < 1e-9:
         delta_y = 1e-9
@@ -21,7 +83,12 @@ def boltzmann_term_eq31(t, y_i, y_f, p_j, r_max_j, lambda_j):
     return p_safe / (1.0 + np.exp(exponent))
 
 def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
-    """Gompertz model term (Eq. 32)."""
+    """
+    [cite_start]Gompertz model term (Eq. 32)[cite: 760].
+    This represents a single phase of the modified Gompertz model. Unlike the symmetric 
+    Boltzmann equation, the Gompertz curve is inherently asymmetric, making it useful for 
+    [cite_start]processes with early rapid changes followed by slower sustained progression[cite: 492, 493].
+    """
     delta_y = y_f - y_i
     if abs(delta_y) < 1e-9:
         delta_y = 1e-9
@@ -33,7 +100,11 @@ def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
     return p_safe * np.exp(-np.exp(exponent))
 
 def polyauxic_model(t, theta, model_func, n_phases):
-    """Global polyauxic model: Summation of weighted phases."""
+    """
+    Global polyauxic model: Summation of weighted phases.
+    To describe multiphasic (polyauxic) growth behaviors, the overall growth curve 
+    [cite_start]is modeled as a weighted sum of individual sigmoidal functions[cite: 725].
+    """
     t = np.asarray(t, dtype=float)
     y_i = theta[0]
     y_f = theta[1]
@@ -41,7 +112,9 @@ def polyauxic_model(t, theta, model_func, n_phases):
     r_max = theta[2 + n_phases : 2 + 2 * n_phases]
     lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
     
-    # Softmax transformation for weights p
+    # [cite_start]Softmax transformation for weights p (Eq. 33)[cite: 812].
+    # Ensures all weighting factors (p_j) are strictly positive and sum to 1, 
+    # [cite_start]preserving correct amplitude scaling[cite: 730, 814].
     z_shift = z - np.max(z)
     exp_z = np.exp(z_shift)
     p = exp_z / np.sum(exp_z)
@@ -56,11 +129,16 @@ def polyauxic_model(t, theta, model_func, n_phases):
 # ==============================================================================
 
 def sse_loss(theta, t, y, model_func, n_phases):
-    """Sum of Squared Errors (SSE) Loss function with soft penalties."""
+    """
+    Sum of Squared Errors (SSE) Loss function with soft penalties.
+    This standard loss function is minimized during the final parameter estimation 
+    [cite_start]on the cleaned dataset[cite: 921].
+    """
     lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
     penalty = 0.0
 
-    # Soft penalty: non-decreasing inflection points
+    # [cite_start]Soft penalty: enforces chronological ordering of lag phases[cite: 817].
+    # [cite_start]Prevents degenerate solutions where phases unrealistically overlap[cite: 817].
     diffs = np.diff(lambda_)
     if np.any(diffs <= 0):
         violation = np.sum(np.maximum(0, -diffs + 1e-6)**2)
@@ -77,11 +155,16 @@ def sse_loss(theta, t, y, model_func, n_phases):
     return np.sum((y - y_pred) ** 2) + penalty
 
 def robust_loss(theta, t, y, model_func, n_phases):
-    """Soft L1 robust loss (used for ROUT pre-fit step) with soft penalties."""
+    """
+    Soft L1 robust loss (used for ROUT pre-fit step) with soft penalties.
+    This implements the Charbonnier loss function, which penalizes large residuals 
+    linearly instead of quadratically, reducing the influence of extreme deviations 
+    (outliers) [cite_start]during the pre-fit stage[cite: 911, 914].
+    """
     lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
     penalty = 0.0
 
-    # Soft penalty: non-decreasing inflection points
+    # [cite_start]Soft penalty: non-decreasing inflection points (enforcing chronological coherence)[cite: 817].
     diffs = np.diff(lambda_)
     if np.any(diffs <= 0):
         violation = np.sum(np.maximum(0, -diffs + 1e-6)**2)
@@ -101,7 +184,12 @@ def robust_loss(theta, t, y, model_func, n_phases):
     return np.sum(loss) + penalty
 
 def numerical_hessian(func, theta, args, epsilon_rel=1e-5):
-    """Calculates Numerical Hessian using relative step sizes for stability."""
+    """
+    Calculates Numerical Hessian using relative step sizes for stability.
+    The Hessian matrix provides second-order partial derivatives describing the local 
+    curvature around the minimum, yielding accurate estimates for parameter standard 
+    [cite_start]errors in highly nonlinear models[cite: 994, 995].
+    """
     k = len(theta)
     hess = np.zeros((k, k))
     
@@ -125,7 +213,12 @@ def numerical_hessian(func, theta, args, epsilon_rel=1e-5):
     return hess
 
 def calculate_p_errors(z_vals, cov_z):
-    """Standard error propagation for p (Softmax weights)."""
+    """
+    Standard error propagation for p (Softmax weights).
+    For derived parameters such as the phase fractions (p_j), standard errors are 
+    approximated using the Delta method by propagating the covariance of the latent 
+    [cite_start]variables (z) through the Jacobian of the Softmax transformation[cite: 1034, 1035].
+    """
     exps = np.exp(z_vals - np.max(z_vals))
     p = exps / np.sum(exps)
     n = len(p)
@@ -159,6 +252,8 @@ def detect_outliers(y_true, y_pred):
 def detect_outliers_rout_rigorous(y_true, y_pred, n_params=None, Q=1.0):
     """
     ROUT (Rigorous) Method with FDR control.
+    Identifies experimental outliers utilizing the False Discovery Rate (FDR) based on 
+    [cite_start]deviations from the robust pre-fitted model[cite: 920].
     Updated to handle optional n_params for backward compatibility.
     """
     y_true = np.asarray(y_true)
@@ -166,7 +261,7 @@ def detect_outliers_rout_rigorous(y_true, y_pred, n_params=None, Q=1.0):
     residuals = y_true - y_pred
     n = residuals.size
     
-    # Se a função for chamada externamente sem n_params, assumimos 1 para não quebrar
+    # If the function is called externally without n_params, assume 1 to avoid breaking the execution
     safe_n_params = n_params if n_params is not None else 1
     
     if n <= safe_n_params:
@@ -178,7 +273,7 @@ def detect_outliers_rout_rigorous(y_true, y_pred, n_params=None, Q=1.0):
 
     t_scores = residuals / rsdr
     
-    # Usa n_params se fornecido (novo método), senão usa o método antigo (n - 1)
+    # Use n_params if provided (new method), otherwise default to the old method (n - 1)
     if n_params is not None:
         df = max(n - n_params, 1)
     else:
@@ -207,7 +302,12 @@ def detect_outliers_rout_rigorous(y_true, y_pred, n_params=None, Q=1.0):
 # ==============================================================================
 
 def smart_initial_guess(t, y, n_phases):
-    """Heuristic initial parameter estimation using derivatives."""
+    """
+    Heuristic initial parameter estimation using derivatives.
+    Automatically analyzes the first derivative of the response data to identify peaks 
+    representing inflection points, ensuring global optimization begins within biologically 
+    [cite_start]plausible regions[cite: 858, 859].
+    """
     dy = np.gradient(y, t)
     dy_smooth = np.convolve(dy, np.ones(5) / 5, mode='same')
     min_dist = max(1, len(t) // (n_phases * 4))
@@ -245,7 +345,12 @@ def smart_initial_guess(t, y, n_phases):
     return theta_guess
 
 def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False):
-    """Robust pre-fit (Soft L1) used exclusively for outlier detection baseline."""
+    """
+    Robust pre-fit (Soft L1) used exclusively for outlier detection baseline.
+    Utilizes Differential Evolution (DE) coupled with the Charbonnier loss function 
+    to robustly search for global optima while minimizing the influence of potential 
+    [cite_start]experimental outliers[cite: 860, 911, 914].
+    """
     SEED_VALUE = 42
     np.random.seed(SEED_VALUE)
 
@@ -304,6 +409,7 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     for _ in range(n_phases):
         bounds.append((0.0, 1.2))
 
+    # [cite_start]Perform population-based global optimization using Differential Evolution (DE)[cite: 860].
     res_de = differential_evolution(
         robust_loss,
         bounds,
@@ -317,6 +423,7 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
         tol=1e-6
     )
 
+    # [cite_start]Local refinement of the DE result utilizing L-BFGS-B[cite: 878, 881].
     res_opt = minimize(
         robust_loss,
         res_de.x,
@@ -340,7 +447,12 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     return {"theta": theta_real, "y_pred": y_pred}
 
 def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False):
-    """Final fitting function (Least Squares) on clean data."""
+    """
+    Final fitting function (Least Squares) on clean data.
+    After outliers are discarded, this second optimization minimizes the standard 
+    [cite_start]Residual Sum of Squares (RSS) on the valid data[cite: 921]. It then computes 
+    [cite_start]metrics like AIC, AICc, and BIC to evaluate model parsimony[cite: 955, 963].
+    """
     SEED_VALUE = 42
     np.random.seed(SEED_VALUE)
 
@@ -399,6 +511,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     for _ in range(n_phases):
         bounds.append((0.0, 1.2))    # lambda_norm
 
+    # [cite_start]Global optimization phase avoiding local minima[cite: 860].
     res_de = differential_evolution(
         sse_loss,
         bounds,
@@ -412,6 +525,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
         tol=1e-6
     )
 
+    # [cite_start]Local refinement enforcing bounds to maintain non-negative constants[cite: 878, 880].
     res_opt = minimize(
         sse_loss,
         res_de.x,
@@ -436,6 +550,8 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     theta_real[2 + 2 * n_phases : 2 + 3 * n_phases] = theta_norm[2 + 2 * n_phases : 2 + 3 * n_phases] * scale_l
 
     try:
+        # Construct the valid covariance matrix and compute parameter uncertainty 
+        # [cite_start]using the Moore-Penrose pseudo-inverse of the Hessian[cite: 1013].
         H_norm = numerical_hessian(sse_loss, theta_norm, args=(t_norm, y_norm, model_func, n_phases))
         y_pred_norm = polyauxic_model(t_norm, theta_norm, model_func, n_phases)
         sse_val_norm = np.sum((y_norm - y_pred_norm) ** 2)
@@ -453,6 +569,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
         idx_z_end = 2 + n_phases
         cov_z = cov_norm[idx_z_start:idx_z_end, idx_z_start:idx_z_end]
         z_vals = theta_norm[idx_z_start:idx_z_end]
+        # [cite_start]Propagate the standard errors to phase fractions using the Delta method[cite: 1034].
         se_p = calculate_p_errors(z_vals, cov_z)
     except:
         se_real = np.full_like(theta_real, np.nan)
@@ -470,6 +587,8 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
         r2_adj = 1 - (1 - r2) * (n_len - 1) / (n_len - k - 1)
     else:
         r2_adj = np.nan
+    
+    # [cite_start]Calculating information criteria (AIC, BIC, AICc) to balance fit against complexity[cite: 955, 963].
     aic = n_len * np.log(sse / n_len) + 2 * k
     bic = n_len * np.log(sse / n_len) + k * np.log(n_len)
     aicc = aic + (2 * k * (k + 1)) / (n_len - k - 1) if (n_len - k - 1) > 0 else np.inf
@@ -490,48 +609,48 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
 
 def fit_model_pipeline(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False, Q=1.0):
     """
-    Orchestrates the entire fit:
-    1. Robust Pre-fit (ignores outliers)
-    2. Rigorous ROUT Outlier Detection based on the robust curve
-    3. Final Least-Squares fit on clean data
+    Orchestrates the entire fit, enforcing the hybrid workflow:
+    1. [cite_start]Robust Pre-fit minimizing Charbonnier loss[cite: 911].
+    2. [cite_start]Rigorous ROUT Outlier Detection based on the robust curve[cite: 920].
+    3. [cite_start]Final Least-Squares fit minimizing standard RSS on the cleaned data[cite: 921].
     """
     t_data = np.asarray(t_data)
     y_data = np.asarray(y_data)
     n_params = 2 + 3 * n_phases
     
-    # 1. Pré-Ajuste Robusto (Soft L1)
+    # 1. Robust Pre-fit (Soft L1)
     res_robust = fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi, force_yf)
     if res_robust is None:
         return None
         
     y_pred_robust = res_robust["y_pred"]
     
-    # 2. Deteção Rigorosa de Outliers (ROUT)
+    # 2. Rigorous Outlier Detection (ROUT)
     outliers_mask = detect_outliers_rout_rigorous(y_data, y_pred_robust, n_params, Q=Q)
     
-    # 3. Filtrar os dados
+    # 3. Filter the data
     t_clean = t_data[~outliers_mask]
     y_clean = y_data[~outliers_mask]
     
-    # Salvaguarda: se a filtragem remover demasiados dados, reverte para tudo
+    # Safeguard: if filtering removes too much data, revert to the full dataset
     if len(t_clean) <= n_params:
         t_clean = t_data
         y_clean = y_data
         outliers_mask = np.zeros_like(y_data, dtype=bool)
         
-    # 4. Ajuste Final com os dados limpos
+    # 4. Final Fit using the cleaned data
     final_results = fit_model_auto(t_clean, y_clean, model_func, n_phases, force_yi, force_yf)
     if final_results is None:
         return None
         
-    # Recalcular previsões para o array completo de t_data original
+    # Recalculate predictions for the full original t_data array
     theta_final = final_results["theta"]
     y_pred_full = polyauxic_model(t_data, theta_final, model_func, n_phases)
     
-    # Adicionar os dados completos ao dicionário de resultados usando as chaves ORIGINAIS
-    final_results["outliers"] = outliers_mask      # <--- Aqui está a correção (nome original da chave)
-    final_results["y_pred_full"] = y_pred_full     # Curva para todo o t_data
-    final_results["t_clean"] = t_clean             # Dados que entraram no ajuste
+    # Add the complete data to the results dictionary using the ORIGINAL keys
+    final_results["outliers"] = outliers_mask      # <--- Correction applied here (original key name)
+    final_results["y_pred_full"] = y_pred_full     # Curve for all t_data
+    final_results["t_clean"] = t_clean             # Data used in the fitting process
     final_results["y_clean"] = y_clean
     
     return final_results
@@ -590,7 +709,7 @@ def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     df_all = pd.DataFrame(all_data)
     y_pred_all = polyauxic_model(df_all['t'].values, theta, model_func, n_phases)
     
-    # Atualizado para usar o número de parâmetros correto no filtro ROUT
+    # Updated to use the correct number of parameters in the ROUT filter
     n_params = 2 + 3 * n_phases
     outliers_mask = detect_outliers_rout_rigorous(df_all['y'].values, y_pred_all, n_params)
     
@@ -600,7 +719,11 @@ def calculate_mean_with_outliers(replicates, model_func, theta, n_phases):
     return grouped, df_all
 
 def choose_information_criterion(N, k_max):
-    """Selects AIC, AICc or BIC based on sample size N and parameters k."""
+    """
+    [cite_start]Selects AIC, AICc or BIC based on sample size N and parameters k[cite: 963].
+    Proper model parsimony requires specific criteria to penalize overparameterization 
+    [cite_start]as the number of stacked phases (n) grows[cite: 946, 955].
+    """
     dof_ratio = N / max(k_max, 1)
     if N <= 200:
         if dof_ratio < 40:
@@ -611,7 +734,11 @@ def choose_information_criterion(N, k_max):
         return "BIC"
 
 def select_first_local_min_index(values, tol=1e-9):
-    """Selects the first local minimum index."""
+    """
+    Selects the first local minimum index.
+    In the context of information criteria, the optimal number of phases is the smallest 
+    [cite_start]value for which the criterion reaches its minimum[cite: 951].
+    """
     if not values:
         return 0
     best_idx = 0
