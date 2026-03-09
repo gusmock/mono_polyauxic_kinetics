@@ -688,18 +688,25 @@ def main():
 
     # --- REFERENCES SECTION WITH FULL METRICS SUITE ---
     ref_header_text = TEXTS['paper_ref'][lang]
-    
-    # Variáveis para a nova publicação aceita
+
+    # Variáveis do BMB
     bmb_doi = "10.1007/s11538-026-01621-7"
     bmb_url = f"https://doi.org/{bmb_doi}"
     bmb_badge_img = "https://img.shields.io/badge/DOI-10.1007%2Fs11538--026--01621--7-blue.svg"
     
+    # Variáveis do arXiv
+    arxiv_doi = "10.48550/arXiv.2507.05960"
+    
+    # Variáveis do Zenodo
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
     
-    arxiv_doi = "10.48550/arXiv.2507.05960"
-        
+    # NOVAS Variáveis do Code Ocean (Substitua pelos seus dados reais)
+    code_ocean_doi = "10.24433/CO.XXXXXXX.v1" 
+    code_ocean_url = f"https://doi.org/{code_ocean_doi}"
+    code_ocean_badge_img = "https://img.shields.io/badge/Code_Ocean-Reproducible-blue.svg"
+    
     badge_col_width = "210px"
     badge_min_height = "55px"
     
@@ -709,13 +716,22 @@ def main():
     <head>
         <style>
             body {{ font-family: "Source Sans Pro", sans-serif; margin: 0; padding: 0; color: rgb(49, 51, 63); overflow: visible; width: 100%; }}
-            .ref-header {{ font-size: 18px; font-weight: 700; margin-bottom: 15px; }}
-            .rows-container {{ display: flex; flex-direction: column; gap: 20px; width: 100%; }}
-            .row {{ display: flex; align-items: center; gap: 15px; width: 100%; justify-content: space-between; }}
-            .badge-wrapper {{ display: flex; align-items: center; gap: 8px; min-width: {badge_col_width}; min-height: {badge_min_height}; flex-shrink: 0; }}
-            .citation-text {{ font-family: 'Times New Roman', serif; font-size: 16px; line-height: 1.4; flex: 1; padding-right: 15px; }}
-            .right-badges {{ display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; margin-left: auto; }}
-            .right-badges img {{ display: block; }}
+            .ref-header {{ font-size: 18px; font-weight: 700; margin-bottom: 20px; border-bottom: 1px solid #e6e6e6; padding-bottom: 5px; }}
+            .rows-container {{ display: flex; flex-direction: column; gap: 25px; width: 100%; }}
+            
+            /* Layout em 2 colunas: alinha os itens no topo para os badges não flutuarem no meio do nada */
+            .row {{ display: flex; align-items: flex-start; gap: 15px; width: 100%; }}
+            
+            .badge-wrapper {{ display: flex; align-items: center; gap: 8px; min-width: {badge_col_width}; min-height: {badge_min_height}; flex-shrink: 0; padding-top: 3px; }}
+            
+            /* Container principal para o texto + botões */
+            .content-wrapper {{ display: flex; flex-direction: column; gap: 10px; flex: 1; }}
+            
+            .citation-text {{ font-family: 'Times New Roman', serif; font-size: 16px; line-height: 1.4; }}
+            
+            /* Flexbox horizontal para os botões. Wrap permite quebrar a linha se houver muitos */
+            .link-badges {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }}
+            .link-badges img {{ display: block; }}
         </style>
     </head>
     <body>
@@ -728,11 +744,13 @@ def main():
                     <a href="https://plu.mx/plum/a/?doi={bmb_doi}" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
                     <span class="__dimensions_badge_embed__" data-doi="{bmb_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
                 </div>
-                <div class="citation-text">Mockaitis, G. (2026) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. Bulletin of Mathematical Biology, in press. DOI: {bmb_doi}</div>
-                <div class="right-badges">
-                    <a href="{bmb_url}" target="_blank"><img src="{bmb_badge_img}" alt="DOI"></a>
-                    <a href="{bmb_url}" target="_blank"><img src="https://img.shields.io/badge/Open_Access-F68212.svg?logo=openaccess&logoColor=white" alt="Open Access"></a>
-                    <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
+                <div class="content-wrapper">
+                    <div class="citation-text">Mockaitis, G. (2026) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. Bulletin of Mathematical Biology, in press. DOI: {bmb_doi}</div>
+                    <div class="link-badges">
+                        <a href="{bmb_url}" target="_blank"><img src="{bmb_badge_img}" alt="DOI"></a>
+                        <a href="{bmb_url}" target="_blank"><img src="https://img.shields.io/badge/Open_Access-F68212.svg?logo=openaccess&logoColor=white" alt="Open Access"></a>
+                        <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
+                    </div>
                 </div>
             </div>
     
@@ -742,10 +760,11 @@ def main():
                     <a href="https://plu.mx/plum/a/?arxiv=2507.05960" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
                     <span class="__dimensions_badge_embed__" data-doi="{arxiv_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
                 </div>
-                <div class="citation-text">Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.</div>
-                <div class="right-badges">
-                    <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv"></a>
-                    <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
+                <div class="content-wrapper">
+                    <div class="citation-text">Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.</div>
+                    <div class="link-badges">
+                        <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv"></a>
+                    </div>
                 </div>
             </div>
             
@@ -754,11 +773,15 @@ def main():
                     <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{zenodo_doi}' data-hide-no-mentions='false'></div>
                     <a href="https://plu.mx/plum/a/?doi={zenodo_doi}" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
                 </div>
-                <div class="citation-text">{TEXTS['zenodo_cite'][lang]}</div>
-                <div class="right-badges">
-                    <a href="{zenodo_url}" target="_blank"><img src="{zenodo_badge_img}" alt="Zenodo DOI"></a>
+                <div class="content-wrapper">
+                    <div class="citation-text">{TEXTS['zenodo_cite'][lang]}</div>
+                    <div class="link-badges">
+                        <a href="{zenodo_url}" target="_blank"><img src="{zenodo_badge_img}" alt="Zenodo DOI"></a>
+                        <a href="{code_ocean_url}" target="_blank"><img src="{code_ocean_badge_img}" alt="Code Ocean DOI"></a>
+                    </div>
                 </div>
             </div>
+            
         </div>
         
         <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
