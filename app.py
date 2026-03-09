@@ -688,14 +688,22 @@ def main():
 
     # --- REFERENCES SECTION WITH FULL METRICS SUITE ---
     ref_header_text = TEXTS['paper_ref'][lang]
+    
+    # Variáveis para a nova publicação aceita
+    bmb_doi = "10.1007/s11538-026-01621-7"
+    bmb_url = f"https://doi.org/{bmb_doi}"
+    # No shields.io, os hífens originais do DOI precisam ser "escapados" como duplos hífens (--).
+    bmb_badge_img = "https://img.shields.io/badge/DOI-10.1007%2Fs11538--026--01621--7-blue.svg"
+    
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
-    arxiv_doi = "10.48550/arXiv.2507.05960"
     
+    arxiv_doi = "10.48550/arXiv.2507.05960"
+        
     badge_col_width = "210px"
     badge_min_height = "55px"
-
+    
     badge_html = f"""
     <!DOCTYPE html>
     <html>
@@ -712,6 +720,19 @@ def main():
     <body>
         <div class="ref-header">{ref_header_text}</div>
         <div class="rows-container">
+            
+            <div class="row">
+                <div class="badge-wrapper">
+                    <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{bmb_doi}' data-hide-no-mentions='true'></div>
+                    <a href="https://plu.mx/plum/a/?doi={bmb_doi}" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
+                    <span class="__dimensions_badge_embed__" data-doi="{bmb_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
+                </div>
+                <div class="citation-text">Mockaitis, G. (2026) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. Bulletin of Mathematical Biology, in press. DOI: {bmb_doi}</div>
+                <a href="{bmb_url}" target="_blank"><img src="{bmb_badge_img}" alt="DOI"></a>
+                <a href="{bmb_url}" target="_blank"><img src="https://img.shields.io/badge/Open_Access-F68212.svg?logo=openaccess&logoColor=white" alt="Open Access"></a>
+                <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
+            </div>
+    
             <div class="row">
                 <div class="badge-wrapper">
                     <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
@@ -722,6 +743,7 @@ def main():
                 <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv"></a>
                 <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
             </div>
+            
             <div class="row">
                 <div class="badge-wrapper">
                     <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{zenodo_doi}' data-hide-no-mentions='false'></div>
@@ -731,6 +753,7 @@ def main():
                 <a href="{zenodo_url}" target="_blank"><img src="{zenodo_badge_img}" alt="Zenodo DOI"></a>
             </div>
         </div>
+        
         <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
         <script type="text/javascript" src="//cdn.plu.mx/widget-popup.js"></script>
         <script async src="https://badge.dimensions.ai/badge.js" charset="utf-8"></script>
