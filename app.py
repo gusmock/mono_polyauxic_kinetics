@@ -692,7 +692,6 @@ def main():
     # Variáveis para a nova publicação aceita
     bmb_doi = "10.1007/s11538-026-01621-7"
     bmb_url = f"https://doi.org/{bmb_doi}"
-    # No shields.io, os hífens originais do DOI precisam ser "escapados" como duplos hífens (--).
     bmb_badge_img = "https://img.shields.io/badge/DOI-10.1007%2Fs11538--026--01621--7-blue.svg"
     
     zenodo_doi = "10.5281/zenodo.18025828"
@@ -709,12 +708,14 @@ def main():
     <html>
     <head>
         <style>
-            body {{ font-family: "Source Sans Pro", sans-serif; margin: 0; padding: 0; color: rgb(49, 51, 63); overflow: visible; }}
+            body {{ font-family: "Source Sans Pro", sans-serif; margin: 0; padding: 0; color: rgb(49, 51, 63); overflow: visible; width: 100%; }}
             .ref-header {{ font-size: 18px; font-weight: 700; margin-bottom: 15px; }}
-            .rows-container {{ display: flex; flex-direction: column; gap: 15px; }}
-            .row {{ display: flex; align-items: center; gap: 15px; }}
-            .badge-wrapper {{ display: flex; align-items: center; gap: 8px; min-width: {badge_col_width}; min-height: {badge_min_height}; }}
-            .citation-text {{ font-family: 'Times New Roman', serif; font-size: 16px; line-height: 1.4; }}
+            .rows-container {{ display: flex; flex-direction: column; gap: 20px; width: 100%; }}
+            .row {{ display: flex; align-items: center; gap: 15px; width: 100%; justify-content: space-between; }}
+            .badge-wrapper {{ display: flex; align-items: center; gap: 8px; min-width: {badge_col_width}; min-height: {badge_min_height}; flex-shrink: 0; }}
+            .citation-text {{ font-family: 'Times New Roman', serif; font-size: 16px; line-height: 1.4; flex: 1; padding-right: 15px; }}
+            .right-badges {{ display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; margin-left: auto; }}
+            .right-badges img {{ display: block; }}
         </style>
     </head>
     <body>
@@ -723,14 +724,16 @@ def main():
             
             <div class="row">
                 <div class="badge-wrapper">
-                    <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{bmb_doi}' data-hide-no-mentions='true'></div>
+                    <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{bmb_doi}' data-hide-no-mentions='false'></div>
                     <a href="https://plu.mx/plum/a/?doi={bmb_doi}" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
                     <span class="__dimensions_badge_embed__" data-doi="{bmb_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
                 </div>
                 <div class="citation-text">Mockaitis, G. (2026) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. Bulletin of Mathematical Biology, in press. DOI: {bmb_doi}</div>
-                <a href="{bmb_url}" target="_blank"><img src="{bmb_badge_img}" alt="DOI"></a>
-                <a href="{bmb_url}" target="_blank"><img src="https://img.shields.io/badge/Open_Access-F68212.svg?logo=openaccess&logoColor=white" alt="Open Access"></a>
-                <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
+                <div class="right-badges">
+                    <a href="{bmb_url}" target="_blank"><img src="{bmb_badge_img}" alt="DOI"></a>
+                    <a href="{bmb_url}" target="_blank"><img src="https://img.shields.io/badge/Open_Access-F68212.svg?logo=openaccess&logoColor=white" alt="Open Access"></a>
+                    <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
+                </div>
             </div>
     
             <div class="row">
@@ -740,8 +743,10 @@ def main():
                     <span class="__dimensions_badge_embed__" data-doi="{arxiv_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
                 </div>
                 <div class="citation-text">Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.</div>
-                <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv"></a>
-                <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
+                <div class="right-badges">
+                    <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv"></a>
+                    <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
+                </div>
             </div>
             
             <div class="row">
@@ -750,7 +755,9 @@ def main():
                     <a href="https://plu.mx/plum/a/?doi={zenodo_doi}" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
                 </div>
                 <div class="citation-text">{TEXTS['zenodo_cite'][lang]}</div>
-                <a href="{zenodo_url}" target="_blank"><img src="{zenodo_badge_img}" alt="Zenodo DOI"></a>
+                <div class="right-badges">
+                    <a href="{zenodo_url}" target="_blank"><img src="{zenodo_badge_img}" alt="Zenodo DOI"></a>
+                </div>
             </div>
         </div>
         
