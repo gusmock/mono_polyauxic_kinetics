@@ -768,7 +768,7 @@ def main():
     </html>
     """
     
-    components.html(badge_html, height=210)
+    components.html(badge_html, height=350)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
