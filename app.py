@@ -689,22 +689,22 @@ def main():
     # --- REFERENCES SECTION WITH FULL METRICS SUITE ---
     ref_header_text = TEXTS['paper_ref'][lang]
 
-    # Variáveis do BMB
+    # BMB
     bmb_doi = "10.1007/s11538-026-01621-7"
     bmb_url = f"https://doi.org/{bmb_doi}"
     bmb_badge_img = "https://img.shields.io/badge/DOI-10.1007%2Fs11538--026--01621--7-blue.svg"
     
-    # Variáveis do arXiv
+    # arXiv
     arxiv_doi = "10.48550/arXiv.2507.05960"
     
-    # Variáveis do Zenodo
+    # Zenodo
     zenodo_doi = "10.5281/zenodo.18025828"
     zenodo_url = f"https://doi.org/{zenodo_doi}"
     zenodo_badge_img = "https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18025828-blue.svg?logo=zenodo&logoColor=white"
     
-    # NOVAS Variáveis do Code Ocean (Substitua pelos seus dados reais)
-    code_ocean_doi = "10.24433/CO.XXXXXXX.v1" 
-    code_ocean_url = f"https://doi.org/{code_ocean_doi}"
+    # Code Ocean
+    code_ocean_doi = "10.24433/CO.0225069.v1" 
+    code_ocean_url = f"https://doi.org/10.24433/CO.0225069.v1"
     code_ocean_badge_img = "https://img.shields.io/badge/Code_Ocean-Reproducible-blue.svg"
     
     badge_col_width = "210px"
