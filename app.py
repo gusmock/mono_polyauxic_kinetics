@@ -745,7 +745,7 @@ def main():
                     <span class="__dimensions_badge_embed__" data-doi="{bmb_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
                 </div>
                 <div class="content-wrapper">
-                    <div class="citation-text">Mockaitis, G. (2026) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. Bulletin of Mathematical Biology, in press. DOI: {bmb_doi}</div>
+                    <div class="citation-text">Mockaitis, G. (2026) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. Bulletin of Mathematical Biology. 88:55. DOI: {bmb_doi}</div>
                     <div class="link-badges">
                         <a href="{bmb_url}" target="_blank"><img src="{bmb_badge_img}" alt="DOI"></a>
                         <a href="{bmb_url}" target="_blank"><img src="https://img.shields.io/badge/Open_Access-F68212.svg?logo=openaccess&logoColor=white" alt="Open Access"></a>
