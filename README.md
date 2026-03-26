@@ -1,11 +1,11 @@
 # Polyauxic Modeling Platform
 
+[![Journal: Bulletin of Mathematical Biology](https://img.shields.io/badge/Journal-Bull.%20Math.%20Biol.-003366)](https://doi.org/10.1007/s11538-026-01621-7)
 [![DOI](https://img.shields.io/badge/DOI-10.24433/CO.0225069.v1-blue)](https://doi.org/10.24433/CO.0225069.v1)
 [![DOI](https://img.shields.io/badge/DOI-10.5281/zenodo.18025828-indigo)](https://doi.org/10.5281/zenodo.18025828)
 [![ArXiv](https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg)](https://arxiv.org/abs/2507.05960)
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://monopolyauxickinetics-test.streamlit.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 
 **Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics**
 
@@ -139,6 +139,18 @@ If you use this software or the underlying methodology in your research, please 
 **BibTeX:**
 
 ```bibtex
+@article{mockaitis2026mono,
+  title={Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics},
+  author={Mockaitis, Gustavo},
+  journal={Bulletin of Mathematical Biology},
+  volume={88},
+  number={55},
+  year={2026},
+  publisher={Springer},
+  doi={10.1007/s11538-026-01621-7},
+  url={https://doi.org/10.1007/s11538-026-01621-7}
+}
+
 @article{mockaitis2025polyauxic,
   title={Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics},
   author={Mockaitis, Gustavo},
