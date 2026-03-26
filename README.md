@@ -124,7 +124,11 @@ The application accepts `.csv` or `.xlsx` files. To ensure correct replicate det
 
 If you use this software or the underlying methodology in your research, please cite the following paper and the software DOI:
 
-**Paper (ArXiv):**
+**Original Peer-Reviewed Paper:**
+
+>Mockaitis, G. (2026). Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. *Bulletin of Mathematical Biology*, 88:55. https://doi.org/10.1007/s11538-026-01621-7
+
+**Preprint at ArXiv:**
 
 > Mockaitis, G. (2025). Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. *ArXiv*, 2507.05960. https://arxiv.org/abs/2507.05960
 
