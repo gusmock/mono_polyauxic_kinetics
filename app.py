@@ -8,6 +8,11 @@ import os
 import hashlib
 import socket
 from datetime import datetime
+import re
+import random
+import smtplib
+import ssl
+from email.mime.text import MIMEText
 # from streamlit.web.server.websocket_headers import _get_websocket_headers ###Outdated
 import uuid
 
@@ -19,7 +24,8 @@ from polyauxic_core import (
     fit_model_auto,
     fit_model_auto_robust_pre,
     process_data,
-    calculate_mean_with_outliers,
+    evaluate_polyauxic_model,
+    first_order_term_phase1,
     choose_information_criterion,
     select_first_local_min_index,
     detect_outliers,
@@ -70,7 +76,128 @@ def get_user_identifier():
     
     return detected_id
 
-def save_uploaded_data(df):
+def normalize_email(email):
+    return str(email or "").strip().lower()
+
+def validate_email_format(email):
+    pattern = r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"
+    return re.match(pattern, normalize_email(email)) is not None
+
+def get_usage_registry_path():
+    data_dir = "data"
+    os.makedirs(data_dir, exist_ok=True)
+    return os.path.join(data_dir, "usage_registry.csv")
+
+def append_usage_registry(event_type, profile, extra=None):
+    """
+    Stores onboarding/validation/upload data in a single local spreadsheet-like file.
+    """
+    profile = profile or {}
+    extra = extra or {}
+    registry_path = get_usage_registry_path()
+    row = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "event_type": event_type,
+        "email": normalize_email(profile.get("email", "")),
+        "first_name": str(profile.get("first_name", "")).strip(),
+        "last_name": str(profile.get("last_name", "")).strip(),
+        "institution": str(profile.get("institution", "")).strip(),
+        "country": str(profile.get("country", "")).strip(),
+        "experiment_description": str(profile.get("experiment_description", "")).strip(),
+        "user_identifier": str(get_user_identifier()),
+        "extra_json": str(extra)
+    }
+    df_row = pd.DataFrame([row])
+    if os.path.exists(registry_path):
+        df_row.to_csv(registry_path, mode="a", header=False, index=False)
+    else:
+        df_row.to_csv(registry_path, mode="w", header=True, index=False)
+
+def load_verified_profiles():
+    registry_path = get_usage_registry_path()
+    if not os.path.exists(registry_path):
+        return {}
+    try:
+        df = pd.read_csv(registry_path)
+    except Exception:
+        return {}
+    if df.empty or "event_type" not in df.columns or "email" not in df.columns:
+        return {}
+    validated = df[df["event_type"] == "otp_validated"].copy()
+    if validated.empty:
+        return {}
+    validated["email"] = validated["email"].astype(str).str.lower().str.strip()
+    validated = validated.sort_values("timestamp")
+    latest = validated.groupby("email", as_index=False).tail(1)
+    profiles = {}
+    for _, row in latest.iterrows():
+        email = str(row.get("email", "")).strip().lower()
+        if not email:
+            continue
+        profiles[email] = {
+            "email": email,
+            "first_name": str(row.get("first_name", "")).strip(),
+            "last_name": str(row.get("last_name", "")).strip(),
+            "institution": str(row.get("institution", "")).strip(),
+            "country": str(row.get("country", "")).strip(),
+            "experiment_description": str(row.get("experiment_description", "")).strip()
+        }
+    return profiles
+
+def is_email_already_validated(email):
+    validated_profiles = load_verified_profiles()
+    return normalize_email(email) in validated_profiles
+
+def send_otp_email(recipient_email, otp_code, lang):
+    """
+    Sends OTP code using SMTP environment variables.
+    Required env vars:
+      SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
+    Optional env var:
+      SMTP_USE_TLS=true|false (default true)
+    """
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "587").strip())
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_pass = os.getenv("SMTP_PASS", "").strip()
+    smtp_from = os.getenv("SMTP_FROM", "").strip() or smtp_user
+    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in ("1", "true", "yes", "on")
+
+    if not all([smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from]):
+        return False, "SMTP not configured"
+
+    subject_map = {
+        "en": "Your Polyauxic Platform verification code",
+        "pt": "Seu código de verificação da Plataforma Poliauxica",
+        "fr": "Votre code de vérification de la plateforme polyauxique"
+    }
+    body_map = {
+        "en": f"Your verification code is: {otp_code}\nThis code expires in 10 minutes.",
+        "pt": f"Seu código de verificação é: {otp_code}\nEste código expira em 10 minutos.",
+        "fr": f"Votre code de vérification est : {otp_code}\nCe code expire dans 10 minutes."
+    }
+
+    msg = MIMEText(body_map.get(lang, body_map["en"]), "plain", "utf-8")
+    msg["Subject"] = subject_map.get(lang, subject_map["en"])
+    msg["From"] = smtp_from
+    msg["To"] = normalize_email(recipient_email)
+
+    try:
+        if smtp_use_tls:
+            context = ssl.create_default_context()
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
+                server.starttls(context=context)
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_from, [msg["To"]], msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as server:
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_from, [msg["To"]], msg.as_string())
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+def save_uploaded_data(df, user_profile=None):
     """
     Saves the uploaded DataFrame as a CSV in the local /data folder.
     Format: DD-MM-YYYY_IDENTIFIER.csv
@@ -115,6 +242,11 @@ def save_uploaded_data(df):
 
         # 4. Save the new/updated file
         df.to_csv(target_path, index=False)
+        append_usage_registry(
+            "data_upload",
+            user_profile or {},
+            {"saved_file": target_filename, "rows": int(len(df)), "columns": int(df.shape[1])}
+        )
     except Exception as e:
         st.warning(f"Failed to save local backup file. Process will continue. Error: {e}")
 
@@ -145,9 +277,14 @@ def generate_excel_report(best_results_global, replicates, param_labels, rate_la
             
             # --- Global Parameters Sheet ---
             global_params = pd.DataFrame({
-                "Parameter": [yi_name, yf_name, "Phases (n)"],
-                "Value": [theta[0], theta[1], n],
-                "Standard Error (SE)": [se[0], se[1], "N/A"]
+                "Parameter": [yi_name, yf_name, "Phases (n)", "Phase 1 Structure"],
+                "Value": [
+                    theta[0],
+                    theta[1],
+                    n,
+                    "First-order" if res.get("use_first_order_phase1", False) else "Sigmoidal"
+                ],
+                "Standard Error (SE)": [se[0], se[1], "N/A", "N/A"]
             })
             global_params.to_excel(writer, sheet_name=f"{model_name}_Global", index=False)
             
@@ -182,8 +319,8 @@ def generate_excel_report(best_results_global, replicates, param_labels, rate_la
             # --- Statistics & Metrics Sheet ---
             m = res['metrics']
             metrics_df = pd.DataFrame({
-                "Metric": ["R-squared", "Adjusted R-squared", "SSE", "AIC", "AICc", "BIC"],
-                "Value": [m['R2'], m['R2_adj'], m['SSE'], m['AIC'], m['AICc'], m['BIC']]
+                "Metric": ["Correlation (r)", "R-squared", "Adjusted R-squared", "SSE", "AIC", "AICc", "BIC"],
+                "Value": [m.get("r", np.nan), m['R2'], m['R2_adj'], m['SSE'], m['AIC'], m['AICc'], m['BIC']]
             })
             metrics_df.to_excel(writer, sheet_name=f"{model_name}_Metrics", index=False)
 
@@ -249,6 +386,8 @@ TEXTS = {
         * **Headers:** The first row must contain the column names.
         * **Replicates:** You can include up to **5 biological replicates**. The system automatically detects them based on the column pairs.
         * **Decimals:** Both dot (`.`) and comma (`,`) are accepted.
+        * **Access:** Platform access requires mandatory onboarding form completion and email validation (OTP).
+        * **Plot Settings:** You can customize plot font and axis titles in the sidebar.
 
         **Example Layout:**
         | A (Time 1) | B (Resp 1) | C (Time 2) | D (Resp 2) |
@@ -263,6 +402,8 @@ TEXTS = {
         * **Cabeçalho:** A primeira linha deve conter o nome das variáveis.
         * **Réplicas:** O sistema aceita até **5 réplicas biológicas**. Basta adicionar os pares de colunas lado a lado; o sistema os agrupará automaticamente.
         * **Decimais:** Tanto ponto (`.`) quanto vírgula (`,`) são aceitos.
+        * **Acesso:** O uso da plataforma exige preenchimento do formulário inicial e validação do e-mail (OTP).
+        * **Gráficos:** É possível definir a fonte e títulos dos eixos na barra lateral.
 
         **Exemplo de Layout:**
         | A (Tempo 1) | B (Resp 1) | C (Tempo 2) | D (Resp 2) |
@@ -277,6 +418,8 @@ TEXTS = {
         * **En-têtes :** La première ligne doit contenir les noms des colonnes.
         * **Réplicats :** Vous pouvez inclure jusqu'à **5 réplicats biologiques**. Le système les détecte automatiquement.
         * **Décimales :** Les points (`.`) et les virgules (`,`) sont acceptés.
+        * **Accès :** L’accès à la plateforme exige le formulaire initial et la validation de l’e-mail (OTP).
+        * **Graphiques :** Vous pouvez personnaliser la police et les titres des axes dans la barre latérale.
 
         **Exemple de mise en page:**
         | A (Temps 1) | B (Rep 1) | C (Temps 2) | D (Rep 2) |
@@ -286,7 +429,6 @@ TEXTS = {
         """
     },
     "sidebar_config": {"en": "Settings", "pt": "Configurações", "fr": "Paramètres"},
-    "var_type": {"en": "Response Type (Y Axis)", "pt": "Tipo de Resposta (Eixo Y)", "fr": "Type de Réponse (Axe Y)"},
     "upload_label": {
         "en": "Upload CSV/XLSX (Col pairs: t1, y1, t2, y2...)",
         "pt": "Arquivo CSV/XLSX (Pares colunas: t1, y1, t2, y2...)",
@@ -391,53 +533,395 @@ TEXTS = {
     "table_col_param": {"en": "Param", "pt": "Parâm", "fr": "Param"},
     "table_col_val": {"en": "Val", "pt": "Valor", "fr": "Val"},
     "table_col_se": {"en": "SE", "pt": "EP", "fr": "ET"},
-    "table_col_phase": {"en": "Phase", "pt": "Fase", "fr": "Phase"}
+    "table_col_phase": {"en": "Phase", "pt": "Fase", "fr": "Phase"},
+    "onboarding_title": {
+        "en": "Welcome to the Polyauxic Modeling Platform",
+        "pt": "Bem-vindo à Plataforma de Modelagem Poliauxica",
+        "fr": "Bienvenue sur la plateforme de modélisation polyauxique"
+    },
+    "onboarding_subtitle": {
+        "en": "Please select your language and complete the required form. Access is enabled only after email verification.",
+        "pt": "Selecione seu idioma e preencha o formulário obrigatório. O acesso só é liberado após a validação do e-mail.",
+        "fr": "Veuillez sélectionner votre langue et remplir le formulaire obligatoire. L’accès est activé uniquement après validation de l’e-mail."
+    },
+    "form_first_name": {"en": "First Name", "pt": "Nome", "fr": "Prénom"},
+    "form_last_name": {"en": "Last Name", "pt": "Sobrenome", "fr": "Nom"},
+    "form_institution": {"en": "Institution", "pt": "Instituição", "fr": "Institution"},
+    "form_country": {"en": "Country", "pt": "País", "fr": "Pays"},
+    "form_description": {
+        "en": "Brief experiment description",
+        "pt": "Breve descrição do(s) experimento(s)",
+        "fr": "Brève description de(s) expérience(s)"
+    },
+    "form_email": {"en": "Email", "pt": "E-mail", "fr": "E-mail"},
+    "form_submit": {"en": "Continue", "pt": "Continuar", "fr": "Continuer"},
+    "required_fields_error": {
+        "en": "All fields are mandatory.",
+        "pt": "Todos os campos são obrigatórios.",
+        "fr": "Tous les champs sont obligatoires."
+    },
+    "email_invalid": {
+        "en": "Please enter a valid email address.",
+        "pt": "Informe um e-mail válido.",
+        "fr": "Veuillez saisir une adresse e-mail valide."
+    },
+    "otp_send_button": {"en": "Send verification code", "pt": "Enviar código de verificação", "fr": "Envoyer le code de vérification"},
+    "otp_sent_success": {
+        "en": "Verification code sent. Please check your inbox.",
+        "pt": "Código de verificação enviado. Verifique sua caixa de entrada.",
+        "fr": "Code de vérification envoyé. Veuillez vérifier votre boîte de réception."
+    },
+    "otp_send_fail": {
+        "en": "Failed to send verification code: {0}",
+        "pt": "Falha ao enviar código de verificação: {0}",
+        "fr": "Échec de l’envoi du code de vérification : {0}"
+    },
+    "smtp_missing": {
+        "en": "SMTP settings are not configured. Contact the administrator.",
+        "pt": "Configurações SMTP não encontradas. Contate o administrador.",
+        "fr": "Les paramètres SMTP ne sont pas configurés. Contactez l’administrateur."
+    },
+    "otp_code_label": {"en": "Verification code", "pt": "Código de verificação", "fr": "Code de vérification"},
+    "otp_verify_button": {"en": "Validate email", "pt": "Validar e-mail", "fr": "Valider l’e-mail"},
+    "otp_invalid": {
+        "en": "Invalid or expired code.",
+        "pt": "Código inválido ou expirado.",
+        "fr": "Code invalide ou expiré."
+    },
+    "otp_validated": {
+        "en": "Email successfully validated.",
+        "pt": "E-mail validado com sucesso.",
+        "fr": "E-mail validé avec succès."
+    },
+    "welcome_back_verified": {
+        "en": "Email previously validated. Access granted.",
+        "pt": "E-mail já validado anteriormente. Acesso liberado.",
+        "fr": "E-mail déjà validé précédemment. Accès autorisé."
+    },
+    "access_blocked_until_validation": {
+        "en": "Access remains blocked until email validation is completed.",
+        "pt": "O acesso permanece bloqueado até concluir a validação do e-mail.",
+        "fr": "L’accès reste bloqué jusqu’à la validation de l’e-mail."
+    },
+    "plot_font_label": {"en": "Plot Font", "pt": "Fonte dos Gráficos", "fr": "Police des Graphiques"},
+    "axis_x_custom_label": {
+        "en": "X-axis title (leave blank for default)",
+        "pt": "Título do eixo X (deixe em branco para padrão)",
+        "fr": "Titre de l’axe X (laisser vide pour défaut)"
+    },
+    "axis_y_custom_label": {
+        "en": "Y-axis title (leave blank for default)",
+        "pt": "Título do eixo Y (deixe em branco para padrão)",
+        "fr": "Titre de l’axe Y (laisser vide pour défaut)"
+    },
+    "default_y_label": {"en": "Response (y)", "pt": "Resposta (y)", "fr": "Réponse (y)"},
+    "metric_corr": {"en": "Correlation (r)", "pt": "Correlação (r)", "fr": "Corrélation (r)"},
+    "phase1_col": {"en": "Phase 1", "pt": "Fase 1", "fr": "Phase 1"},
+    "phase1_first_order": {"en": "First-order", "pt": "Primeira ordem", "fr": "Premier ordre"},
+    "phase1_sigmoidal": {"en": "Sigmoidal", "pt": "Sigmoidal", "fr": "Sigmoïdal"}
 }
 
-# Variable Labels Configuration
-VAR_LABELS = {
-    "generic": {
-        "label": {"en": "Generic y(t)", "pt": "Genérico y(t)", "fr": "Générique y(t)"},
-        "axis": {"en": "Response (y)", "pt": "Resposta (y)", "fr": "Réponse (y)"},
-        "params": ("y_i", "y_f"),
-        "rate": "r_max"
-    },
-    "product": {
-        "label": {"en": "Product P(t)", "pt": "Produto P(t)", "fr": "Produit P(t)"},
-        "axis": {"en": "Product Conc. (P)", "pt": "Concentração de Produto (P)", "fr": "Concentration en Produit (P)"},
-        "params": ("P_i", "P_f"),
-        "rate": "r_P,max"
-    },
-    "substrate": {
-        "label": {"en": "Substrate S(t)", "pt": "Substrato S(t)", "fr": "Substrat S(t)"},
-        "axis": {"en": "Substrate Conc. (S)", "pt": "Concentração de Substrato (S)", "fr": "Concentration en Substrat (S)"},
-        "params": ("S_i", "S_f"),
-        "rate": "r_S,max"
-    },
-    "biomass": {
-        "label": {"en": "Biomass X(t)", "pt": "Biomassa X(t)", "fr": "Biomasse X(t)"},
-        "axis": {"en": "Biomass Conc. (X)", "pt": "Concentração Celular (X)", "fr": "Concentration Cellulaire (X)"},
-        "params": ("X_i", "X_f"),
-        "rate": "µ_max"
-    }
-}
+COUNTRY_OPTIONS = [
+    "Argentina", "Australia", "Austria", "Belgium", "Bolivia", "Brazil", "Bulgaria", "Canada",
+    "Chile", "China", "Colombia", "Costa Rica", "Croatia", "Cuba", "Czech Republic", "Denmark",
+    "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Estonia", "Finland", "France",
+    "Germany", "Greece", "Guatemala", "Honduras", "Hungary", "Iceland", "India", "Indonesia",
+    "Ireland", "Israel", "Italy", "Japan", "Kenya", "Latvia", "Lithuania", "Luxembourg",
+    "Malaysia", "Mexico", "Morocco", "Netherlands", "New Zealand", "Nicaragua", "Nigeria",
+    "Norway", "Pakistan", "Panama", "Paraguay", "Peru", "Philippines", "Poland", "Portugal",
+    "Romania", "Russia", "Saudi Arabia", "Serbia", "Singapore", "Slovakia", "Slovenia",
+    "South Africa", "South Korea", "Spain", "Sweden", "Switzerland", "Thailand", "Turkey",
+    "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Venezuela",
+    "Vietnam", "Other"
+]
+
+PLOT_FONT_OPTIONS = [
+    "Times New Roman",
+    "Arial",
+    "Calibri",
+    "DejaVu Serif",
+    "DejaVu Sans",
+    "Book Antiqua",
+    "Bookman Old Style",
+    "Verdana"
+]
+
+def apply_plot_font(font_name):
+    selected = font_name if font_name in PLOT_FONT_OPTIONS else "Times New Roman"
+    plt.rcParams.update({
+        "font.family": [selected, "DejaVu Sans", "sans-serif"],
+        "font.size": 11,
+        "axes.labelsize": 11,
+        "xtick.labelsize": 11,
+        "ytick.labelsize": 11,
+        "legend.fontsize": 11,
+        "figure.titlesize": 12,
+        "mathtext.fontset": "stix"
+    })
+
+def build_all_data_df(replicates):
+    all_data = []
+    for rep in replicates:
+        for t, y in zip(rep["t"], rep["y"]):
+            all_data.append({"t": float(t), "y": float(y)})
+    if not all_data:
+        return pd.DataFrame(columns=["t", "y"])
+    return pd.DataFrame(all_data).sort_values("t").reset_index(drop=True)
+
+def choose_better_same_phase_result(res_a, res_b):
+    """
+    For equal phase count and parameter count, information criteria rankings are monotonic with fit quality.
+    """
+    if res_a is None:
+        return res_b
+    if res_b is None:
+        return res_a
+    for metric in ("AICc", "AIC", "BIC", "SSE"):
+        a_val = float(res_a["metrics"].get(metric, np.inf))
+        b_val = float(res_b["metrics"].get(metric, np.inf))
+        if np.isfinite(a_val) and np.isfinite(b_val):
+            return res_a if a_val <= b_val else res_b
+        if np.isfinite(a_val):
+            return res_a
+        if np.isfinite(b_val):
+            return res_b
+    return res_a
+
+def should_test_first_order_variant(res, tol=1e-6):
+    if not res:
+        return False
+    n = int(res["n_phases"])
+    lambda_ = res["theta"][2 + 2 * n : 2 + 3 * n]
+    if len(lambda_) == 0:
+        return False
+    return abs(float(lambda_[0])) <= tol
+
+def run_fit_with_outlier_strategy(
+    t_flat,
+    y_flat,
+    model_func,
+    n,
+    outlier_method_key,
+    force_yi=False,
+    force_yf=False,
+    rout_q=1.0,
+    use_first_order_phase1=False
+):
+    """
+    Runs one fitting pass with a selected outlier strategy and returns a result on full data indexing.
+    """
+    n_params = 2 + 3 * n
+    full_mask = np.zeros(len(y_flat), dtype=bool)
+    res = None
+
+    if outlier_method_key == "none":
+        res = fit_model_auto(
+            t_flat,
+            y_flat,
+            model_func,
+            n,
+            force_yi=force_yi,
+            force_yf=force_yf,
+            use_first_order_phase1=use_first_order_phase1
+        )
+
+    elif outlier_method_key == "simple":
+        res_pre = fit_model_auto(
+            t_flat,
+            y_flat,
+            model_func,
+            n,
+            force_yi=force_yi,
+            force_yf=force_yf,
+            use_first_order_phase1=use_first_order_phase1
+        )
+        if res_pre:
+            y_pred_pre = evaluate_polyauxic_model(
+                t_flat,
+                res_pre["theta"],
+                model_func,
+                n,
+                use_first_order_phase1=use_first_order_phase1
+            )
+            full_mask = detect_outliers(y_flat, y_pred_pre)
+            if np.any(full_mask) and (len(y_flat[~full_mask]) > n_params + 5):
+                res = fit_model_auto(
+                    t_flat[~full_mask],
+                    y_flat[~full_mask],
+                    model_func,
+                    n,
+                    force_yi=force_yi,
+                    force_yf=force_yf,
+                    use_first_order_phase1=use_first_order_phase1
+                )
+            else:
+                res = res_pre
+                full_mask = np.zeros(len(y_flat), dtype=bool)
+
+    elif outlier_method_key == "rout":
+        res_robust = fit_model_auto_robust_pre(
+            t_flat,
+            y_flat,
+            model_func,
+            n,
+            force_yi=force_yi,
+            force_yf=force_yf,
+            use_first_order_phase1=use_first_order_phase1
+        )
+        if res_robust:
+            y_pred_pre = res_robust["y_pred"]
+            full_mask = detect_outliers_rout_rigorous(
+                y_flat,
+                y_pred_pre,
+                n_params=n_params,
+                Q=rout_q
+            )
+            if np.any(full_mask) and (len(y_flat[~full_mask]) > n_params + 5):
+                res = fit_model_auto(
+                    t_flat[~full_mask],
+                    y_flat[~full_mask],
+                    model_func,
+                    n,
+                    force_yi=force_yi,
+                    force_yf=force_yf,
+                    use_first_order_phase1=use_first_order_phase1
+                )
+            else:
+                res = fit_model_auto(
+                    t_flat,
+                    y_flat,
+                    model_func,
+                    n,
+                    force_yi=force_yi,
+                    force_yf=force_yf,
+                    use_first_order_phase1=use_first_order_phase1
+                )
+                full_mask = np.zeros(len(y_flat), dtype=bool)
+
+    if res:
+        res["outliers"] = full_mask
+        res["t_clean"] = t_flat[~full_mask] if np.any(full_mask) else t_flat
+        res["y_clean"] = y_flat[~full_mask] if np.any(full_mask) else y_flat
+        res["y_pred_full"] = evaluate_polyauxic_model(
+            t_flat,
+            res["theta"],
+            model_func,
+            n,
+            use_first_order_phase1=use_first_order_phase1
+        )
+        res["use_first_order_phase1"] = bool(use_first_order_phase1)
+    return res
+
+def render_access_gate():
+    """
+    Mandatory onboarding + email verification gate.
+    Returns selected language code once access is granted.
+    """
+    if "selected_lang_key" not in st.session_state:
+        st.session_state.selected_lang_key = list(LANGUAGES.keys())[0]
+    if "access_granted" not in st.session_state:
+        st.session_state.access_granted = False
+
+    lang_key = st.selectbox(
+        "Language / Idioma / Langue",
+        list(LANGUAGES.keys()),
+        key="selected_lang_key"
+    )
+    lang = LANGUAGES[lang_key]
+    st.session_state["lang"] = lang
+
+    if st.session_state.access_granted:
+        return lang
+
+    st.title(TEXTS["onboarding_title"][lang])
+    st.info(TEXTS["onboarding_subtitle"][lang])
+
+    pending_profile = st.session_state.get("pending_profile", {})
+    with st.form("access_form"):
+        first_name = st.text_input(TEXTS["form_first_name"][lang], value=pending_profile.get("first_name", ""))
+        last_name = st.text_input(TEXTS["form_last_name"][lang], value=pending_profile.get("last_name", ""))
+        institution = st.text_input(TEXTS["form_institution"][lang], value=pending_profile.get("institution", ""))
+        default_country_idx = COUNTRY_OPTIONS.index(pending_profile.get("country", "Other")) if pending_profile.get("country", "Other") in COUNTRY_OPTIONS else COUNTRY_OPTIONS.index("Other")
+        country = st.selectbox(TEXTS["form_country"][lang], COUNTRY_OPTIONS, index=default_country_idx)
+        exp_description = st.text_area(TEXTS["form_description"][lang], value=pending_profile.get("experiment_description", ""))
+        email = st.text_input(TEXTS["form_email"][lang], value=pending_profile.get("email", ""))
+        submit = st.form_submit_button(TEXTS["otp_send_button"][lang])
+
+    if submit:
+        profile = {
+            "first_name": first_name.strip(),
+            "last_name": last_name.strip(),
+            "institution": institution.strip(),
+            "country": country.strip(),
+            "experiment_description": exp_description.strip(),
+            "email": normalize_email(email)
+        }
+        if not all(profile.values()):
+            st.error(TEXTS["required_fields_error"][lang])
+            st.stop()
+        if not validate_email_format(profile["email"]):
+            st.error(TEXTS["email_invalid"][lang])
+            st.stop()
+
+        if is_email_already_validated(profile["email"]):
+            st.session_state["user_profile"] = profile
+            st.session_state["access_granted"] = True
+            append_usage_registry("validated_access", profile, {"source": "previously_validated"})
+            st.success(TEXTS["welcome_back_verified"][lang])
+            st.rerun()
+
+        otp_code = f"{random.randint(0, 999999):06d}"
+        ok, err = send_otp_email(profile["email"], otp_code, lang)
+        if not ok:
+            err_msg = TEXTS["smtp_missing"][lang] if err == "SMTP not configured" else err
+            st.error(TEXTS["otp_send_fail"][lang].format(err_msg))
+            st.stop()
+
+        st.session_state["pending_profile"] = profile
+        st.session_state["pending_otp_hash"] = hashlib.sha256(otp_code.encode("utf-8")).hexdigest()
+        st.session_state["pending_otp_expires"] = datetime.now().timestamp() + 600
+        append_usage_registry("otp_sent", profile, {"valid_for_sec": 600})
+        st.success(TEXTS["otp_sent_success"][lang])
+
+    if "pending_otp_hash" in st.session_state:
+        otp_input = st.text_input(TEXTS["otp_code_label"][lang], key="otp_input")
+        if st.button(TEXTS["otp_verify_button"][lang]):
+            otp_hash = hashlib.sha256(str(otp_input).strip().encode("utf-8")).hexdigest()
+            not_expired = datetime.now().timestamp() <= float(st.session_state.get("pending_otp_expires", 0))
+            if not_expired and otp_hash == st.session_state.get("pending_otp_hash"):
+                profile = st.session_state.get("pending_profile", {})
+                st.session_state["user_profile"] = profile
+                st.session_state["access_granted"] = True
+                append_usage_registry("otp_validated", profile, {"status": "ok"})
+                for key in ("pending_otp_hash", "pending_otp_expires", "pending_profile", "otp_input"):
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.success(TEXTS["otp_validated"][lang])
+                st.rerun()
+            else:
+                profile = st.session_state.get("pending_profile", {})
+                append_usage_registry("otp_validation_failed", profile, {"status": "invalid_or_expired"})
+                st.error(TEXTS["otp_invalid"][lang])
+
+    st.warning(TEXTS["access_blocked_until_validation"][lang])
+    st.stop()
 
 # ==============================================================================
 # 4. VISUALIZATION & APP STRUCTURE
 # ==============================================================================
 
-def plot_raw_data(replicates, lang):
+def plot_raw_data(replicates, lang, x_label, y_label):
     """Plots raw data before analysis."""
     fig, ax = plt.subplots(figsize=(8, 4))
     for rep in replicates:
         ax.scatter(rep['t'], rep['y'], facecolors='white', edgecolors='black', alpha=0.8, s=20)
     ax.set_title("Experimental Data", fontsize=12)
-    ax.set_xlabel(TEXTS['axis_time'][lang])
-    ax.set_ylabel("Response (y)")
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
     ax.grid(True, linestyle=':', alpha=0.3)
     st.pyplot(fig)
 
-def plot_final_summary(replicates, best_results, lang):
+def plot_final_summary(replicates, best_results, lang, x_label, y_label):
     """Plots raw data + best fits for Gompertz and Boltzmann."""
     fig, ax = plt.subplots(figsize=(8, 5))
     
@@ -457,7 +941,13 @@ def plot_final_summary(replicates, best_results, lang):
     for model_name, res in best_results.items():
         if res is None: continue
         func = gompertz_term_eq32 if model_name == "Gompertz" else boltzmann_term_eq31
-        y_smooth = polyauxic_model(t_smooth, res['theta'], func, res['n_phases'])
+        y_smooth = evaluate_polyauxic_model(
+            t_smooth,
+            res['theta'],
+            func,
+            res['n_phases'],
+            use_first_order_phase1=bool(res.get("use_first_order_phase1", False))
+        )
         
         if res['metrics']['AICc'] < best_aic_val:
             best_aic_val = res['metrics']['AICc']
@@ -470,8 +960,8 @@ def plot_final_summary(replicates, best_results, lang):
         outlier_count = np.sum(best_overall_res['outliers'])
         ax.set_title(f"Best Fit Summary (Outliers detected by best model: {outlier_count})", fontsize=12)
 
-    ax.set_xlabel(TEXTS['axis_time'][lang])
-    ax.set_ylabel("Response")
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
     ax.legend()
     ax.grid(True, alpha=0.3)
     st.pyplot(fig)
@@ -515,14 +1005,20 @@ def plot_metrics_summary(results_list, model_name, lang):
     )
     st.pyplot(fig)
 
-def display_single_fit(res, replicates, model_func, color_main, y_label, param_labels, rate_label, lang):
+def display_single_fit(res, replicates, model_func, color_main, x_label, y_label, param_labels, rate_label, lang):
     """Displays detailed results for a single fit."""
     n = res['n_phases']
     theta = res['theta']
     se = res['se']
     se_p = res['se_p']
     yi_name, yf_name = param_labels
-    stats_df, raw_data_w_outliers = calculate_mean_with_outliers(replicates, model_func, theta, n)
+    raw_data_w_outliers = build_all_data_df(replicates)
+    outliers_mask = np.asarray(res.get("outliers", np.zeros(len(raw_data_w_outliers), dtype=bool)), dtype=bool)
+    if len(outliers_mask) != len(raw_data_w_outliers):
+        outliers_mask = np.zeros(len(raw_data_w_outliers), dtype=bool)
+    raw_data_w_outliers["is_outlier"] = outliers_mask
+    raw_data_w_outliers["t_round"] = raw_data_w_outliers["t"].round(4)
+    stats_df = raw_data_w_outliers[~raw_data_w_outliers["is_outlier"]].groupby("t_round")["y"].agg(["mean", "std"]).reset_index()
     y_i, y_f = theta[0], theta[1]
     y_i_se, y_f_se = se[0], se[1]
 
@@ -537,6 +1033,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
     phases = []
     for i in range(n):
         phases.append({
+            "phase_id": i,
             "p": p[i],
             "SE p": se_p[i],
             "r_max": r_max[i],
@@ -574,26 +1071,36 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
             )
 
         if len(replicates) > 1:
-            ax.errorbar(
-                stats_df['t_round'],
-                stats_df['mean'],
-                yerr=stats_df['std'],
-                fmt='o',
-                color='black',
-                ecolor='black',
-                capsize=3,
-                label=TEXTS['legend_mean'][lang],
-                zorder=4
-            )
+            if not stats_df.empty:
+                ax.errorbar(
+                    stats_df['t_round'],
+                    stats_df['mean'],
+                    yerr=stats_df['std'],
+                    fmt='o',
+                    color='black',
+                    ecolor='black',
+                    capsize=3,
+                    label=TEXTS['legend_mean'][lang],
+                    zorder=4
+                )
 
         t_max_val = raw_data_w_outliers['t'].max()
         t_smooth = np.linspace(0, t_max_val, 300)
-        y_smooth = polyauxic_model(t_smooth, theta, model_func, n)
+        y_smooth = evaluate_polyauxic_model(
+            t_smooth,
+            theta,
+            model_func,
+            n,
+            use_first_order_phase1=bool(res.get("use_first_order_phase1", False))
+        )
         ax.plot(t_smooth, y_smooth, color=color_main, linewidth=2.5, label=TEXTS['legend_global'][lang])
 
         colors = plt.cm.viridis(np.linspace(0, 0.9, n))
         for i, ph in enumerate(phases):
-            y_ind = model_func(t_smooth, y_i, y_f, ph['p'], ph['r_max'], ph['lambda'])
+            if bool(res.get("use_first_order_phase1", False)) and ph.get("phase_id", -1) == 0:
+                y_ind = first_order_term_phase1(t_smooth, ph['p'], y_f, ph['r_max'])
+            else:
+                y_ind = model_func(t_smooth, y_i, y_f, ph['p'], ph['r_max'], ph['lambda'])
             y_vis = y_i + (y_f - y_i) * y_ind
             ax.plot(
                 t_smooth,
@@ -604,7 +1111,7 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
                 label=TEXTS['legend_phase'][lang].format(i + 1)
             )
 
-        ax.set_xlabel(TEXTS['axis_time'][lang])
+        ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
         ax.legend(fontsize='small')
         ax.grid(True, linestyle=':', alpha=0.3)
@@ -656,8 +1163,8 @@ def display_single_fit(res, replicates, model_func, color_main, y_label, param_l
         m = res['metrics']
         df_met = pd.DataFrame(
             {
-                TEXTS['table_col_metric'][lang]: ["R²", "R² Adj", "AIC", "AICc", "BIC"],
-                TEXTS['table_col_value'][lang]: [m['R2'], m['R2_adj'], m['AIC'], m['AICc'], m['BIC']]
+                TEXTS['table_col_metric'][lang]: [TEXTS['metric_corr'][lang], "R²", "R² Adj", "AIC", "AICc", "BIC"],
+                TEXTS['table_col_value'][lang]: [m.get('r', np.nan), m['R2'], m['R2_adj'], m['AIC'], m['AICc'], m['BIC']]
             }
         )
         st.dataframe(df_met.style.format({TEXTS['table_col_value'][lang]: "{:.4f}"}), hide_index=True)
@@ -675,11 +1182,10 @@ def main():
         st.session_state.analysis_run = False
     if 'uploaded_file_hash' not in st.session_state:
         st.session_state.uploaded_file_hash = None
+    if "user_profile" not in st.session_state:
+        st.session_state.user_profile = {}
 
-    # Sidebar for settings
-    st.sidebar.header("Language / Idioma / Langue")
-    lang_key = st.sidebar.selectbox("Select Language", list(LANGUAGES.keys()))
-    lang = LANGUAGES[lang_key]
+    lang = render_access_gate()
 
     st.title(TEXTS['app_title'][lang])
 
@@ -799,18 +1305,35 @@ def main():
 
     # Main Analysis Interface Sidebar
     st.sidebar.header(TEXTS['sidebar_config'][lang])
+    param_labels = ("y_i", "y_f")
+    rate_label = "r_max"
+    default_x_label = TEXTS["axis_time"][lang]
+    default_y_label = TEXTS["default_y_label"][lang]
 
-    var_type_opts = list(VAR_LABELS.keys())
-    selected_var_key = st.sidebar.selectbox(
-        TEXTS['var_type'][lang],
-        options=var_type_opts,
-        format_func=lambda x: VAR_LABELS[x]['label'][lang]
+    # Store settings changes to reset analysis automatically if parameter changes
+    def reset_analysis():
+        st.session_state.analysis_run = False
+
+    selected_font = st.sidebar.selectbox(
+        TEXTS["plot_font_label"][lang],
+        options=PLOT_FONT_OPTIONS,
+        index=0,
+        on_change=reset_analysis
     )
+    apply_plot_font(selected_font)
 
-    config = VAR_LABELS[selected_var_key]
-    y_label = config['axis'][lang]
-    param_labels = config['params']
-    rate_label = config['rate']
+    x_title_custom = st.sidebar.text_input(
+        TEXTS["axis_x_custom_label"][lang],
+        value="",
+        on_change=reset_analysis
+    )
+    y_title_custom = st.sidebar.text_input(
+        TEXTS["axis_y_custom_label"][lang],
+        value="",
+        on_change=reset_analysis
+    )
+    x_axis_label = x_title_custom.strip() if str(x_title_custom).strip() else default_x_label
+    y_axis_label = y_title_custom.strip() if str(y_title_custom).strip() else default_y_label
 
     file = st.sidebar.file_uploader(TEXTS['upload_label'][lang], type=["csv", "xlsx"])
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5)
@@ -826,10 +1349,6 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"### {TEXTS['sidebar_outlier_header'][lang]}")
     outlier_options_keys = ["none", "simple", "rout"]
-    
-    # Store settings changes to reset analysis automatically if parameter changes
-    def reset_analysis():
-        st.session_state.analysis_run = False
 
     outlier_method_key = st.sidebar.selectbox(
         TEXTS['outlier_method_label'][lang],
@@ -862,14 +1381,14 @@ def main():
             else:
                 df = pd.read_excel(file)
 
-            save_uploaded_data(df)
+            save_uploaded_data(df, st.session_state.get("user_profile", {}))
 
             t_flat, y_flat, replicates = process_data(df)
             if not replicates:
                 st.error(TEXTS['error_cols'][lang])
             else:
                 # Always show Raw Data top graph
-                plot_raw_data(replicates, lang)
+                plot_raw_data(replicates, lang, x_axis_label, y_axis_label)
 
                 st.success(TEXTS['data_loaded'][lang].format(len(replicates), len(t_flat)))
                 
@@ -901,43 +1420,44 @@ def main():
                                     expanded=False
                                 ):
                                     with st.spinner(TEXTS['optimizing'][lang].format(n)):
+                                        res_standard = run_fit_with_outlier_strategy(
+                                            t_flat,
+                                            y_flat,
+                                            func,
+                                            n,
+                                            outlier_method_key,
+                                            force_yi=force_yi,
+                                            force_yf=force_yf,
+                                            rout_q=rout_q,
+                                            use_first_order_phase1=False
+                                        )
 
-                                        res = None
-
-                                        # --- Outlier pipeline ---
-                                        if outlier_method_key == "none":
-                                            res = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
-
-                                        elif outlier_method_key == "simple":
-                                            res_pre = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
-                                            if res_pre:
-                                                y_pred_pre = res_pre["y_pred"]
-                                                mask = detect_outliers(y_flat, y_pred_pre)
-                                                n_params = 2 + 3 * n
-                                                if np.any(mask) and (len(y_flat[~mask]) > n_params + 5):
-                                                    t_clean = t_flat[~mask]
-                                                    y_clean = y_flat[~mask]
-                                                    res = fit_model_auto(t_clean, y_clean, func, n, force_yi=force_yi, force_yf=force_yf)
-                                                else:
-                                                    res = res_pre
-
-                                        elif outlier_method_key == "rout":
-                                            res_robust = fit_model_auto_robust_pre(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
-                                            if res_robust:
-                                                y_pred_pre = res_robust["y_pred"]
-                                                mask = detect_outliers_rout_rigorous(y_flat, y_pred_pre, Q=rout_q)
-                                                n_params = 2 + 3 * n
-                                                if np.any(mask) and (len(y_flat[~mask]) > n_params + 5):
-                                                    t_clean = t_flat[~mask]
-                                                    y_clean = y_flat[~mask]
-                                                    res = fit_model_auto(t_clean, y_clean, func, n, force_yi=force_yi, force_yf=force_yf)
-                                                else:
-                                                    res = fit_model_auto(t_flat, y_flat, func, n, force_yi=force_yi, force_yf=force_yf)
-                                        # ------------------------------------------------
+                                        res = res_standard
+                                        if should_test_first_order_variant(res_standard, tol=1e-6):
+                                            res_first_order = run_fit_with_outlier_strategy(
+                                                t_flat,
+                                                y_flat,
+                                                func,
+                                                n,
+                                                outlier_method_key,
+                                                force_yi=force_yi,
+                                                force_yf=force_yf,
+                                                rout_q=rout_q,
+                                                use_first_order_phase1=True
+                                            )
+                                            res = choose_better_same_phase_result(res_standard, res_first_order)
 
                                         if res:
                                             display_single_fit(
-                                                res, replicates, func, color, y_label, param_labels, rate_label, lang
+                                                res,
+                                                replicates,
+                                                func,
+                                                color,
+                                                x_axis_label,
+                                                y_axis_label,
+                                                param_labels,
+                                                rate_label,
+                                                lang
                                             )
                                             results_list.append(res)
                                         else:
@@ -962,12 +1482,18 @@ def main():
                                     m = r['metrics']
                                     summary_data.append({
                                         "F": r['n_phases'],
+                                        TEXTS['metric_corr'][lang]: m.get('r', np.nan),
                                         "R²": m['R2'],
                                         "R² Adj": m['R2_adj'],
                                         "SSE": m['SSE'],
                                         "AIC": m['AIC'],
                                         "AICc": m['AICc'],
                                         "BIC": m['BIC'],
+                                        TEXTS["phase1_col"][lang]: (
+                                            TEXTS["phase1_first_order"][lang]
+                                            if r.get("use_first_order_phase1", False)
+                                            else TEXTS["phase1_sigmoidal"][lang]
+                                        ),
                                         TEXTS['summary_header_used'][lang].format(ic_name): ic_values[i]
                                     })
 
@@ -980,6 +1506,7 @@ def main():
 
                                 st.dataframe(
                                     summary_df.style.apply(highlight_row, axis=1).format({
+                                        TEXTS['metric_corr'][lang]: "{:.4f}",
                                         "R²": "{:.4f}",
                                         "R² Adj": "{:.4f}",
                                         "SSE": "{:.4f}",
@@ -1004,7 +1531,7 @@ def main():
 
                     # --- FINAL SUMMARY GRAPH (Appears after tabs) ---
                     st.divider()
-                    plot_final_summary(replicates, best_results_global, lang)
+                    plot_final_summary(replicates, best_results_global, lang, x_axis_label, y_axis_label)
                     
                     # --- EXCEL EXPORT BUTTON ---
                     # Placed at the very end of the analysis so users can grab everything at once
