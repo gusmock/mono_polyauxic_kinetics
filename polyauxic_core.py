@@ -99,6 +99,21 @@ def gompertz_term_eq32(t, y_i, y_f, p_j, r_max_j, lambda_j):
     exponent = np.clip(exponent, -500.0, 500.0)
     return p_safe * np.exp(-np.exp(exponent))
 
+def first_order_term_phase1(t, p_j, y_f, r_max_j):
+    """
+    First-order phase contribution used when phase 1 starts immediately
+    (|lambda_1| approximately zero).
+    Returns a dimensionless term compatible with the global weighted sum.
+    """
+    t = np.asarray(t, dtype=float)
+    p_safe = max(float(p_j), 1e-12)
+    y_f_safe = float(y_f)
+    if abs(y_f_safe) < 1e-12:
+        y_f_safe = 1e-12
+    k = r_max_j / (p_safe * y_f_safe)
+    exponent = np.clip(-k * t, -500.0, 500.0)
+    return p_safe * (1.0 - np.exp(exponent))
+
 def polyauxic_model(t, theta, model_func, n_phases):
     """
     Global polyauxic model: Summation of weighted phases.
@@ -124,11 +139,40 @@ def polyauxic_model(t, theta, model_func, n_phases):
         sum_phases += model_func(t, y_i, y_f, p[j], r_max[j], lambda_[j])
     return y_i + (y_f - y_i) * sum_phases
 
+def polyauxic_model_phase1_first_order(t, theta, model_func, n_phases):
+    """
+    Hybrid polyauxic model where phase 1 is replaced by a first-order model:
+    y(t) = p1*y_f*(1 - exp(-(r_max1/(p1*y_f))*t)) within the global framework.
+    """
+    t = np.asarray(t, dtype=float)
+    y_i = theta[0]
+    y_f = theta[1]
+    z = theta[2 : 2 + n_phases]
+    r_max = theta[2 + n_phases : 2 + 2 * n_phases]
+    lambda_ = theta[2 + 2 * n_phases : 2 + 3 * n_phases]
+
+    z_shift = z - np.max(z)
+    exp_z = np.exp(z_shift)
+    p = exp_z / np.sum(exp_z)
+
+    sum_phases = 0.0
+    if n_phases > 0:
+        sum_phases += first_order_term_phase1(t, p[0], y_f, r_max[0])
+    for j in range(1, n_phases):
+        sum_phases += model_func(t, y_i, y_f, p[j], r_max[j], lambda_[j])
+    return y_i + (y_f - y_i) * sum_phases
+
+def evaluate_polyauxic_model(t, theta, model_func, n_phases, use_first_order_phase1=False):
+    """Dispatch helper for classic vs hybrid phase-1 model."""
+    if use_first_order_phase1:
+        return polyauxic_model_phase1_first_order(t, theta, model_func, n_phases)
+    return polyauxic_model(t, theta, model_func, n_phases)
+
 # ==============================================================================
 # 2. LOSS FUNCTIONS & HESSIAN (WITH SOFT PENALTIES)
 # ==============================================================================
 
-def sse_loss(theta, t, y, model_func, n_phases):
+def sse_loss(theta, t, y, model_func, n_phases, use_first_order_phase1=False):
     """
     Sum of Squared Errors (SSE) Loss function with soft penalties.
     This standard loss function is minimized during the final parameter estimation 
@@ -144,7 +188,7 @@ def sse_loss(theta, t, y, model_func, n_phases):
         violation = np.sum(np.maximum(0, -diffs + 1e-6)**2)
         penalty += 1e6 * violation
 
-    y_pred = polyauxic_model(t, theta, model_func, n_phases)
+    y_pred = evaluate_polyauxic_model(t, theta, model_func, n_phases, use_first_order_phase1)
     
     # Soft penalty: overly negative predictions
     min_allowed = -0.1 * np.max(np.abs(y))
@@ -154,7 +198,7 @@ def sse_loss(theta, t, y, model_func, n_phases):
 
     return np.sum((y - y_pred) ** 2) + penalty
 
-def robust_loss(theta, t, y, model_func, n_phases):
+def robust_loss(theta, t, y, model_func, n_phases, use_first_order_phase1=False):
     """
     Soft L1 robust loss (used for ROUT pre-fit step) with soft penalties.
     This implements the Charbonnier loss function, which penalizes large residuals 
@@ -170,7 +214,7 @@ def robust_loss(theta, t, y, model_func, n_phases):
         violation = np.sum(np.maximum(0, -diffs + 1e-6)**2)
         penalty += 1e6 * violation
 
-    y_pred = polyauxic_model(t, theta, model_func, n_phases)
+    y_pred = evaluate_polyauxic_model(t, theta, model_func, n_phases, use_first_order_phase1)
     
     # Soft penalty: overly negative predictions
     min_allowed = -0.1 * np.max(np.abs(y))
@@ -344,7 +388,15 @@ def smart_initial_guess(t, y, n_phases):
         theta_guess[2 + 2 * n_phases + i] = guesses[i]['lambda']
     return theta_guess
 
-def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False):
+def fit_model_auto_robust_pre(
+    t_data,
+    y_data,
+    model_func,
+    n_phases,
+    force_yi=False,
+    force_yf=False,
+    use_first_order_phase1=False
+):
     """
     Robust pre-fit (Soft L1) used exclusively for outlier detection baseline.
     Utilizes Differential Evolution (DE) coupled with the Charbonnier loss function 
@@ -413,7 +465,7 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     res_de = differential_evolution(
         robust_loss,
         bounds,
-        args=(t_norm, y_norm, model_func, n_phases),
+        args=(t_norm, y_norm, model_func, n_phases, use_first_order_phase1),
         maxiter=3000,
         popsize=pop_size,
         init=init_pop,
@@ -427,7 +479,7 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     res_opt = minimize(
         robust_loss,
         res_de.x,
-        args=(t_norm, y_norm, model_func, n_phases),
+        args=(t_norm, y_norm, model_func, n_phases, use_first_order_phase1),
         method='L-BFGS-B',
         bounds=bounds,
         tol=1e-10
@@ -443,10 +495,18 @@ def fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi=Fal
     scale_l = t_scale
     theta_real[2 + 2 * n_phases : 2 + 3 * n_phases] = theta_norm[2 + 2 * n_phases : 2 + 3 * n_phases] * scale_l
 
-    y_pred = polyauxic_model(t_data, theta_real, model_func, n_phases)
+    y_pred = evaluate_polyauxic_model(t_data, theta_real, model_func, n_phases, use_first_order_phase1)
     return {"theta": theta_real, "y_pred": y_pred}
 
-def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False):
+def fit_model_auto(
+    t_data,
+    y_data,
+    model_func,
+    n_phases,
+    force_yi=False,
+    force_yf=False,
+    use_first_order_phase1=False
+):
     """
     Final fitting function (Least Squares) on clean data.
     After outliers are discarded, this second optimization minimizes the standard 
@@ -515,7 +575,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     res_de = differential_evolution(
         sse_loss,
         bounds,
-        args=(t_norm, y_norm, model_func, n_phases),
+        args=(t_norm, y_norm, model_func, n_phases, use_first_order_phase1),
         maxiter=3000,
         popsize=pop_size,
         init=init_pop,
@@ -529,7 +589,7 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     res_opt = minimize(
         sse_loss,
         res_de.x,
-        args=(t_norm, y_norm, model_func, n_phases),
+        args=(t_norm, y_norm, model_func, n_phases, use_first_order_phase1),
         method='L-BFGS-B',
         bounds=bounds,
         tol=1e-10
@@ -552,8 +612,18 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     try:
         # Construct the valid covariance matrix and compute parameter uncertainty 
         # [cite_start]using the Moore-Penrose pseudo-inverse of the Hessian[cite: 1013].
-        H_norm = numerical_hessian(sse_loss, theta_norm, args=(t_norm, y_norm, model_func, n_phases))
-        y_pred_norm = polyauxic_model(t_norm, theta_norm, model_func, n_phases)
+        H_norm = numerical_hessian(
+            sse_loss,
+            theta_norm,
+            args=(t_norm, y_norm, model_func, n_phases, use_first_order_phase1)
+        )
+        y_pred_norm = evaluate_polyauxic_model(
+            t_norm,
+            theta_norm,
+            model_func,
+            n_phases,
+            use_first_order_phase1
+        )
         sse_val_norm = np.sum((y_norm - y_pred_norm) ** 2)
         n_obs = len(y_norm)
         n_p = len(theta_norm)
@@ -574,11 +644,21 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
     except:
         se_real = np.full_like(theta_real, np.nan)
 
-    y_pred = polyauxic_model(t_data, theta_real, model_func, n_phases)
+    y_pred = evaluate_polyauxic_model(t_data, theta_real, model_func, n_phases, use_first_order_phase1)
 
     sse = np.sum((y_data - y_pred) ** 2)
     sst = np.sum((y_data - np.mean(y_data)) ** 2)
-    r2 = 1 - sse / sst
+    if sst <= 1e-12:
+        r2 = 1.0 if sse <= 1e-12 else 0.0
+    else:
+        r2 = 1 - sse / sst
+
+    std_y = float(np.std(y_data))
+    std_yp = float(np.std(y_pred))
+    if std_y <= 1e-12 or std_yp <= 1e-12:
+        r = np.nan
+    else:
+        r = float(np.corrcoef(y_data, y_pred)[0, 1])
     n_len = len(y_data)
     k = len(theta_real)
     if sse <= 1e-12:
@@ -598,7 +678,16 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
         "theta": theta_real,
         "se": se_real,
         "se_p": se_p,
-        "metrics": {"R2": r2, "R2_adj": r2_adj, "SSE": sse, "AIC": aic, "BIC": bic, "AICc": aicc},
+        "metrics": {
+            "r": r,
+            "R2": r2,
+            "R2_adj": r2_adj,
+            "SSE": sse,
+            "AIC": aic,
+            "BIC": bic,
+            "AICc": aicc
+        },
+        "use_first_order_phase1": bool(use_first_order_phase1),
         "y_pred": y_pred,
         "outliers": np.zeros(len(y_data), dtype=bool)
     }
@@ -607,7 +696,16 @@ def fit_model_auto(t_data, y_data, model_func, n_phases, force_yi=False, force_y
 # 5. THE MASTER PIPELINE (NEW)
 # ==============================================================================
 
-def fit_model_pipeline(t_data, y_data, model_func, n_phases, force_yi=False, force_yf=False, Q=1.0):
+def fit_model_pipeline(
+    t_data,
+    y_data,
+    model_func,
+    n_phases,
+    force_yi=False,
+    force_yf=False,
+    Q=1.0,
+    use_first_order_phase1=False
+):
     """
     Orchestrates the entire fit, enforcing the hybrid workflow:
     1. [cite_start]Robust Pre-fit minimizing Charbonnier loss[cite: 911].
@@ -619,7 +717,15 @@ def fit_model_pipeline(t_data, y_data, model_func, n_phases, force_yi=False, for
     n_params = 2 + 3 * n_phases
     
     # 1. Robust Pre-fit (Soft L1)
-    res_robust = fit_model_auto_robust_pre(t_data, y_data, model_func, n_phases, force_yi, force_yf)
+    res_robust = fit_model_auto_robust_pre(
+        t_data,
+        y_data,
+        model_func,
+        n_phases,
+        force_yi,
+        force_yf,
+        use_first_order_phase1=use_first_order_phase1
+    )
     if res_robust is None:
         return None
         
@@ -639,13 +745,27 @@ def fit_model_pipeline(t_data, y_data, model_func, n_phases, force_yi=False, for
         outliers_mask = np.zeros_like(y_data, dtype=bool)
         
     # 4. Final Fit using the cleaned data
-    final_results = fit_model_auto(t_clean, y_clean, model_func, n_phases, force_yi, force_yf)
+    final_results = fit_model_auto(
+        t_clean,
+        y_clean,
+        model_func,
+        n_phases,
+        force_yi,
+        force_yf,
+        use_first_order_phase1=use_first_order_phase1
+    )
     if final_results is None:
         return None
         
     # Recalculate predictions for the full original t_data array
     theta_final = final_results["theta"]
-    y_pred_full = polyauxic_model(t_data, theta_final, model_func, n_phases)
+    y_pred_full = evaluate_polyauxic_model(
+        t_data,
+        theta_final,
+        model_func,
+        n_phases,
+        use_first_order_phase1
+    )
     
     # Add the complete data to the results dictionary using the ORIGINAL keys
     final_results["outliers"] = outliers_mask      # <--- Correction applied here (original key name)
