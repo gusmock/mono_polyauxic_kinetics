@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import io
 import os
 import hashlib
@@ -254,7 +255,7 @@ def save_uploaded_data(df, user_profile=None):
 # EXCEL EXPORT UTILITY
 # ==============================================================================
 
-def generate_excel_report(best_results_global, replicates, param_labels, rate_label):
+def generate_excel_report(best_results_global, replicates, param_labels, rate_label, lang):
     """
     Generates an Excel file (.xlsx) in memory containing all parameters, 
     standard errors, and statistics for the best models found.
@@ -274,17 +275,19 @@ def generate_excel_report(best_results_global, replicates, param_labels, rate_la
             se = res['se']
             se_p = res['se_p']
             yi_name, yf_name = param_labels
+            model_full_label = get_full_model_label(res, model_name, lang)
             
             # --- Global Parameters Sheet ---
             global_params = pd.DataFrame({
-                "Parameter": [yi_name, yf_name, "Phases (n)", "Phase 1 Structure"],
+                "Parameter": [yi_name, yf_name, "Phases (n)", "Phase 1 Structure", "Full Model"],
                 "Value": [
                     theta[0],
                     theta[1],
                     n,
-                    "First-order" if res.get("use_first_order_phase1", False) else "Sigmoidal"
+                    "First-order" if res.get("use_first_order_phase1", False) else "Sigmoidal",
+                    model_full_label
                 ],
-                "Standard Error (SE)": [se[0], se[1], "N/A", "N/A"]
+                "Standard Error (SE)": [se[0], se[1], "N/A", "N/A", "N/A"]
             })
             global_params.to_excel(writer, sheet_name=f"{model_name}_Global", index=False)
             
@@ -303,6 +306,7 @@ def generate_excel_report(best_results_global, replicates, param_labels, rate_la
             for i in range(n):
                 phase_data.append({
                     "Phase": i + 1,
+                    "Full Model": model_full_label,
                     "Proportion (p)": p[i],
                     "SE (p)": se_p[i],
                     f"Max Rate ({rate_label})": r_max[i],
@@ -319,8 +323,8 @@ def generate_excel_report(best_results_global, replicates, param_labels, rate_la
             # --- Statistics & Metrics Sheet ---
             m = res['metrics']
             metrics_df = pd.DataFrame({
-                "Metric": ["Correlation (r)", "R-squared", "Adjusted R-squared", "SSE", "AIC", "AICc", "BIC"],
-                "Value": [m.get("r", np.nan), m['R2'], m['R2_adj'], m['SSE'], m['AIC'], m['AICc'], m['BIC']]
+                "Metric": ["Full Model", "Correlation (r)", "R-squared", "Adjusted R-squared", "SSE", "AIC", "AICc", "BIC"],
+                "Value": [model_full_label, m.get("r", np.nan), m['R2'], m['R2_adj'], m['SSE'], m['AIC'], m['AICc'], m['BIC']]
             })
             metrics_df.to_excel(writer, sheet_name=f"{model_name}_Metrics", index=False)
 
@@ -618,7 +622,68 @@ TEXTS = {
     "metric_corr": {"en": "Correlation (r)", "pt": "Correlação (r)", "fr": "Corrélation (r)"},
     "phase1_col": {"en": "Phase 1", "pt": "Fase 1", "fr": "Phase 1"},
     "phase1_first_order": {"en": "First-order", "pt": "Primeira ordem", "fr": "Premier ordre"},
-    "phase1_sigmoidal": {"en": "Sigmoidal", "pt": "Sigmoidal", "fr": "Sigmoïdal"}
+    "phase1_sigmoidal": {"en": "Sigmoidal", "pt": "Sigmoidal", "fr": "Sigmoïdal"},
+    "full_model_sigmoidal": {
+        "en": "Sigmoidal ({0})",
+        "pt": "Sigmoidal ({0})",
+        "fr": "Sigmoïdal ({0})"
+    },
+    "full_model_first_order": {
+        "en": "First-order + {0} (phase 1)",
+        "pt": "1ª ordem + {0} (fase 1)",
+        "fr": "Premier ordre + {0} (phase 1)"
+    },
+    "full_model_col": {"en": "Full Model", "pt": "Modelo Completo", "fr": "Modèle Complet"},
+    "fit_standard_header": {
+        "en": "Standard Sigmoidal Fit",
+        "pt": "Ajuste Sigmoidal Padrão",
+        "fr": "Ajustement Sigmoïdal Standard"
+    },
+    "fit_first_order_header": {
+        "en": "Additional Phase-1 First-Order Fit",
+        "pt": "Ajuste Adicional com 1ª Fase de Primeira Ordem",
+        "fr": "Ajustement Supplémentaire avec 1ʳᵉ Phase de Premier Ordre"
+    },
+    "fit_overview_header": {
+        "en": "Fit Overview",
+        "pt": "Visão Geral do Ajuste",
+        "fr": "Aperçu de l’Ajustement"
+    },
+    "details_expander": {
+        "en": "Show detailed parameters and diagnostics",
+        "pt": "Mostrar parâmetros detalhados e diagnósticos",
+        "fr": "Afficher les paramètres détaillés et diagnostics"
+    },
+    "selection_logic_title": {
+        "en": "Automatic Selection Logic",
+        "pt": "Lógica Automática de Seleção",
+        "fr": "Logique de Sélection Automatique"
+    },
+    "selection_logic_body": {
+        "en": "Criterion in use: **{0}**. For each phase count, the best candidate between available structures is selected. Then the final phase count follows the first local minimum rule of the selected criterion.",
+        "pt": "Critério em uso: **{0}**. Para cada número de fases, o melhor candidato entre as estruturas disponíveis é selecionado. Em seguida, o número final de fases segue a regra do primeiro mínimo local do critério selecionado.",
+        "fr": "Critère utilisé : **{0}**. Pour chaque nombre de phases, le meilleur candidat parmi les structures disponibles est sélectionné. Ensuite, le nombre final de phases suit la règle du premier minimum local du critère sélectionné."
+    },
+    "legend_phase_best": {
+        "en": "Green rows: best candidate within each phase count.",
+        "pt": "Linhas verdes: melhor candidato dentro de cada número de fases.",
+        "fr": "Lignes vertes : meilleur candidat pour chaque nombre de phases."
+    },
+    "legend_final_best": {
+        "en": "Blue row: final selected model.",
+        "pt": "Linha azul: modelo final selecionado.",
+        "fr": "Ligne bleue : modèle final sélectionné."
+    },
+    "metrics_marker_sigmoidal": {
+        "en": "Sigmoidal phase-1 structure",
+        "pt": "Estrutura sigmoidal na fase 1",
+        "fr": "Structure sigmoïdale en phase 1"
+    },
+    "metrics_marker_first_order": {
+        "en": "First-order phase-1 structure",
+        "pt": "Estrutura de primeira ordem na fase 1",
+        "fr": "Structure de premier ordre en phase 1"
+    }
 }
 
 COUNTRY_OPTIONS = [
@@ -668,24 +733,32 @@ def build_all_data_df(replicates):
         return pd.DataFrame(columns=["t", "y"])
     return pd.DataFrame(all_data).sort_values("t").reset_index(drop=True)
 
-def choose_better_same_phase_result(res_a, res_b):
+def get_best_candidate_by_phase(results, ic_name):
     """
-    For equal phase count and parameter count, information criteria rankings are monotonic with fit quality.
+    From all candidates (including alternate phase-1 structures), keep the best per phase count.
     """
-    if res_a is None:
-        return res_b
-    if res_b is None:
-        return res_a
-    for metric in ("AICc", "AIC", "BIC", "SSE"):
-        a_val = float(res_a["metrics"].get(metric, np.inf))
-        b_val = float(res_b["metrics"].get(metric, np.inf))
-        if np.isfinite(a_val) and np.isfinite(b_val):
-            return res_a if a_val <= b_val else res_b
-        if np.isfinite(a_val):
-            return res_a
-        if np.isfinite(b_val):
-            return res_b
-    return res_a
+    if not results:
+        return []
+    grouped = {}
+    for r in results:
+        phase_n = int(r["n_phases"])
+        grouped.setdefault(phase_n, []).append(r)
+
+    best_by_phase = []
+    for phase_n in sorted(grouped.keys()):
+        phase_candidates = grouped[phase_n]
+        best_phase = min(
+            phase_candidates,
+            key=lambda x: float(x["metrics"].get(ic_name, np.inf))
+        )
+        best_by_phase.append(best_phase)
+    return best_by_phase
+
+
+def get_full_model_label(res, model_name, lang):
+    if res.get("use_first_order_phase1", False):
+        return TEXTS["full_model_first_order"][lang].format(model_name)
+    return TEXTS["full_model_sigmoidal"][lang].format(model_name)
 
 def should_test_first_order_variant(res, tol=1e-6):
     if not res:
@@ -974,12 +1047,17 @@ def plot_metrics_summary(results_list, model_name, lang):
     aicc = [r['metrics']['AICc'] for r in results_list]
     bic = [r['metrics']['BIC'] for r in results_list]
     r2_adj = [r['metrics']['R2_adj'] for r in results_list]
+    phase1_structure = [bool(r.get("use_first_order_phase1", False)) for r in results_list]
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
 
     ax1.plot(phases, aic, 'o--', label='AIC')
     ax1.plot(phases, aicc, 's-', label='AICc')
     ax1.plot(phases, bic, '^:', label='BIC')
+    for x, y, is_first_order in zip(phases, aicc, phase1_structure):
+        marker = "D" if is_first_order else "o"
+        face = "tab:blue" if is_first_order else "white"
+        ax1.scatter([x], [y], marker=marker, s=70, c=face, edgecolors='black', zorder=5)
     ax1.set_xlabel('Number of Phases')
     ax1.set_ylabel('Value')
     ax1.set_title('Information Criteria')
@@ -987,10 +1065,18 @@ def plot_metrics_summary(results_list, model_name, lang):
     ax1.grid(True, alpha=0.3)
 
     ax2.plot(phases, r2_adj, 'o-', label='Adjusted R²')
+    for x, y, is_first_order in zip(phases, r2_adj, phase1_structure):
+        marker = "D" if is_first_order else "o"
+        face = "tab:blue" if is_first_order else "white"
+        ax2.scatter([x], [y], marker=marker, s=70, c=face, edgecolors='black', zorder=5)
     ax2.set_xlabel('Number of Phases')
     ax2.set_ylabel('Adjusted R²')
     ax2.set_title('Fit Quality')
-    ax2.legend()
+    marker_legend = [
+        Line2D([], [], marker='o', linestyle='None', markerfacecolor='white', markeredgecolor='black', label=TEXTS["metrics_marker_sigmoidal"][lang]),
+        Line2D([], [], marker='D', linestyle='None', markerfacecolor='tab:blue', markeredgecolor='black', label=TEXTS["metrics_marker_first_order"][lang]),
+    ]
+    ax2.legend(handles=ax2.get_legend_handles_labels()[0] + marker_legend)
     ax2.grid(True, alpha=0.3)
     plt.tight_layout()
 
@@ -1005,13 +1091,15 @@ def plot_metrics_summary(results_list, model_name, lang):
     )
     st.pyplot(fig)
 
-def display_single_fit(res, replicates, model_func, color_main, x_label, y_label, param_labels, rate_label, lang):
+def display_single_fit(res, replicates, model_name, model_func, color_main, x_label, y_label, param_labels, rate_label, lang):
     """Displays detailed results for a single fit."""
     n = res['n_phases']
     theta = res['theta']
     se = res['se']
     se_p = res['se_p']
     yi_name, yf_name = param_labels
+    full_model_label = get_full_model_label(res, model_name, lang)
+    phase1_label = TEXTS["phase1_first_order"][lang] if res.get("use_first_order_phase1", False) else TEXTS["phase1_sigmoidal"][lang]
     raw_data_w_outliers = build_all_data_df(replicates)
     outliers_mask = np.asarray(res.get("outliers", np.zeros(len(raw_data_w_outliers), dtype=bool)), dtype=bool)
     if len(outliers_mask) != len(raw_data_w_outliers):
@@ -1128,46 +1216,83 @@ def display_single_fit(res, replicates, model_func, color_main, x_label, y_label
         st.pyplot(fig)
 
     with c_data:
-        df_glob = pd.DataFrame(
-            {
-                TEXTS['table_col_param'][lang]: [yi_name, yf_name], 
-                TEXTS['table_col_val'][lang]: [y_i, y_f], 
-                TEXTS['table_col_se'][lang]: [y_i_se, y_f_se]
-            }
-        )
-        st.dataframe(df_glob.style.format({TEXTS['table_col_val'][lang]: "{:.4f}", TEXTS['table_col_se'][lang]: "{:.4f}"}), hide_index=True)
-
-        rows = []
-        for i, ph in enumerate(phases):
-            rows.append({
-                TEXTS['table_col_phase'][lang]: i + 1,
-                "p": ph['p'],
-                f"{TEXTS['table_col_se'][lang]} p": ph['SE p'],
-                rate_label: ph['r_max'],
-                f"{TEXTS['table_col_se'][lang]} {rate_label}": ph['r_max_se'],
-                "λ": ph['lambda'],
-                f"{TEXTS['table_col_se'][lang]} λ": ph['lambda_se']
-            })
-        st.dataframe(
-            pd.DataFrame(rows).style.format({
-                "p": "{:.4f}",
-                f"{TEXTS['table_col_se'][lang]} p": "{:.4f}",
-                rate_label: "{:.4f}",
-                f"{TEXTS['table_col_se'][lang]} {rate_label}": "{:.4f}",
-                "λ": "{:.4f}",
-                f"{TEXTS['table_col_se'][lang]} λ": "{:.4f}"
-            }),
-            hide_index=True
-        )
-
         m = res['metrics']
-        df_met = pd.DataFrame(
+        def _fmt_mixed(v):
+            if isinstance(v, (int, float, np.integer, np.floating)) and np.isfinite(v):
+                return f"{float(v):.4f}"
+            if isinstance(v, (int, float, np.integer, np.floating)) and not np.isfinite(v):
+                return "N/A"
+            return v
+        st.markdown(f"**{TEXTS['fit_overview_header'][lang]}**")
+        df_overview = pd.DataFrame(
             {
-                TEXTS['table_col_metric'][lang]: [TEXTS['metric_corr'][lang], "R²", "R² Adj", "AIC", "AICc", "BIC"],
-                TEXTS['table_col_value'][lang]: [m.get('r', np.nan), m['R2'], m['R2_adj'], m['AIC'], m['AICc'], m['BIC']]
+                TEXTS['table_col_metric'][lang]: [
+                    TEXTS["full_model_col"][lang],
+                    TEXTS["phase1_col"][lang],
+                    "F",
+                    TEXTS['metric_corr'][lang],
+                    "R²",
+                    "AICc",
+                    "BIC"
+                ],
+                TEXTS['table_col_value'][lang]: [
+                    full_model_label,
+                    phase1_label,
+                    n,
+                    m.get('r', np.nan),
+                    m['R2'],
+                    m['AICc'],
+                    m['BIC']
+                ]
             }
         )
-        st.dataframe(df_met.style.format({TEXTS['table_col_value'][lang]: "{:.4f}"}), hide_index=True)
+        df_overview[TEXTS['table_col_value'][lang]] = df_overview[TEXTS['table_col_value'][lang]].map(_fmt_mixed)
+        st.dataframe(df_overview, hide_index=True, use_container_width=True)
+
+        with st.expander(TEXTS["details_expander"][lang], expanded=False):
+            df_glob = pd.DataFrame(
+                {
+                    TEXTS['table_col_param'][lang]: [yi_name, yf_name, TEXTS["full_model_col"][lang]], 
+                    TEXTS['table_col_val'][lang]: [y_i, y_f, full_model_label], 
+                    TEXTS['table_col_se'][lang]: [y_i_se, y_f_se, np.nan]
+                }
+            )
+            df_glob[TEXTS['table_col_val'][lang]] = df_glob[TEXTS['table_col_val'][lang]].map(_fmt_mixed)
+            df_glob[TEXTS['table_col_se'][lang]] = df_glob[TEXTS['table_col_se'][lang]].map(_fmt_mixed)
+            st.dataframe(df_glob, hide_index=True)
+
+            rows = []
+            for i, ph in enumerate(phases):
+                rows.append({
+                    TEXTS['table_col_phase'][lang]: i + 1,
+                    TEXTS["full_model_col"][lang]: full_model_label,
+                    "p": ph['p'],
+                    f"{TEXTS['table_col_se'][lang]} p": ph['SE p'],
+                    rate_label: ph['r_max'],
+                    f"{TEXTS['table_col_se'][lang]} {rate_label}": ph['r_max_se'],
+                    "λ": ph['lambda'],
+                    f"{TEXTS['table_col_se'][lang]} λ": ph['lambda_se']
+                })
+            st.dataframe(
+                pd.DataFrame(rows).style.format({
+                    "p": "{:.4f}",
+                    f"{TEXTS['table_col_se'][lang]} p": "{:.4f}",
+                    rate_label: "{:.4f}",
+                    f"{TEXTS['table_col_se'][lang]} {rate_label}": "{:.4f}",
+                    "λ": "{:.4f}",
+                    f"{TEXTS['table_col_se'][lang]} λ": "{:.4f}"
+                }),
+                hide_index=True
+            )
+
+            df_met = pd.DataFrame(
+                {
+                    TEXTS['table_col_metric'][lang]: [TEXTS["full_model_col"][lang], TEXTS['metric_corr'][lang], "R²", "R² Adj", "AIC", "AICc", "BIC"],
+                    TEXTS['table_col_value'][lang]: [full_model_label, m.get('r', np.nan), m['R2'], m['R2_adj'], m['AIC'], m['AICc'], m['BIC']]
+                }
+            )
+            df_met[TEXTS['table_col_value'][lang]] = df_met[TEXTS['table_col_value'][lang]].map(_fmt_mixed)
+            st.dataframe(df_met, hide_index=True)
 
 # ==============================================================================
 # 6. MAIN APP
@@ -1432,7 +1557,28 @@ def main():
                                             use_first_order_phase1=False
                                         )
 
-                                        res = res_standard
+                                        if res_standard:
+                                            st.markdown(
+                                                f"**{TEXTS['fit_standard_header'][lang]}** - "
+                                                f"`{get_full_model_label(res_standard, model_name, lang)}`"
+                                            )
+                                            display_single_fit(
+                                                res_standard,
+                                                replicates,
+                                                model_name,
+                                                func,
+                                                color,
+                                                x_axis_label,
+                                                y_axis_label,
+                                                param_labels,
+                                                rate_label,
+                                                lang
+                                            )
+                                            results_list.append(res_standard)
+                                        else:
+                                            st.warning(TEXTS['warning_insufficient'][lang])
+                                            continue
+
                                         if should_test_first_order_variant(res_standard, tol=1e-6):
                                             res_first_order = run_fit_with_outlier_strategy(
                                                 t_flat,
@@ -1445,23 +1591,29 @@ def main():
                                                 rout_q=rout_q,
                                                 use_first_order_phase1=True
                                             )
-                                            res = choose_better_same_phase_result(res_standard, res_first_order)
-
-                                        if res:
-                                            display_single_fit(
-                                                res,
-                                                replicates,
-                                                func,
-                                                color,
-                                                x_axis_label,
-                                                y_axis_label,
-                                                param_labels,
-                                                rate_label,
-                                                lang
-                                            )
-                                            results_list.append(res)
+                                            if res_first_order:
+                                                st.markdown(
+                                                    f"**{TEXTS['fit_first_order_header'][lang]}** - "
+                                                    f"`{get_full_model_label(res_first_order, model_name, lang)}`"
+                                                )
+                                                display_single_fit(
+                                                    res_first_order,
+                                                    replicates,
+                                                    model_name,
+                                                    func,
+                                                    color,
+                                                    x_axis_label,
+                                                    y_axis_label,
+                                                    param_labels,
+                                                    rate_label,
+                                                    lang
+                                                )
+                                                results_list.append(res_first_order)
+                                            else:
+                                                st.warning(TEXTS['warning_insufficient'][lang])
                                         else:
-                                            st.warning(TEXTS['warning_insufficient'][lang])
+                                            # Keep behavior explicit: no first-order additional fit when lambda_1 is not zero.
+                                            pass
 
                             if results_list:
                                 st.markdown(f"### {TEXTS['table_title'][lang]}")
@@ -1470,18 +1622,22 @@ def main():
                                 k_values = [len(r['theta']) for r in results_list]
                                 k_min, k_max = min(k_values), max(k_values)
                                 ic_name = choose_information_criterion(N, k_max)
+                                st.markdown(f"#### {TEXTS['selection_logic_title'][lang]}")
+                                st.info(TEXTS["selection_logic_body"][lang].format(ic_name))
 
-                                ic_values = [r['metrics'][ic_name] for r in results_list]
+                                best_by_phase = get_best_candidate_by_phase(results_list, ic_name)
+                                ic_values = [r['metrics'][ic_name] for r in best_by_phase]
                                 best_idx = select_first_local_min_index(ic_values)
-                                best_n = results_list[best_idx]['n_phases']
-                                
-                                best_results_global[model_name] = results_list[best_idx]
+                                best_n = best_by_phase[best_idx]['n_phases']
+                                best_results_global[model_name] = best_by_phase[best_idx]
+                                best_final_full_label = get_full_model_label(best_by_phase[best_idx], model_name, lang)
 
                                 summary_data = []
-                                for i, r in enumerate(results_list):
+                                for r in results_list:
                                     m = r['metrics']
                                     summary_data.append({
                                         "F": r['n_phases'],
+                                        TEXTS["full_model_col"][lang]: get_full_model_label(r, model_name, lang),
                                         TEXTS['metric_corr'][lang]: m.get('r', np.nan),
                                         "R²": m['R2'],
                                         "R² Adj": m['R2_adj'],
@@ -1494,13 +1650,30 @@ def main():
                                             if r.get("use_first_order_phase1", False)
                                             else TEXTS["phase1_sigmoidal"][lang]
                                         ),
-                                        TEXTS['summary_header_used'][lang].format(ic_name): ic_values[i]
+                                        TEXTS['summary_header_used'][lang].format(ic_name): m[ic_name]
                                     })
 
                                 summary_df = pd.DataFrame(summary_data)
 
+                                best_phase_ic = {
+                                    int(r["n_phases"]): float(r["metrics"][ic_name]) for r in best_by_phase
+                                }
+                                best_final_phase = int(best_n)
+                                best_final_ic = float(best_by_phase[best_idx]["metrics"][ic_name])
+
                                 def highlight_row(row):
-                                    if row['F'] == best_n:
+                                    row_phase = int(row["F"])
+                                    row_ic = float(row[TEXTS['summary_header_used'][lang].format(ic_name)])
+                                    row_model = str(row[TEXTS["full_model_col"][lang]])
+                                    is_phase_best = row_phase in best_phase_ic and abs(row_ic - best_phase_ic[row_phase]) <= 1e-12
+                                    is_final = (
+                                        row_phase == best_final_phase
+                                        and abs(row_ic - best_final_ic) <= 1e-12
+                                        and row_model == best_final_full_label
+                                    )
+                                    if is_final:
+                                        return ['background-color: #d7e8ff; font-weight: bold; border: 2px solid #0d6efd'] * len(row)
+                                    if is_phase_best:
                                         return ['background-color: #d4edda; font-weight: bold'] * len(row)
                                     return [''] * len(row)
 
@@ -1517,6 +1690,8 @@ def main():
                                     }),
                                     hide_index=True
                                 )
+                                st.caption(f"🟩 {TEXTS['legend_phase_best'][lang]}")
+                                st.caption(f"🟦 {TEXTS['legend_final_best'][lang]}")
 
                                 st.info(
                                     TEXTS['info_selection_criteria'][lang].format(ic_name, N, k_min, k_max, N / k_max, best_n)
@@ -1527,7 +1702,7 @@ def main():
                                 )
 
                                 st.markdown(f"### {TEXTS['graph_summary_title'][lang]}")
-                                plot_metrics_summary(results_list, model_name, lang)
+                                plot_metrics_summary(best_by_phase, model_name, lang)
 
                     # --- FINAL SUMMARY GRAPH (Appears after tabs) ---
                     st.divider()
@@ -1536,7 +1711,7 @@ def main():
                     # --- EXCEL EXPORT BUTTON ---
                     # Placed at the very end of the analysis so users can grab everything at once
                     st.divider()
-                    excel_data = generate_excel_report(best_results_global, replicates, param_labels, rate_label)
+                    excel_data = generate_excel_report(best_results_global, replicates, param_labels, rate_label, lang)
                     
                     col1, col2, col3 = st.columns([1, 2, 1])
                     with col2:
