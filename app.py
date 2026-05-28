@@ -1211,7 +1211,7 @@ def display_single_fit(res, replicates, model_name, model_func, color_main, x_la
             data=buf.getvalue(),
             file_name=f"plot_{n}_phases.svg",
             mime="image/svg+xml",
-            key=f"dl_btn_{model_func.__name__}_{n}"
+            key=f"dl_btn_{model_func.__name__}_{n}_{'firstorder' if res.get('use_first_order_phase1', False) else 'standard'}"
         )
         st.pyplot(fig)
 
