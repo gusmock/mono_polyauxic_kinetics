@@ -395,7 +395,8 @@ def fit_model_auto_robust_pre(
     n_phases,
     force_yi=False,
     force_yf=False,
-    use_first_order_phase1=False
+    use_first_order_phase1=False,
+    random_seed=42
 ):
     """
     Robust pre-fit (Soft L1) used exclusively for outlier detection baseline.
@@ -403,8 +404,7 @@ def fit_model_auto_robust_pre(
     to robustly search for global optima while minimizing the influence of potential 
     [cite_start]experimental outliers[cite: 860, 911, 914].
     """
-    SEED_VALUE = 42
-    np.random.seed(SEED_VALUE)
+    rng = np.random.default_rng(random_seed)
 
     n_params = 2 + 3 * n_phases
     if len(t_data) <= n_params:
@@ -433,10 +433,10 @@ def fit_model_auto_robust_pre(
     init_pop = np.tile(theta0_norm, (pop_size, 1))
     
     # 1. Multiplicative variance for non-zero parameters
-    init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
+    init_pop *= rng.uniform(0.8, 1.2, init_pop.shape)
     
     # 2. Additive variance for 'z' parameters to avoid zero-trap
-    init_pop[:, 2 : 2 + n_phases] = np.random.uniform(-2.0, 2.0, size=(pop_size, n_phases))
+    init_pop[:, 2 : 2 + n_phases] = rng.uniform(-2.0, 2.0, size=(pop_size, n_phases))
 
     if force_yi:
         init_pop[:, 0] = 0.0
@@ -470,7 +470,7 @@ def fit_model_auto_robust_pre(
         popsize=pop_size,
         init=init_pop,
         strategy='best1bin',
-        seed=SEED_VALUE,
+        seed=random_seed,
         polish=True,
         tol=1e-6
     )
@@ -505,7 +505,8 @@ def fit_model_auto(
     n_phases,
     force_yi=False,
     force_yf=False,
-    use_first_order_phase1=False
+    use_first_order_phase1=False,
+    random_seed=42
 ):
     """
     Final fitting function (Least Squares) on clean data.
@@ -513,8 +514,7 @@ def fit_model_auto(
     [cite_start]Residual Sum of Squares (RSS) on the valid data[cite: 921]. It then computes 
     [cite_start]metrics like AIC, AICc, and BIC to evaluate model parsimony[cite: 955, 963].
     """
-    SEED_VALUE = 42
-    np.random.seed(SEED_VALUE)
+    rng = np.random.default_rng(random_seed)
 
     n_params = 2 + 3 * n_phases
     if len(t_data) <= n_params:
@@ -543,10 +543,10 @@ def fit_model_auto(
     init_pop = np.tile(theta0_norm, (pop_size, 1))
     
     # 1. Multiplicative variance for non-zero parameters
-    init_pop *= np.random.uniform(0.8, 1.2, init_pop.shape)
+    init_pop *= rng.uniform(0.8, 1.2, init_pop.shape)
     
     # 2. Additive variance for 'z' parameters to avoid zero-trap
-    init_pop[:, 2 : 2 + n_phases] = np.random.uniform(-2.0, 2.0, size=(pop_size, n_phases))
+    init_pop[:, 2 : 2 + n_phases] = rng.uniform(-2.0, 2.0, size=(pop_size, n_phases))
 
     if force_yi:
         init_pop[:, 0] = 0.0
@@ -580,7 +580,7 @@ def fit_model_auto(
         popsize=pop_size,
         init=init_pop,
         strategy='best1bin',
-        seed=SEED_VALUE,
+        seed=random_seed,
         polish=True,
         tol=1e-6
     )
@@ -704,7 +704,8 @@ def fit_model_pipeline(
     force_yi=False,
     force_yf=False,
     Q=1.0,
-    use_first_order_phase1=False
+    use_first_order_phase1=False,
+    random_seed=42
 ):
     """
     Orchestrates the entire fit, enforcing the hybrid workflow:
@@ -724,7 +725,8 @@ def fit_model_pipeline(
         n_phases,
         force_yi,
         force_yf,
-        use_first_order_phase1=use_first_order_phase1
+        use_first_order_phase1=use_first_order_phase1,
+        random_seed=random_seed
     )
     if res_robust is None:
         return None
@@ -752,7 +754,8 @@ def fit_model_pipeline(
         n_phases,
         force_yi,
         force_yf,
-        use_first_order_phase1=use_first_order_phase1
+        use_first_order_phase1=use_first_order_phase1,
+        random_seed=random_seed
     )
     if final_results is None:
         return None
