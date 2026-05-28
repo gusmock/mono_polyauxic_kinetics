@@ -19,12 +19,6 @@ from copy import deepcopy
 # from streamlit.web.server.websocket_headers import _get_websocket_headers ###Outdated
 import uuid
 
-try:
-    from streamlit_tour import Tour
-    TOUR_AVAILABLE = True
-except Exception:
-    TOUR_AVAILABLE = False
-
 # Import Core Logic from your separated file
 from polyauxic_core import (
     boltzmann_term_eq31,
@@ -708,6 +702,11 @@ TEXTS = {
         "pt": "Título do eixo Y (aceita LaTeX; vazio = padrão)",
         "fr": "Titre de l’axe Y (LaTeX accepté; vide = défaut)"
     },
+    "axis_math_hint": {
+        "en": "Superscript examples: lambda^2, λ^2, \\lambda^2, or $\\lambda^2$.",
+        "pt": "Exemplos de sobrescrito: lambda^2, λ^2, \\lambda^2 ou $\\lambda^2$.",
+        "fr": "Exemples d’exposant : lambda^2, λ^2, \\lambda^2 ou $\\lambda^2$."
+    },
     "default_y_label": {"en": "Response (y)", "pt": "Resposta (y)", "fr": "Réponse (y)"},
     "metric_corr": {"en": "Correlation (r)", "pt": "Correlação (r)", "fr": "Corrélation (r)"},
     "phase1_col": {"en": "Phase 1", "pt": "Fase 1", "fr": "Phase 1"},
@@ -784,11 +783,10 @@ TEXTS = {
         "pt": "Estrutura de primeira ordem na fase 1",
         "fr": "Structure de premier ordre en phase 1"
     },
-    "tour_button": {"en": "Start Guided Tour", "pt": "Iniciar Tour Guiado", "fr": "Démarrer la Visite Guidée"},
-    "tour_unavailable": {
-        "en": "Guided tour component is unavailable. Add `streamlit_tour` to requirements.",
-        "pt": "Componente de tour guiado indisponível. Adicione `streamlit_tour` aos requirements.",
-        "fr": "Le composant de visite guidée est indisponible. Ajoutez `streamlit_tour` aux requirements."
+    "main_section_adjustments_results": {
+        "en": "Adjustments and Results",
+        "pt": "Ajustes e Resultados",
+        "fr": "Ajustements et Résultats"
     },
     "graphic_options_header": {"en": "Graphic Options", "pt": "Opções de Gráficos", "fr": "Options Graphiques"},
     "main_language_label": {"en": "Language", "pt": "Idioma", "fr": "Langue"}
@@ -875,6 +873,114 @@ def style_axes_fonts(ax, font_name=None):
     if leg:
         for txt in leg.get_texts():
             txt.set_fontname(font_name)
+
+def normalize_axis_math_label(label_text):
+    """
+    Accepts user-friendly axis text and converts common superscript inputs
+    to Matplotlib mathtext, e.g. lambda^2, lambdaˆ2, λ^2, <sup>2</sup>.
+    """
+    text = str(label_text or "").strip()
+    if not text:
+        return text
+
+    # Common copy/paste variants seen in UI input.
+    text = text.replace("ˆ", "^")
+    text = re.sub(r"(?is)<\s*sup\s*>(.*?)<\s*/\s*sup\s*>", r"^\1", text)
+
+    def _to_unicode_superscript(exp_txt):
+        superscript_map = {
+            "0": "⁰",
+            "1": "¹",
+            "2": "²",
+            "3": "³",
+            "4": "⁴",
+            "5": "⁵",
+            "6": "⁶",
+            "7": "⁷",
+            "8": "⁸",
+            "9": "⁹",
+            "+": "⁺",
+            "-": "⁻",
+        }
+        converted = "".join(superscript_map.get(ch, ch) for ch in exp_txt)
+        return converted
+
+    def _convert_compact_unit_exponents(raw_text):
+        # Converts unit-style tokens such as m2, m-2, cm3, h-1 to Unicode superscript.
+        # Restrict base length to avoid changing ordinary words like "phase2".
+        unit_pattern = re.compile(r"\b([A-Za-zµμΩωα-ωΑ-Ω]{1,4})([-+]?\d+)\b")
+
+        def _repl(match):
+            base = match.group(1)
+            exponent = match.group(2)
+            return f"{base}{_to_unicode_superscript(exponent)}"
+
+        return unit_pattern.sub(_repl, raw_text)
+
+    text = _convert_compact_unit_exponents(text)
+
+    # If user already provided mathtext, keep it unchanged.
+    if "$" in text:
+        return text
+
+    has_math_hint = ("^" in text) or ("_" in text) or any(ch in text for ch in ("λ", "μ", "σ", "θ", "φ", "ω"))
+    has_greek_word = re.search(
+        r"\b(lambda|alpha|beta|gamma|delta|epsilon|mu|sigma|theta|phi|omega)\b",
+        text,
+        flags=re.IGNORECASE
+    ) is not None
+    if not (has_math_hint or has_greek_word):
+        return text
+
+    # Replace common Greek names/symbols with mathtext commands.
+    greek_symbols = {
+        "λ": r"\lambda",
+        "μ": r"\mu",
+        "σ": r"\sigma",
+        "θ": r"\theta",
+        "φ": r"\phi",
+        "ω": r"\omega",
+        "α": r"\alpha",
+        "β": r"\beta",
+        "γ": r"\gamma",
+        "δ": r"\delta",
+        "ε": r"\epsilon",
+    }
+    for symbol, latex_cmd in greek_symbols.items():
+        text = text.replace(symbol, latex_cmd)
+
+    greek_words = {
+        "lambda": r"\lambda",
+        "alpha": r"\alpha",
+        "beta": r"\beta",
+        "gamma": r"\gamma",
+        "delta": r"\delta",
+        "epsilon": r"\epsilon",
+        "mu": r"\mu",
+        "sigma": r"\sigma",
+        "theta": r"\theta",
+        "phi": r"\phi",
+        "omega": r"\omega",
+    }
+    for word, latex_cmd in greek_words.items():
+        text = re.sub(
+            rf"\b{word}\b",
+            lambda _m, rep=latex_cmd: rep,
+            text,
+            flags=re.IGNORECASE
+        )
+
+    # Convert compact exponent after Greek names too (e.g., lambda2 -> lambda^2).
+    text = re.sub(
+        r"(\\(?:lambda|alpha|beta|gamma|delta|epsilon|mu|sigma|theta|phi|omega))([-+]?\d+)\b",
+        r"\1^\2",
+        text
+    )
+
+    # Normalize simple exponents like ^2, ^-1, ^10 to brace form.
+    text = re.sub(r"\^(-?\d+)", r"^{\1}", text)
+
+    return f"${text}$"
 
 def build_all_data_df(replicates):
     all_data = []
@@ -1328,79 +1434,6 @@ def render_access_gate():
     render_developer_footer_card()
     st.stop()
 
-def render_guided_tour_control(lang):
-    st.sidebar.markdown("---")
-    if st.sidebar.button(TEXTS["tour_button"][lang], key="tour_start_button"):
-        if not TOUR_AVAILABLE:
-            st.sidebar.info(TEXTS["tour_unavailable"][lang])
-            return
-        st.session_state["tour_pending"] = True
-        st.rerun()
-
-def start_guided_tour_if_pending(include_run_button=False):
-    if not st.session_state.get("tour_pending", False):
-        return
-    if not TOUR_AVAILABLE:
-        st.sidebar.info(TEXTS["tour_unavailable"][st.session_state.get("lang", "en")])
-        st.session_state["tour_pending"] = False
-        return
-
-    steps = [
-        Tour.info(
-            title="Welcome",
-            desc="This tour explains the main controls to run and compare phase-structure fits."
-        ),
-        Tour.bind(
-            "data_file_uploader",
-            title="Upload data file",
-            desc="Upload CSV/XLSX with time-response column pairs."
-        ),
-        Tour.bind(
-            "max_phases_input",
-            title="Phase range",
-            desc="Choose the maximum number of phases to test."
-        ),
-        Tour.bind(
-            "outlier_method_selector",
-            title="Outlier strategy",
-            desc="Pick no removal, simple MAD, or rigorous ROUT."
-        ),
-        Tour.bind(
-            "seed_mode_selector",
-            title="Seed mode",
-            desc="Use fixed seed (42) for reproducibility or random seed for exploratory runs."
-        ),
-        Tour.bind(
-            "plot_font_selector",
-            title="Plot style",
-            desc="Set chart font and visual consistency across exported figures."
-        ),
-        Tour.bind(
-            "force_yi_checkbox",
-            title="Optional constraints",
-            desc="Apply optional constraints for y_i and y_f when biologically justified."
-        ),
-    ]
-    if include_run_button:
-        steps.append(
-            Tour.bind(
-                "run_analysis_button",
-                title="Run analysis",
-                desc="Start fitting. Each phase may show standard and additional first-order structures."
-            )
-        )
-
-    try:
-        # Preferred API in recent streamlit_tour releases.
-        Tour.start(steps=steps)
-    except TypeError:
-        # Backward-compat fallback.
-        Tour(steps=steps).start()
-    except Exception as exc:
-        st.sidebar.warning(f"Guided tour failed to start: {exc}")
-    finally:
-        st.session_state["tour_pending"] = False
-
 # ==============================================================================
 # 4. VISUALIZATION & APP STRUCTURE
 # ==============================================================================
@@ -1762,12 +1795,9 @@ def main():
     lang = LANGUAGES[main_lang_key]
     st.session_state["lang"] = lang
     st.session_state["gate_lang_selector"] = main_lang_key
-    render_guided_tour_control(lang)
 
     st.title(TEXTS['app_title'][lang])
-
-    # Intro and Instructions
-    st.info(TEXTS['intro_desc'][lang])
+    st.markdown(f"### {TEXTS['main_section_adjustments_results'][lang]}")
 
     # --- REFERENCES SECTION WITH FULL METRICS SUITE ---
     ref_header_text = TEXTS['paper_ref'][lang]
@@ -1877,12 +1907,6 @@ def main():
     </html>
     """
     
-    render_html_iframe(badge_html, height=350)
-    
-    with st.expander(TEXTS['instructions_header'][lang], expanded=False):
-        st.markdown(TEXTS['instructions_list'][lang])
-    st.markdown("---")
-
     # Main Analysis Interface Sidebar
     st.sidebar.header(TEXTS['sidebar_config'][lang])
     param_labels = ("y_i", "y_f")
@@ -1966,10 +1990,9 @@ def main():
         on_change=reset_analysis,
         key="axis_y_custom"
     )
-    x_axis_label = x_title_custom.strip() if str(x_title_custom).strip() else default_x_label
-    y_axis_label = y_title_custom.strip() if str(y_title_custom).strip() else default_y_label
-    tour_include_run_button = False
-
+    st.sidebar.caption(TEXTS["axis_math_hint"][lang])
+    x_axis_label = normalize_axis_math_label(x_title_custom) if str(x_title_custom).strip() else default_x_label
+    y_axis_label = normalize_axis_math_label(y_title_custom) if str(y_title_custom).strip() else default_y_label
     if file:
         try:
             if file.name.endswith(".csv"):
@@ -1995,7 +2018,6 @@ def main():
                     else:
                         st.session_state.run_seed = random.randint(0, 2_147_483_647)
                     st.session_state.analysis_run = True
-                tour_include_run_button = True
 
                 # ==========================================================
                 # ANALYSIS EXECUTION BLOCK (Managed by Session State)
@@ -2218,7 +2240,12 @@ def main():
             st.error(TEXTS['error_proc'][lang].format(e))
     else:
         st.info(TEXTS['info_upload'][lang])
-    start_guided_tour_if_pending(include_run_button=tour_include_run_button)
+
+    st.markdown("---")
+    st.info(TEXTS['intro_desc'][lang])
+    with st.expander(TEXTS['instructions_header'][lang], expanded=False):
+        st.markdown(TEXTS['instructions_list'][lang])
+    render_html_iframe(badge_html, height=350)
 
 if __name__ == "__main__":
     main()
