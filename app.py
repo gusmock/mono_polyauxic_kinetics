@@ -1,13 +1,14 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib import font_manager as fm
 import io
 import os
 import hashlib
 import socket
+import base64
 from datetime import datetime
 import re
 import random
@@ -260,6 +261,12 @@ def save_uploaded_data(df, user_profile=None):
     except Exception as e:
         st.warning(f"Failed to save local backup file. Process will continue. Error: {e}")
 
+
+def render_html_iframe(html_content, height=300, scrolling=False):
+    """Render inline HTML with st.iframe (replacement for deprecated components.html)."""
+    encoded_html = base64.b64encode(str(html_content).encode("utf-8")).decode("ascii")
+    st.iframe(f"data:text/html;base64,{encoded_html}", height=height, scrolling=scrolling)
+
 # ==============================================================================
 # EXCEL EXPORT UTILITY
 # ==============================================================================
@@ -324,12 +331,13 @@ def generate_excel_report(best_results_global, replicates, param_labels, rate_la
                     "Full Model": model_full_label,
                     "p ± SE": _fmt_pm_excel(p[i], se_p[i]),
                     f"{rate_label} ± SE": _fmt_pm_excel(r_max[i], r_max_se[i]),
-                    "lambda ± SE": _fmt_pm_excel(lambda_[i], lambda_se[i])
+                    "lambda ± SE": _fmt_pm_excel(lambda_[i], lambda_se[i]),
+                    "_lambda_order": float(lambda_[i]) if np.isfinite(lambda_[i]) else np.inf
                 })
             
             phase_df = pd.DataFrame(phase_data)
             # Sort phases sequentially by lambda (lag time)
-            phase_df = phase_df.sort_values(by="Lag Phase (lambda)").reset_index(drop=True)
+            phase_df = phase_df.sort_values(by="_lambda_order").drop(columns=["_lambda_order"]).reset_index(drop=True)
             phase_df.to_excel(writer, sheet_name=f"{model_name}_Phases", index=False)
             
             # --- Statistics & Metrics Sheet ---
@@ -347,10 +355,23 @@ def generate_excel_report(best_results_global, replicates, param_labels, rate_la
 # 0. CONFIGURATION & GLOBAL SETTINGS
 # ==============================================================================
 
-# Global Plot Style - Academic Standard (Times New Roman 11)
+# Resolve fonts from what is actually installed in the runtime to avoid noisy findfont warnings.
+AVAILABLE_MPL_FONT_NAMES = {font.name for font in fm.fontManager.ttflist}
+
+def _first_available_font(candidates):
+    for candidate in candidates:
+        if candidate in AVAILABLE_MPL_FONT_NAMES:
+            return candidate
+    return None
+
+DEFAULT_PLOT_FONT = _first_available_font(["DejaVu Serif", "DejaVu Sans", "Arial", "Calibri", "Verdana"]) or "DejaVu Sans"
+DEFAULT_SANS_FONT = _first_available_font(["DejaVu Sans", "Arial", "Calibri", "Verdana"]) or DEFAULT_PLOT_FONT
+DEFAULT_SERIF_FONT = _first_available_font(["DejaVu Serif", "Book Antiqua", "Bookman Old Style", DEFAULT_PLOT_FONT]) or DEFAULT_PLOT_FONT
+
 plt.rcParams.update({
-    'font.family': 'serif',
-    'font.serif': ['Times New Roman', 'DejaVu Serif', 'serif'],
+    'font.family': DEFAULT_SERIF_FONT,
+    'font.sans-serif': [DEFAULT_SANS_FONT, 'DejaVu Sans', 'sans-serif'],
+    'font.serif': [DEFAULT_SERIF_FONT, 'DejaVu Serif', 'serif'],
     'font.size': 11,
     'axes.labelsize': 11,
     'xtick.labelsize': 11,
@@ -759,23 +780,34 @@ COUNTRY_OPTIONS = [
     "Vietnam", "Other"
 ]
 
-PLOT_FONT_OPTIONS = [
-    "Times New Roman",
-    "Arial",
-    "Calibri",
+_BASE_PLOT_FONT_OPTIONS = [
     "DejaVu Serif",
     "DejaVu Sans",
+    "Arial",
+    "Calibri",
     "Book Antiqua",
     "Bookman Old Style",
-    "Verdana"
+    "Verdana",
+    "Times New Roman"
 ]
+PLOT_FONT_OPTIONS = [font for font in _BASE_PLOT_FONT_OPTIONS if font in AVAILABLE_MPL_FONT_NAMES]
+if DEFAULT_PLOT_FONT not in PLOT_FONT_OPTIONS:
+    PLOT_FONT_OPTIONS.insert(0, DEFAULT_PLOT_FONT)
+if DEFAULT_PLOT_FONT in PLOT_FONT_OPTIONS:
+    PLOT_FONT_OPTIONS = [DEFAULT_PLOT_FONT] + [font for font in PLOT_FONT_OPTIONS if font != DEFAULT_PLOT_FONT]
+
+def resolve_plot_font(font_name):
+    candidate = str(font_name or "").strip()
+    if candidate in AVAILABLE_MPL_FONT_NAMES:
+        return candidate
+    return DEFAULT_PLOT_FONT
 
 def apply_plot_font(font_name):
-    selected = font_name if font_name in PLOT_FONT_OPTIONS else "Times New Roman"
+    selected = resolve_plot_font(font_name if font_name in PLOT_FONT_OPTIONS else DEFAULT_PLOT_FONT)
     plt.rcParams.update({
         "font.family": selected,
-        "font.sans-serif": [selected, "DejaVu Sans", "Arial", "sans-serif"],
-        "font.serif": [selected, "DejaVu Serif", "Times New Roman", "serif"],
+        "font.sans-serif": [selected, DEFAULT_SANS_FONT, "DejaVu Sans", "sans-serif"],
+        "font.serif": [selected, DEFAULT_SERIF_FONT, "DejaVu Serif", "serif"],
         "font.size": 11,
         "axes.labelsize": 11,
         "xtick.labelsize": 11,
@@ -786,11 +818,11 @@ def apply_plot_font(font_name):
     })
 
 def get_current_plot_font():
-    selected = st.session_state.get("plot_font_selector", PLOT_FONT_OPTIONS[0])
-    return selected if selected in PLOT_FONT_OPTIONS else PLOT_FONT_OPTIONS[0]
+    selected = st.session_state.get("plot_font_selector", DEFAULT_PLOT_FONT)
+    return resolve_plot_font(selected)
 
 def style_axes_fonts(ax, font_name=None):
-    font_name = font_name or get_current_plot_font()
+    font_name = resolve_plot_font(font_name or get_current_plot_font())
     if ax.get_title():
         ax.set_title(ax.get_title(), fontname=font_name)
     ax.set_xlabel(ax.get_xlabel(), fontname=font_name)
@@ -1069,7 +1101,7 @@ def render_developer_footer_card():
         </div>
     </div>
     """
-    components.html(footer_css + footer_html, height=280, scrolling=False)
+    render_html_iframe(footer_css + footer_html, height=280, scrolling=False)
 
 def render_access_gate():
     """
@@ -1081,8 +1113,17 @@ def render_access_gate():
     if "access_granted" not in st.session_state:
         st.session_state.access_granted = False
 
-    left_top, right_top = st.columns([6, 1])
-    with right_top:
+    if st.session_state.access_granted:
+        lang_key = st.session_state.get("gate_lang_selector", list(LANGUAGES.keys())[0])
+        lang = LANGUAGES.get(lang_key, "en")
+        st.session_state["lang"] = lang
+        return lang
+
+    title_col, lang_col = st.columns([6, 1])
+    with title_col:
+        current_gate_lang = LANGUAGES.get(st.session_state.get("gate_lang_selector", list(LANGUAGES.keys())[0]), "en")
+        st.title(TEXTS["onboarding_title"][current_gate_lang])
+    with lang_col:
         lang_key = st.selectbox(
             "Language / Idioma / Langue",
             list(LANGUAGES.keys()),
@@ -1092,10 +1133,6 @@ def render_access_gate():
     lang = LANGUAGES[lang_key]
     st.session_state["lang"] = lang
 
-    if st.session_state.access_granted:
-        return lang
-
-    st.title(TEXTS["onboarding_title"][lang])
     st.info(TEXTS["onboarding_subtitle"][lang])
     st.caption(TEXTS["data_use_notice"][lang])
     pending_profile = st.session_state.get("pending_profile", {})
@@ -1125,8 +1162,9 @@ def render_access_gate():
             st.text_input(TEXTS["form_last_name"][lang], key="gate_last_name")
             st.text_input(TEXTS["form_institution"][lang], key="gate_institution")
             country_value = st.session_state.get("gate_country", "Other")
-            default_country_idx = COUNTRY_OPTIONS.index(country_value) if country_value in COUNTRY_OPTIONS else COUNTRY_OPTIONS.index("Other")
-            st.selectbox(TEXTS["form_country"][lang], COUNTRY_OPTIONS, index=default_country_idx, key="gate_country")
+            if country_value not in COUNTRY_OPTIONS:
+                st.session_state["gate_country"] = "Other"
+            st.selectbox(TEXTS["form_country"][lang], COUNTRY_OPTIONS, key="gate_country")
             st.text_area(TEXTS["form_description"][lang], key="gate_experiment_description")
             st.checkbox(TEXTS["contact_opt_out"][lang], key="gate_contact_opt_out")
 
@@ -1184,7 +1222,7 @@ def render_access_gate():
                 return True
 
             if known_email:
-                if st.button(TEXTS["enter_button"][lang], use_container_width=True, key="gate_enter_btn"):
+                if st.button(TEXTS["enter_button"][lang], width="stretch", key="gate_enter_btn"):
                     profile = _build_profile_from_gate()
                     if not _validate_required_profile(profile):
                         st.error(TEXTS["required_fields_error"][lang])
@@ -1199,7 +1237,7 @@ def render_access_gate():
                     st.rerun()
             else:
                 if not awaiting_code:
-                    if st.button(TEXTS["otp_send_button"][lang], use_container_width=True, key="gate_send_otp_btn"):
+                    if st.button(TEXTS["otp_send_button"][lang], width="stretch", key="gate_send_otp_btn"):
                         profile = _build_profile_from_gate()
                         if not _validate_required_profile(profile):
                             st.error(TEXTS["required_fields_error"][lang])
@@ -1224,7 +1262,7 @@ def render_access_gate():
                         st.rerun()
                 else:
                     st.text_input(TEXTS["otp_code_label"][lang], key="gate_otp_input")
-                    if st.button(TEXTS["verify_enter_button"][lang], use_container_width=True, key="gate_verify_enter_btn"):
+                    if st.button(TEXTS["verify_enter_button"][lang], width="stretch", key="gate_verify_enter_btn"):
                         otp_input = str(st.session_state.get("gate_otp_input", "")).strip()
                         otp_hash = hashlib.sha256(otp_input.encode("utf-8")).hexdigest()
                         not_expired = datetime.now().timestamp() <= float(st.session_state.get("pending_otp_expires", 0))
@@ -1290,14 +1328,22 @@ def render_guided_tour_control(lang):
                 title="Optional constraints",
                 desc="Apply optional constraints for y_i and y_f when biologically justified."
             ),
-            Tour.bind(
-                key="run_analysis_button",
-                title="Run analysis",
-                desc="Start fitting. Each phase may show standard and additional first-order structures."
-            ),
         ]
 
-        Tour(steps=steps).start()
+        data_uploaded = st.session_state.get("data_file_uploader") is not None
+        if data_uploaded:
+            steps.append(
+                Tour.bind(
+                    key="run_analysis_button",
+                    title="Run analysis",
+                    desc="Start fitting. Each phase may show standard and additional first-order structures."
+                )
+            )
+
+        try:
+            Tour(steps=steps).start()
+        except Exception as exc:
+            st.sidebar.warning(f"Guided tour failed to start: {exc}")
 
 # ==============================================================================
 # 4. VISUALIZATION & APP STRUCTURE
@@ -1579,7 +1625,7 @@ def display_single_fit(res, replicates, model_name, model_func, color_main, x_la
             }
         )
         df_overview[TEXTS['table_col_value'][lang]] = df_overview[TEXTS['table_col_value'][lang]].map(_fmt_mixed)
-        st.dataframe(df_overview, hide_index=True, use_container_width=True)
+        st.dataframe(df_overview, hide_index=True, width="stretch")
 
     with st.expander(TEXTS["details_expander"][lang], expanded=False):
         def _fmt_pm(v, se_v):
@@ -1591,21 +1637,19 @@ def display_single_fit(res, replicates, model_name, model_func, color_main, x_la
 
         df_glob = pd.DataFrame(
             {
-                TEXTS['table_col_param'][lang]: [yi_name, yf_name, TEXTS["full_model_col"][lang]],
+                TEXTS['table_col_param'][lang]: [yi_name, yf_name],
                 f"{TEXTS['table_col_value'][lang]} ± {TEXTS['table_col_se'][lang]}": [
                     _fmt_pm(y_i, y_i_se),
-                    _fmt_pm(y_f, y_f_se),
-                    full_model_label
+                    _fmt_pm(y_f, y_f_se)
                 ]
             }
         )
-        st.dataframe(df_glob, hide_index=True, use_container_width=True)
+        st.dataframe(df_glob, hide_index=True, width="stretch")
 
         rows = []
         for i, ph in enumerate(phases):
             rows.append({
                 TEXTS['table_col_phase'][lang]: i + 1,
-                TEXTS["full_model_col"][lang]: full_model_label,
                 "p ± SE": _fmt_pm(ph['p'], ph['SE p']),
                 f"{rate_label} ± {TEXTS['table_col_se'][lang]}": _fmt_pm(ph['r_max'], ph['r_max_se']),
                 "λ ± SE": _fmt_pm(ph['lambda'], ph['lambda_se'])
@@ -1613,7 +1657,7 @@ def display_single_fit(res, replicates, model_name, model_func, color_main, x_la
         st.dataframe(
             pd.DataFrame(rows),
             hide_index=True,
-            use_container_width=True
+            width="stretch"
         )
 
 # ==============================================================================
@@ -1649,6 +1693,8 @@ def main():
     )
     lang = LANGUAGES[main_lang_key]
     st.session_state["lang"] = lang
+    st.session_state["gate_lang_selector"] = main_lang_key
+    render_guided_tour_control(lang)
 
     st.title(TEXTS['app_title'][lang])
 
@@ -1760,7 +1806,7 @@ def main():
     </html>
     """
     
-    components.html(badge_html, height=350)
+    render_html_iframe(badge_html, height=350)
     
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
@@ -1826,8 +1872,6 @@ def main():
     
     if force_yi:
         force_yf = False
-
-    render_guided_tour_control(lang)
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"### {TEXTS['graphic_options_header'][lang]}")
@@ -2094,7 +2138,7 @@ def main():
                             data=excel_data,
                             file_name=f"polyauxic_results_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
+                            width="stretch"
                         )
 
         except Exception as e:
