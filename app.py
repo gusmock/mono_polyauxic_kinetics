@@ -263,9 +263,28 @@ def save_uploaded_data(df, user_profile=None):
 
 
 def render_html_iframe(html_content, height=300, scrolling=False):
-    """Render inline HTML with st.iframe (replacement for deprecated components.html)."""
-    encoded_html = base64.b64encode(str(html_content).encode("utf-8")).decode("ascii")
-    _ = scrolling  # Compatibility placeholder: some Streamlit versions do not support iframe scrolling arg.
+    """Render HTML content with JS support when available, with iframe fallback."""
+    body = str(html_content)
+    if isinstance(height, (int, float)) and height > 0:
+        overflow_y = "auto" if scrolling else "hidden"
+        body = f'<div style="height:{int(height)}px; overflow-y:{overflow_y}; overflow-x:hidden;">{body}</div>'
+
+    # Streamlit >= 1.57 can execute JS in st.html when explicitly enabled.
+    if hasattr(st, "html"):
+        try:
+            st.html(body, width="stretch", unsafe_allow_javascript=True)
+            return
+        except TypeError:
+            try:
+                st.html(body, width="stretch")
+                return
+            except TypeError:
+                st.html(body)
+                return
+        except Exception:
+            pass
+
+    encoded_html = base64.b64encode(body.encode("utf-8")).decode("ascii")
     st.iframe(f"data:text/html;base64,{encoded_html}", height=height)
 
 # ==============================================================================
@@ -293,6 +312,7 @@ def generate_excel_report(best_results_global, replicates, param_labels, rate_la
             se_p = res['se_p']
             yi_name, yf_name = param_labels
             model_full_label = get_full_model_label(res, model_name, lang)
+            use_first_order_phase1 = bool(res.get("use_first_order_phase1", False))
             
             def _fmt_pm_excel(v, se_v):
                 if isinstance(v, (int, float, np.integer, np.floating)) and np.isfinite(v):
@@ -327,13 +347,20 @@ def generate_excel_report(best_results_global, replicates, param_labels, rate_la
             
             phase_data = []
             for i in range(n):
+                is_first_order_phase1 = use_first_order_phase1 and i == 0
+                lambda_display = "N/A" if is_first_order_phase1 else _fmt_pm_excel(lambda_[i], lambda_se[i])
+                lambda_order = (
+                    float("-inf")
+                    if is_first_order_phase1
+                    else (float(lambda_[i]) if np.isfinite(lambda_[i]) else np.inf)
+                )
                 phase_data.append({
                     "Phase": i + 1,
                     "Full Model": model_full_label,
                     "p ± SE": _fmt_pm_excel(p[i], se_p[i]),
                     f"{rate_label} ± SE": _fmt_pm_excel(r_max[i], r_max_se[i]),
-                    "lambda ± SE": _fmt_pm_excel(lambda_[i], lambda_se[i]),
-                    "_lambda_order": float(lambda_[i]) if np.isfinite(lambda_[i]) else np.inf
+                    "lambda ± SE": lambda_display,
+                    "_lambda_order": lambda_order
                 })
             
             phase_df = pd.DataFrame(phase_data)
@@ -791,7 +818,8 @@ _BASE_PLOT_FONT_OPTIONS = [
     "Verdana",
     "Times New Roman"
 ]
-PLOT_FONT_OPTIONS = [font for font in _BASE_PLOT_FONT_OPTIONS if font in AVAILABLE_MPL_FONT_NAMES]
+# Keep all requested fonts visible in the UI. Runtime fallback is handled in resolve_plot_font.
+PLOT_FONT_OPTIONS = list(_BASE_PLOT_FONT_OPTIONS)
 if DEFAULT_PLOT_FONT not in PLOT_FONT_OPTIONS:
     PLOT_FONT_OPTIONS.insert(0, DEFAULT_PLOT_FONT)
 if DEFAULT_PLOT_FONT in PLOT_FONT_OPTIONS:
@@ -801,6 +829,19 @@ def resolve_plot_font(font_name):
     candidate = str(font_name or "").strip()
     if candidate in AVAILABLE_MPL_FONT_NAMES:
         return candidate
+    semantic_fallbacks = {
+        "Times New Roman": ["DejaVu Serif", "Book Antiqua", "Bookman Old Style", "DejaVu Sans"],
+        "Book Antiqua": ["DejaVu Serif", "Times New Roman", "Bookman Old Style", "DejaVu Sans"],
+        "Bookman Old Style": ["DejaVu Serif", "Book Antiqua", "Times New Roman", "DejaVu Sans"],
+        "Arial": ["DejaVu Sans", "Calibri", "Verdana", "DejaVu Serif"],
+        "Calibri": ["DejaVu Sans", "Arial", "Verdana", "DejaVu Serif"],
+        "Verdana": ["DejaVu Sans", "Arial", "Calibri", "DejaVu Serif"],
+        "DejaVu Serif": ["DejaVu Sans"],
+        "DejaVu Sans": ["DejaVu Serif"],
+    }
+    for fallback in semantic_fallbacks.get(candidate, []):
+        if fallback in AVAILABLE_MPL_FONT_NAMES:
+            return fallback
     return DEFAULT_PLOT_FONT
 
 def apply_plot_font(font_name):
@@ -1293,58 +1334,68 @@ def render_guided_tour_control(lang):
         if not TOUR_AVAILABLE:
             st.sidebar.info(TEXTS["tour_unavailable"][lang])
             return
+        st.session_state["tour_pending"] = True
+        st.rerun()
 
-        steps = [
-            Tour.info(
-                title="Welcome",
-                desc="This tour explains the main controls to run and compare phase-structure fits."
-            ),
-            Tour.bind(
-                key="data_file_uploader",
-                title="Upload data file",
-                desc="Upload CSV/XLSX with time-response column pairs."
-            ),
-            Tour.bind(
-                key="max_phases_input",
-                title="Phase range",
-                desc="Choose the maximum number of phases to test."
-            ),
-            Tour.bind(
-                key="outlier_method_selector",
-                title="Outlier strategy",
-                desc="Pick no removal, simple MAD, or rigorous ROUT."
-            ),
-            Tour.bind(
-                key="seed_mode_selector",
-                title="Seed mode",
-                desc="Use fixed seed (42) for reproducibility or random seed for exploratory runs."
-            ),
-            Tour.bind(
-                key="plot_font_selector",
-                title="Plot style",
-                desc="Set chart font and visual consistency across exported figures."
-            ),
-            Tour.bind(
-                key="force_yi_checkbox",
-                title="Optional constraints",
-                desc="Apply optional constraints for y_i and y_f when biologically justified."
-            ),
-        ]
+def start_guided_tour_if_pending(include_run_button=False):
+    if not st.session_state.get("tour_pending", False):
+        return
+    if not TOUR_AVAILABLE:
+        st.sidebar.info(TEXTS["tour_unavailable"][st.session_state.get("lang", "en")])
+        st.session_state["tour_pending"] = False
+        return
 
-        data_uploaded = st.session_state.get("data_file_uploader") is not None
-        if data_uploaded:
-            steps.append(
-                Tour.bind(
-                    key="run_analysis_button",
-                    title="Run analysis",
-                    desc="Start fitting. Each phase may show standard and additional first-order structures."
-                )
+    steps = [
+        Tour.info(
+            title="Welcome",
+            desc="This tour explains the main controls to run and compare phase-structure fits."
+        ),
+        Tour.bind(
+            key="data_file_uploader",
+            title="Upload data file",
+            desc="Upload CSV/XLSX with time-response column pairs."
+        ),
+        Tour.bind(
+            key="max_phases_input",
+            title="Phase range",
+            desc="Choose the maximum number of phases to test."
+        ),
+        Tour.bind(
+            key="outlier_method_selector",
+            title="Outlier strategy",
+            desc="Pick no removal, simple MAD, or rigorous ROUT."
+        ),
+        Tour.bind(
+            key="seed_mode_selector",
+            title="Seed mode",
+            desc="Use fixed seed (42) for reproducibility or random seed for exploratory runs."
+        ),
+        Tour.bind(
+            key="plot_font_selector",
+            title="Plot style",
+            desc="Set chart font and visual consistency across exported figures."
+        ),
+        Tour.bind(
+            key="force_yi_checkbox",
+            title="Optional constraints",
+            desc="Apply optional constraints for y_i and y_f when biologically justified."
+        ),
+    ]
+    if include_run_button:
+        steps.append(
+            Tour.bind(
+                key="run_analysis_button",
+                title="Run analysis",
+                desc="Start fitting. Each phase may show standard and additional first-order structures."
             )
+        )
 
-        try:
-            Tour(steps=steps).start()
-        except Exception as exc:
-            st.sidebar.warning(f"Guided tour failed to start: {exc}")
+    try:
+        Tour(steps=steps).start()
+    except Exception as exc:
+        st.sidebar.warning(f"Guided tour failed to start: {exc}")
+    finally:
+        st.session_state["tour_pending"] = False
 
 # ==============================================================================
 # 4. VISUALIZATION & APP STRUCTURE
@@ -1489,6 +1540,7 @@ def display_single_fit(res, replicates, model_name, model_func, color_main, x_la
     p = np.exp(z - np.max(z))
     p /= np.sum(p)
 
+    use_first_order_phase1 = bool(res.get("use_first_order_phase1", False))
     phases = []
     for i in range(n):
         phases.append({
@@ -1500,7 +1552,13 @@ def display_single_fit(res, replicates, model_name, model_func, color_main, x_la
             "lambda": lambda_[i],
             "lambda_se": lambda_se[i]
         })
-    phases.sort(key=lambda x: x['lambda'])
+    # Keep phase-1 first when it is first-order (lambda_1 is not part of that equation).
+    phases.sort(
+        key=lambda x: (
+            0 if (use_first_order_phase1 and x.get("phase_id", -1) == 0) else 1,
+            x["lambda"]
+        )
+    )
 
     fig, ax = plt.subplots(figsize=(8.2, 4.8))
 
@@ -1553,7 +1611,7 @@ def display_single_fit(res, replicates, model_name, model_func, color_main, x_la
 
     colors = plt.cm.viridis(np.linspace(0, 0.9, n))
     for i, ph in enumerate(phases):
-        if bool(res.get("use_first_order_phase1", False)) and ph.get("phase_id", -1) == 0:
+        if use_first_order_phase1 and ph.get("phase_id", -1) == 0:
             y_ind = first_order_term_phase1(t_smooth, ph['p'], y_f, ph['r_max'])
         else:
             y_ind = model_func(t_smooth, y_i, y_f, ph['p'], ph['r_max'], ph['lambda'])
@@ -1649,11 +1707,16 @@ def display_single_fit(res, replicates, model_name, model_func, color_main, x_la
 
         rows = []
         for i, ph in enumerate(phases):
+            lambda_display = (
+                "N/A"
+                if (use_first_order_phase1 and ph.get("phase_id", -1) == 0)
+                else _fmt_pm(ph['lambda'], ph['lambda_se'])
+            )
             rows.append({
                 TEXTS['table_col_phase'][lang]: i + 1,
                 "p ± SE": _fmt_pm(ph['p'], ph['SE p']),
                 f"{rate_label} ± {TEXTS['table_col_se'][lang]}": _fmt_pm(ph['r_max'], ph['r_max_se']),
-                "λ ± SE": _fmt_pm(ph['lambda'], ph['lambda_se'])
+                "λ ± SE": lambda_display
             })
         st.dataframe(
             pd.DataFrame(rows),
@@ -1765,6 +1828,7 @@ def main():
                     <div class="link-badges">
                         <a href="{bmb_url}" target="_blank"><img src="{bmb_badge_img}" alt="DOI"></a>
                         <a href="{bmb_url}" target="_blank"><img src="https://img.shields.io/badge/Open_Access-F68212.svg?logo=openaccess&logoColor=white" alt="Open Access"></a>
+                        <a href="https://plu.mx/plum/a/?doi={bmb_doi}" target="_blank"><img src="https://img.shields.io/badge/PlumX-Metrics-7E2F8E.svg" alt="PlumX"></a>
                         <a href="https://github.com/gusmock/mono_polyauxic_kinetics/" target="_blank"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
                     </div>
                 </div>
@@ -1780,6 +1844,7 @@ def main():
                     <div class="citation-text">Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.</div>
                     <div class="link-badges">
                         <a href="https://doi.org/10.48550/arXiv.2507.05960" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.05960-b31b1b.svg" alt="arXiv"></a>
+                        <a href="https://plu.mx/plum/a/?arxiv=2507.05960" target="_blank"><img src="https://img.shields.io/badge/PlumX-Metrics-7E2F8E.svg" alt="PlumX"></a>
                     </div>
                 </div>
             </div>
@@ -1794,6 +1859,7 @@ def main():
                     <div class="link-badges">
                         <a href="{zenodo_url}" target="_blank"><img src="{zenodo_badge_img}" alt="Zenodo DOI"></a>
                         <a href="{code_ocean_url}" target="_blank"><img src="{code_ocean_badge_img}" alt="Code Ocean DOI"></a>
+                        <a href="https://plu.mx/plum/a/?doi={zenodo_doi}" target="_blank"><img src="https://img.shields.io/badge/PlumX-Metrics-7E2F8E.svg" alt="PlumX"></a>
                     </div>
                 </div>
             </div>
@@ -1898,6 +1964,7 @@ def main():
     )
     x_axis_label = x_title_custom.strip() if str(x_title_custom).strip() else default_x_label
     y_axis_label = y_title_custom.strip() if str(y_title_custom).strip() else default_y_label
+    tour_include_run_button = False
 
     if file:
         try:
@@ -1924,6 +1991,7 @@ def main():
                     else:
                         st.session_state.run_seed = random.randint(0, 2_147_483_647)
                     st.session_state.analysis_run = True
+                tour_include_run_button = True
 
                 # ==========================================================
                 # ANALYSIS EXECUTION BLOCK (Managed by Session State)
@@ -2146,6 +2214,7 @@ def main():
             st.error(TEXTS['error_proc'][lang].format(e))
     else:
         st.info(TEXTS['info_upload'][lang])
+    start_guided_tour_if_pending(include_run_button=tour_include_run_button)
 
 if __name__ == "__main__":
     main()
