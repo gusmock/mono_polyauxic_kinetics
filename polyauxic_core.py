@@ -168,6 +168,20 @@ def evaluate_polyauxic_model(t, theta, model_func, n_phases, use_first_order_pha
         return polyauxic_model_phase1_first_order(t, theta, model_func, n_phases)
     return polyauxic_model(t, theta, model_func, n_phases)
 
+def normalize_first_order_phase1_lambda(theta, se, n_phases, use_first_order_phase1):
+    """
+    In the hybrid model, phase-1 uses a first-order equation and does not consume lambda_1.
+    Keep lambda_1 explicit as zero to avoid ambiguous reporting downstream.
+    """
+    if not use_first_order_phase1 or n_phases <= 0:
+        return theta, se
+    idx_lambda_1 = 2 + 2 * n_phases
+    if idx_lambda_1 < len(theta):
+        theta[idx_lambda_1] = 0.0
+    if se is not None and idx_lambda_1 < len(se):
+        se[idx_lambda_1] = np.nan
+    return theta, se
+
 # ==============================================================================
 # 2. LOSS FUNCTIONS & HESSIAN (WITH SOFT PENALTIES)
 # ==============================================================================
@@ -524,6 +538,12 @@ def fit_model_auto_robust_pre(
     scale_l = t_scale
     theta_real[2 + 2 * n_phases : 2 + 3 * n_phases] = theta_norm[2 + 2 * n_phases : 2 + 3 * n_phases] * scale_l
 
+    theta_real, _ = normalize_first_order_phase1_lambda(
+        theta_real,
+        None,
+        n_phases,
+        use_first_order_phase1
+    )
     y_pred = evaluate_polyauxic_model(t_data, theta_real, model_func, n_phases, use_first_order_phase1)
     return {"theta": theta_real, "y_pred": y_pred}
 
@@ -673,6 +693,12 @@ def fit_model_auto(
     except:
         se_real = np.full_like(theta_real, np.nan)
 
+    theta_real, se_real = normalize_first_order_phase1_lambda(
+        theta_real,
+        se_real,
+        n_phases,
+        use_first_order_phase1
+    )
     y_pred = evaluate_polyauxic_model(t_data, theta_real, model_func, n_phases, use_first_order_phase1)
 
     sse = np.sum((y_data - y_pred) ** 2)
