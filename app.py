@@ -55,6 +55,7 @@
 DEV: Prof. Dr. Gustavo Mockaitis
 """
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -1864,7 +1865,7 @@ def main():
     bmb_badge_img = "https://img.shields.io/badge/DOI-10.1007%2Fs11538--026--01621--7-blue.svg"
     
     # arXiv
-    arxiv_doi = "10.48550/arxiv.2507.05960"
+    arxiv_doi = "10.48550/arXiv.2507.05960"
     
     # Zenodo
     zenodo_doi = "10.5281/zenodo.18025828"
@@ -1911,7 +1912,7 @@ def main():
                 <div class="badge-wrapper">
                     <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{bmb_doi}' data-hide-no-mentions='false'></div>
                     <a href="https://plu.mx/plum/a/?doi={bmb_doi}" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
-                    <span class="__dimensions_badge_embed__" data-doi="{bmb_doi}" data-style="small_circle" data-hide-zero-citations="false" data-legend="always"></span>
+                    <span class="__dimensions_badge_embed__" data-doi="{bmb_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
                 </div>
                 <div class="content-wrapper">
                     <div class="citation-text">Mockaitis, G. (2026) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. Bulletin of Mathematical Biology. 88:55. DOI: {bmb_doi}</div>
@@ -1928,7 +1929,7 @@ def main():
                 <div class="badge-wrapper">
                     <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
                     <a href="https://plu.mx/plum/a/?arxiv=2507.05960" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
-                    <span class="__dimensions_badge_embed__" data-doi="{arxiv_doi}" data-style="small_circle" data-hide-zero-citations="false" data-legend="always"></span>
+                    <span class="__dimensions_badge_embed__" data-doi="{arxiv_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
                 </div>
                 <div class="content-wrapper">
                     <div class="citation-text">Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.</div>
@@ -2301,7 +2302,7 @@ def main():
     st.info(TEXTS['intro_desc'][lang])
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
-    render_html_iframe(badge_html, height=350, force_iframe=True)
+    components.html(badge_html, height=350, scrolling=False)
 
 if __name__ == "__main__":
     main()
