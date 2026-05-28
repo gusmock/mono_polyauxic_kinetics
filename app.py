@@ -1,3 +1,59 @@
+"""                                                                                                                                        
+                                      ++++++              ++++++                                    
+                                      ++++++++          ++++++++                                    
+                                      ++++++++          ++++++++                                    
+                                      ++++++++++      ++++++++++                                    
+                        --++          ++++++++++++++++++++++++++          ++++                      
+                      --++++++        ++++++++++++++++++++++++++        ++++++++                    
+                      ++++++++++::++++++++++++++++++++++++++++++++++--++++++++++                    
+                        ++++++++++++++++++++++--      --++++++++++++++++++++++--                    
+                        ++++++++++++++++--##################..++++++++++++++++                      
+                          ++++++++++++########          ########++++++++++++                        
+                          ++++++++++######                  ######::++++++++                        
+                        --++++++++####        ##  ####    ..    ####++++++++++                      
+              ++++::    ++++++++####      ####@@    ##    --  ##  ####++++++++    ::++++            
+              ++++++++++++++++  ####      ##              ##mmMM  ####  ++++++++++++++++            
+              ++++++++++++++++####                            ##    ####++++++++++++++++            
+              ++++++++++++++::####      ##@@              ####      ####..++++++++++++++            
+                  ++++++++++..##          ##                          ##  ++++++++++                
+                      ++++++####          ++##        ####@@          ####++++++                    
+                      ++++++####                  ############        ####++++++..                  
+                      ++++++####          ####    ##############      ####++++++                    
+                    ++++++++####        ####    ################      ##++++++++++                  
+                ++++++++++++  ##        ##      ################    --##  ++++++++++++              
+            ::++++++++++++++++####                ######    ##..    ####++++++++++++++++--          
+              ++++++++++++++++####    --##        ############      ####++++++++++++++++            
+              ++++++++++++++++::####    ##++          ####        ####--++++++++++++++++            
+                        ++++++++  ####    ##                    ####  ++++++++                      
+                          ++++++++MM####                      ####--++++++++                        
+                          ++++++++++  ######              ######  ++++++++++                        
+                          ++++++++++++  ######################  ++++++++++++                        
+                        ++++++++++++++++++    ##########    ++++++++++++++++++                      
+                      ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++                    
+                      ++++++++++    ++++++++++++++++++++++++++++++    ++++++++++                    
+                        ++++++        ++++++++++++++++++++++++++        --++++                      
+                                      ++++++++++++++++++++++++++                                    
+                                      ++++++++++      ++++++++++                                    
+                                      ++++++++          ++++++++                                    
+                                      ++++++++          ++++++++                                    
+                                          ++              ++--                                                                                                                                                                                                          
+
+
+#############################################################################################
+#                                                                                           #
+#                                    GBMA - FEAGRI - UNICAMP                                #
+#      -------------------------------------------------------------------------------      #
+#                                                                                           #
+#                         Interdisciplinary Research Group on Biotechnology                 #
+#                           Applied to the Agriculture and the Environment                  #
+#                                                                                           #
+#                             School of Agricultural Engineering                            #
+#                                    University of Campinas                                 #
+#                                                                                           #
+#############################################################################################
+
+DEV: Prof. Dr. Gustavo Mockaitis
+"""
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -256,15 +312,15 @@ def save_uploaded_data(df, user_profile=None):
         st.warning(f"Failed to save local backup file. Process will continue. Error: {e}")
 
 
-def render_html_iframe(html_content, height=300, scrolling=False):
-    """Render HTML content with JS support when available, with iframe fallback."""
+def render_html_iframe(html_content, height=300, scrolling=False, force_iframe=False):
+    """Render HTML content with st.html when possible, or iframe when required."""
     body = str(html_content)
     if isinstance(height, (int, float)) and height > 0:
         overflow_y = "auto" if scrolling else "hidden"
         body = f'<div style="height:{int(height)}px; overflow-y:{overflow_y}; overflow-x:hidden;">{body}</div>'
 
-    # Streamlit >= 1.57 can execute JS in st.html when explicitly enabled.
-    if hasattr(st, "html"):
+    # Some third-party badge scripts behave more reliably in iframe context.
+    if not force_iframe and hasattr(st, "html"):
         try:
             st.html(body, width="stretch", unsafe_allow_javascript=True)
             return
@@ -1808,7 +1864,7 @@ def main():
     bmb_badge_img = "https://img.shields.io/badge/DOI-10.1007%2Fs11538--026--01621--7-blue.svg"
     
     # arXiv
-    arxiv_doi = "10.48550/arXiv.2507.05960"
+    arxiv_doi = "10.48550/arxiv.2507.05960"
     
     # Zenodo
     zenodo_doi = "10.5281/zenodo.18025828"
@@ -1855,7 +1911,7 @@ def main():
                 <div class="badge-wrapper">
                     <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-doi='{bmb_doi}' data-hide-no-mentions='false'></div>
                     <a href="https://plu.mx/plum/a/?doi={bmb_doi}" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
-                    <span class="__dimensions_badge_embed__" data-doi="{bmb_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
+                    <span class="__dimensions_badge_embed__" data-doi="{bmb_doi}" data-style="small_circle" data-hide-zero-citations="false" data-legend="always"></span>
                 </div>
                 <div class="content-wrapper">
                     <div class="citation-text">Mockaitis, G. (2026) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. Bulletin of Mathematical Biology. 88:55. DOI: {bmb_doi}</div>
@@ -1872,7 +1928,7 @@ def main():
                 <div class="badge-wrapper">
                     <div class='altmetric-embed' data-badge-type='donut' data-badge-popover='right' data-arxiv-id='2507.05960' data-hide-no-mentions='true'></div>
                     <a href="https://plu.mx/plum/a/?arxiv=2507.05960" class="plumx-plum-print-popup" data-popup="right" data-size="medium" data-pass-hidden-categories="true"></a>
-                    <span class="__dimensions_badge_embed__" data-doi="{arxiv_doi}" data-style="small_circle" data-hide-zero-citations="false"></span>
+                    <span class="__dimensions_badge_embed__" data-doi="{arxiv_doi}" data-style="small_circle" data-hide-zero-citations="false" data-legend="always"></span>
                 </div>
                 <div class="content-wrapper">
                     <div class="citation-text">Mockaitis, G. (2025) Mono- and Polyauxic Growth Kinetics: A Semi-Mechanistic Framework for Complex Biological Dynamics. ArXiv: 2507.05960, 42 p.</div>
@@ -1901,8 +1957,8 @@ def main():
         </div>
         
         <script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script>
-        <script type="text/javascript" src="//cdn.plu.mx/widget-popup.js"></script>
-        <script async src="https://badge.dimensions.ai/badge.js" charset="utf-8"></script>
+        <script type="text/javascript" src="https://cdn.plu.mx/widget-popup.js"></script>
+        <script async src="https://integration-badge.dimensions.ai/static/ai/badge.js" charset="utf-8"></script>
     </body>
     </html>
     """
@@ -2245,7 +2301,7 @@ def main():
     st.info(TEXTS['intro_desc'][lang])
     with st.expander(TEXTS['instructions_header'][lang], expanded=False):
         st.markdown(TEXTS['instructions_list'][lang])
-    render_html_iframe(badge_html, height=350)
+    render_html_iframe(badge_html, height=350, force_iframe=True)
 
 if __name__ == "__main__":
     main()
