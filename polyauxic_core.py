@@ -352,35 +352,64 @@ def smart_initial_guess(t, y, n_phases):
     representing inflection points, ensuring global optimization begins within biologically 
     [cite_start]plausible regions[cite: 858, 859].
     """
-    dy = np.gradient(y, t)
-    dy_smooth = np.convolve(dy, np.ones(5) / 5, mode='same')
-    min_dist = max(1, len(t) // (n_phases * 4))
-    peaks, props = find_peaks(dy_smooth, height=np.max(dy_smooth) * 0.1, distance=min_dist)
+    t_arr = np.asarray(t, dtype=float).flatten()
+    y_arr = np.asarray(y, dtype=float).flatten()
+    valid_mask = np.isfinite(t_arr) & np.isfinite(y_arr)
+    t_arr = t_arr[valid_mask]
+    y_arr = y_arr[valid_mask]
+
+    if t_arr.size == 0 or y_arr.size == 0:
+        return np.zeros(2 + 3 * n_phases)
+
+    sort_idx = np.argsort(t_arr)
+    t_sorted = t_arr[sort_idx]
+    y_sorted = y_arr[sort_idx]
+
+    unique_t, inverse = np.unique(t_sorted, return_inverse=True)
+    if unique_t.size != t_sorted.size:
+        y_sum = np.zeros(unique_t.size, dtype=float)
+        y_count = np.zeros(unique_t.size, dtype=float)
+        np.add.at(y_sum, inverse, y_sorted)
+        np.add.at(y_count, inverse, 1.0)
+        y_unique = y_sum / np.maximum(y_count, 1.0)
+    else:
+        y_unique = y_sorted
+
+    if unique_t.size > 1:
+        dy = np.gradient(y_unique, unique_t, edge_order=1)
+    else:
+        dy = np.zeros_like(y_unique)
+
+    smooth_window = min(5, max(1, unique_t.size))
+    dy_smooth = np.convolve(dy, np.ones(smooth_window) / smooth_window, mode='same')
+    min_dist = max(1, len(unique_t) // max(1, (n_phases * 4)))
+    peak_height = np.max(dy_smooth) * 0.1 if dy_smooth.size else 0.0
+    peaks, props = find_peaks(dy_smooth, height=peak_height, distance=min_dist)
     guesses = []
     if len(peaks) > 0:
         sorted_indices = np.argsort(props['peak_heights'])[::-1]
         best_peaks = peaks[sorted_indices][:n_phases]
         for p_idx in best_peaks:
-            guesses.append({'lambda': t[p_idx], 'r_max': dy_smooth[p_idx]})
+            guesses.append({'lambda': unique_t[p_idx], 'r_max': dy_smooth[p_idx]})
     while len(guesses) < n_phases:
-        t_span = t.max() - t.min()
+        t_span = max(unique_t.max() - unique_t.min(), 1e-9)
         guesses.append({
-            'lambda': t.min() + t_span * (len(guesses) + 1) / (n_phases + 1),
-            'r_max': (np.max(y) - np.min(y)) / (t_span / n_phases)
+            'lambda': unique_t.min() + t_span * (len(guesses) + 1) / (n_phases + 1),
+            'r_max': (np.max(y_unique) - np.min(y_unique)) / (t_span / max(n_phases, 1))
         })
     guesses.sort(key=lambda x: x['lambda'])
     theta_guess = np.zeros(2 + 3 * n_phases)
     
-    n_slice = max(1, len(y) // 5) 
-    mean_start = np.mean(y[:n_slice])
-    mean_end = np.mean(y[-n_slice:])
+    n_slice = max(1, len(y_unique) // 5)
+    mean_start = np.mean(y_unique[:n_slice])
+    mean_end = np.mean(y_unique[-n_slice:])
     
     if float(mean_start) < float(mean_end):
-         theta_guess[0] = np.min(y)
-         theta_guess[1] = np.max(y)
+         theta_guess[0] = np.min(y_unique)
+         theta_guess[1] = np.max(y_unique)
     else:
-         theta_guess[0] = np.max(y)
-         theta_guess[1] = np.min(y)
+         theta_guess[0] = np.max(y_unique)
+         theta_guess[1] = np.min(y_unique)
 
     theta_guess[2 : 2 + n_phases] = 0.0
     for i in range(n_phases):
