@@ -265,7 +265,8 @@ def save_uploaded_data(df, user_profile=None):
 def render_html_iframe(html_content, height=300, scrolling=False):
     """Render inline HTML with st.iframe (replacement for deprecated components.html)."""
     encoded_html = base64.b64encode(str(html_content).encode("utf-8")).decode("ascii")
-    st.iframe(f"data:text/html;base64,{encoded_html}", height=height, scrolling=scrolling)
+    _ = scrolling  # Compatibility placeholder: some Streamlit versions do not support iframe scrolling arg.
+    st.iframe(f"data:text/html;base64,{encoded_html}", height=height)
 
 # ==============================================================================
 # EXCEL EXPORT UTILITY
