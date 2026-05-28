@@ -1351,32 +1351,32 @@ def start_guided_tour_if_pending(include_run_button=False):
             desc="This tour explains the main controls to run and compare phase-structure fits."
         ),
         Tour.bind(
-            key="data_file_uploader",
+            "data_file_uploader",
             title="Upload data file",
             desc="Upload CSV/XLSX with time-response column pairs."
         ),
         Tour.bind(
-            key="max_phases_input",
+            "max_phases_input",
             title="Phase range",
             desc="Choose the maximum number of phases to test."
         ),
         Tour.bind(
-            key="outlier_method_selector",
+            "outlier_method_selector",
             title="Outlier strategy",
             desc="Pick no removal, simple MAD, or rigorous ROUT."
         ),
         Tour.bind(
-            key="seed_mode_selector",
+            "seed_mode_selector",
             title="Seed mode",
             desc="Use fixed seed (42) for reproducibility or random seed for exploratory runs."
         ),
         Tour.bind(
-            key="plot_font_selector",
+            "plot_font_selector",
             title="Plot style",
             desc="Set chart font and visual consistency across exported figures."
         ),
         Tour.bind(
-            key="force_yi_checkbox",
+            "force_yi_checkbox",
             title="Optional constraints",
             desc="Apply optional constraints for y_i and y_f when biologically justified."
         ),
@@ -1384,13 +1384,17 @@ def start_guided_tour_if_pending(include_run_button=False):
     if include_run_button:
         steps.append(
             Tour.bind(
-                key="run_analysis_button",
+                "run_analysis_button",
                 title="Run analysis",
                 desc="Start fitting. Each phase may show standard and additional first-order structures."
             )
         )
 
     try:
+        # Preferred API in recent streamlit_tour releases.
+        Tour.start(steps=steps)
+    except TypeError:
+        # Backward-compat fallback.
         Tour(steps=steps).start()
     except Exception as exc:
         st.sidebar.warning(f"Guided tour failed to start: {exc}")
