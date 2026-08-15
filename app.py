@@ -62,19 +62,13 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib import font_manager as fm
 import io
-import os
 import hashlib
-import socket
 import base64
 from datetime import datetime
 import re
 import random
-import smtplib
-import ssl
-from email.mime.text import MIMEText
 from copy import deepcopy
-# from streamlit.web.server.websocket_headers import _get_websocket_headers ###Outdated
-import uuid
+from pathlib import Path
 
 # Import Core Logic from your separated file
 from polyauxic_core import (
@@ -93,224 +87,113 @@ from polyauxic_core import (
 )
 
 # ==============================================================================
-# LOGGING & DATA STORAGE UTILS
+# AUTHENTICATED IDENTITY UTILS
 # ==============================================================================
 
-def get_user_identifier():
-    """
-    Attempts to retrieve a unique user identifier (IP address). 
-    If it fails or detects localhost, it generates a persistent unique ID for the session.
-    """
-    # 1. Return persistent ID if already defined in the current session
-    if "user_id_persistent" in st.session_state:
-        return st.session_state["user_id_persistent"]
-
-    detected_id = None
-
-    # 2. Try to obtain the real IP via headers (useful for Streamlit Cloud/Docker)
+def get_user_claim(name, default=""):
+    """Read an OIDC claim without depending on a provider-specific token shape."""
     try:
-        headers = st.context.headers
-        if headers and "X-Forwarded-For" in headers:
-            ip = headers["X-Forwarded-For"].split(",")[0].strip()
-            if ip and ip != "127.0.0.1":
-                detected_id = ip
-    except Exception:
-        pass
-
-    # 3. Fallback: try local hostname
-    if not detected_id:
+        value = st.user.get(name, default)
+    except (AttributeError, TypeError):
         try:
-            hostname = socket.gethostname()
-            ip = socket.gethostbyname(hostname)
-            if ip and ip != "127.0.0.1":
-                detected_id = ip
-        except Exception:
-            pass
+            value = st.user[name]
+        except (KeyError, TypeError):
+            value = default
+    return default if value is None else value
 
-    # 4. Final Fallback: Generate a short UUID for anonymity and localhost
-    if not detected_id or detected_id == "127.0.0.1":
-        detected_id = f"anon_{str(uuid.uuid4())[:8]}"
 
-    # 5. Save to session_state to ensure persistence during app usage
-    st.session_state["user_id_persistent"] = detected_id
-    
-    return detected_id
+def is_user_logged_in():
+    """Return False when authentication secrets have not been configured yet."""
+    try:
+        return bool(st.user.is_logged_in)
+    except AttributeError:
+        return False
+
 
 def normalize_email(email):
     return str(email or "").strip().lower()
+
 
 def validate_email_format(email):
     pattern = r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"
     return re.match(pattern, normalize_email(email)) is not None
 
-def get_usage_registry_path():
-    data_dir = "data"
-    os.makedirs(data_dir, exist_ok=True)
-    return os.path.join(data_dir, "usage_registry.csv")
 
-def append_usage_registry(event_type, profile, extra=None):
-    """
-    Stores onboarding/validation/upload data in a single local spreadsheet-like file.
-    """
-    profile = profile or {}
-    extra = extra or {}
-    registry_path = get_usage_registry_path()
-    row = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "event_type": event_type,
-        "email": normalize_email(profile.get("email", "")),
-        "first_name": str(profile.get("first_name", "")).strip(),
-        "last_name": str(profile.get("last_name", "")).strip(),
-        "institution": str(profile.get("institution", "")).strip(),
-        "country": str(profile.get("country", "")).strip(),
-        "experiment_description": str(profile.get("experiment_description", "")).strip(),
-        "contact_opt_out": bool(profile.get("contact_opt_out", False)),
-        "user_identifier": str(get_user_identifier()),
-        "extra_json": str(extra)
-    }
-    df_row = pd.DataFrame([row])
-    if os.path.exists(registry_path):
-        df_row.to_csv(registry_path, mode="a", header=False, index=False)
+def get_authenticated_identity():
+    """Return normalized identity data supplied and verified by the OIDC provider."""
+    full_name = str(get_user_claim("name", "")).strip()
+    given_name = str(get_user_claim("given_name", "")).strip()
+    family_name = str(get_user_claim("family_name", "")).strip()
+    if full_name and not given_name:
+        name_parts = full_name.split(maxsplit=1)
+        given_name = name_parts[0]
+        family_name = name_parts[1] if len(name_parts) > 1 else family_name
+
+    issuer = str(get_user_claim("iss", "")).strip()
+    if "orcid.org" in issuer.lower():
+        provider = "ORCID"
+    elif "google.com" in issuer.lower():
+        provider = "Google"
     else:
-        df_row.to_csv(registry_path, mode="w", header=True, index=False)
+        provider = "OIDC"
+    return {
+        "subject": str(get_user_claim("sub", "")).strip(),
+        "issuer": issuer,
+        "provider": provider,
+        "email": str(get_user_claim("email", "")).strip().lower(),
+        "first_name": given_name,
+        "last_name": family_name,
+        "display_name": full_name or " ".join(part for part in (given_name, family_name) if part),
+    }
 
-def load_verified_profiles():
-    registry_path = get_usage_registry_path()
-    if not os.path.exists(registry_path):
-        return {}
-    try:
-        df = pd.read_csv(registry_path)
-    except Exception:
-        return {}
-    if df.empty or "event_type" not in df.columns or "email" not in df.columns:
-        return {}
-    validated = df[df["event_type"] == "otp_validated"].copy()
-    if validated.empty:
-        return {}
-    validated["email"] = validated["email"].astype(str).str.lower().str.strip()
-    validated = validated.sort_values("timestamp")
-    latest = validated.groupby("email", as_index=False).tail(1)
-    profiles = {}
-    for _, row in latest.iterrows():
-        email = str(row.get("email", "")).strip().lower()
-        if not email:
+
+def sanitize_filename_component(value, fallback="file"):
+    """Make user-controlled text safe for use as one filename component."""
+    sanitized = re.sub(r"[^A-Za-z0-9._@+-]+", "_", str(value or "").strip())
+    sanitized = sanitized.strip("._")
+    return (sanitized or fallback)[:120]
+
+
+def save_uploaded_file(uploaded_file, user_profile):
+    """Persist an exact upload copy unless identical content already exists."""
+    upload_dir = Path("data") / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    content = uploaded_file.getvalue()
+    content_hash = hashlib.sha256(content).hexdigest()
+    for existing_file in upload_dir.iterdir():
+        if not existing_file.is_file():
             continue
-        profiles[email] = {
-            "email": email,
-            "first_name": str(row.get("first_name", "")).strip(),
-            "last_name": str(row.get("last_name", "")).strip(),
-            "institution": str(row.get("institution", "")).strip(),
-            "country": str(row.get("country", "")).strip(),
-            "experiment_description": str(row.get("experiment_description", "")).strip(),
-            "contact_opt_out": bool(row.get("contact_opt_out", False))
-        }
-    return profiles
+        try:
+            existing_hash = hashlib.sha256(existing_file.read_bytes()).hexdigest()
+        except OSError:
+            continue
+        if existing_hash == content_hash:
+            return existing_file, False
 
-def is_email_already_validated(email):
-    validated_profiles = load_verified_profiles()
-    return normalize_email(email) in validated_profiles
+    uploaded_name = sanitize_filename_component(
+        Path(str(uploaded_file.name)).name,
+        fallback="upload",
+    )
+    uploader_email = sanitize_filename_component(
+        normalize_email(user_profile.get("email", "")),
+        fallback="email-unavailable",
+    )
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"{timestamp}_{uploader_email}_{uploaded_name}"
+    target_path = upload_dir / filename
 
-def send_otp_email(recipient_email, otp_code, lang):
-    """
-    Sends OTP code using SMTP environment variables.
-    Required env vars:
-      SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
-    Optional env var:
-      SMTP_USE_TLS=true|false (default true)
-    """
-    smtp_host = os.getenv("SMTP_HOST", "").strip()
-    smtp_port = int(os.getenv("SMTP_PORT", "587").strip())
-    smtp_user = os.getenv("SMTP_USER", "").strip()
-    smtp_pass = os.getenv("SMTP_PASS", "").strip()
-    smtp_from = os.getenv("SMTP_FROM", "").strip() or smtp_user
-    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in ("1", "true", "yes", "on")
-
-    if not all([smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from]):
-        return False, "SMTP not configured"
-
-    subject_map = {
-        "en": "Your Polyauxic Platform verification code",
-        "pt": "Seu código de verificação da Plataforma Poliauxica",
-        "fr": "Votre code de vérification de la plateforme polyauxique"
-    }
-    body_map = {
-        "en": f"Your verification code is: {otp_code}\nThis code expires in 10 minutes.",
-        "pt": f"Seu código de verificação é: {otp_code}\nEste código expira em 10 minutos.",
-        "fr": f"Votre code de vérification est : {otp_code}\nCe code expire dans 10 minutes."
-    }
-
-    msg = MIMEText(body_map.get(lang, body_map["en"]), "plain", "utf-8")
-    msg["Subject"] = subject_map.get(lang, subject_map["en"])
-    msg["From"] = smtp_from
-    msg["To"] = normalize_email(recipient_email)
-
-    try:
-        if smtp_use_tls:
-            context = ssl.create_default_context()
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
-                server.starttls(context=context)
-                server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_from, [msg["To"]], msg.as_string())
-        else:
-            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as server:
-                server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_from, [msg["To"]], msg.as_string())
-        return True, ""
-    except Exception as e:
-        return False, str(e)
-
-def save_uploaded_data(df, user_profile=None):
-    """
-    Saves the uploaded DataFrame as a CSV in the local /data folder.
-    Format: DD-MM-YYYY_IDENTIFIER.csv
-    Includes robust try/except blocks to prevent UI crashes if disk writing fails.
-    """
-    data_dir = "data"
-    
-    try:
-        # Create directory if it does not exist (Safe for local environments)
-        os.makedirs(data_dir, exist_ok=True)
-    except Exception as e:
-        st.warning(f"Could not create local data directory. Backups will be skipped. Error: {e}")
-        return
-    
-    try:
-        # 1. Generate MD5 hash of the current content to prevent exact duplicates
-        content_csv = df.to_csv(index=False)
-        current_hash = hashlib.md5(content_csv.encode('utf-8')).hexdigest()
-        
-        # 2. Define target filename with the sanitized User Identifier
-        date_str = datetime.now().strftime("%d-%m-%Y")
-        user_id = get_user_identifier() 
-        safe_id = user_id.replace(":", "_").replace(".", "_")
-        target_filename = f"{date_str}_{safe_id}.csv"
-        target_path = os.path.join(data_dir, target_filename)
-        
-        # 3. Scan directory to check for exact content duplicates
-        for filename in os.listdir(data_dir):
-            if filename.endswith(".csv"):
-                file_path = os.path.join(data_dir, filename)
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        existing_content = f.read()
-                    existing_hash = hashlib.md5(existing_content.encode('utf-8')).hexdigest()
-                    
-                    # If content matches exactly, remove the old file to overwrite it
-                    if existing_hash == current_hash and filename != target_filename:
-                        os.remove(file_path)
-                except Exception as e:
-                    # Silent pass to not disrupt the user experience
-                    continue
-
-        # 4. Save the new/updated file
-        df.to_csv(target_path, index=False)
-        append_usage_registry(
-            "data_upload",
-            user_profile or {},
-            {"saved_file": target_filename, "rows": int(len(df)), "columns": int(df.shape[1])}
-        )
-    except Exception as e:
-        st.warning(f"Failed to save local backup file. Process will continue. Error: {e}")
+    collision_number = 1
+    while True:
+        try:
+            with target_path.open("xb") as destination:
+                destination.write(content)
+            return target_path, True
+        except FileExistsError:
+            target_path = upload_dir / (
+                f"{timestamp}_{uploader_email}_{collision_number}_{uploaded_name}"
+            )
+            collision_number += 1
 
 
 def render_html_iframe(html_content, height=300, scrolling=False, force_iframe=False):
@@ -502,7 +385,7 @@ TEXTS = {
         * **Headers:** The first row must contain the column names.
         * **Replicates:** You can include up to **5 biological replicates**. The system automatically detects them based on the column pairs.
         * **Decimals:** Both dot (`.`) and comma (`,`) are accepted.
-        * **Access:** Platform access requires mandatory onboarding form completion and email validation (OTP).
+        * **Access:** Sign in securely with Google or ORCID and complete the research profile.
         * **Plot Settings:** You can customize plot font and axis titles in the sidebar.
 
         **Example Layout:**
@@ -518,7 +401,7 @@ TEXTS = {
         * **Cabeçalho:** A primeira linha deve conter o nome das variáveis.
         * **Réplicas:** O sistema aceita até **5 réplicas biológicas**. Basta adicionar os pares de colunas lado a lado; o sistema os agrupará automaticamente.
         * **Decimais:** Tanto ponto (`.`) quanto vírgula (`,`) são aceitos.
-        * **Acesso:** O uso da plataforma exige preenchimento do formulário inicial e validação do e-mail (OTP).
+        * **Acesso:** Entre com Google ou ORCID e complete o perfil de pesquisa.
         * **Gráficos:** É possível definir a fonte e títulos dos eixos na barra lateral.
 
         **Exemplo de Layout:**
@@ -534,7 +417,7 @@ TEXTS = {
         * **En-têtes :** La première ligne doit contenir les noms des colonnes.
         * **Réplicats :** Vous pouvez inclure jusqu'à **5 réplicats biologiques**. Le système les détecte automatiquement.
         * **Décimales :** Les points (`.`) et les virgules (`,`) sont acceptés.
-        * **Accès :** L’accès à la plateforme exige le formulaire initial et la validation de l’e-mail (OTP).
+        * **Accès :** Connectez-vous avec Google ou ORCID et complétez le profil de recherche.
         * **Graphiques :** Vous pouvez personnaliser la police et les titres des axes dans la barre latérale.
 
         **Exemple de mise en page:**
@@ -656,22 +539,40 @@ TEXTS = {
         "fr": "Bienvenue sur la plateforme de modélisation polyauxique"
     },
     "onboarding_subtitle": {
-        "en": "Please select your language and complete the required form. Access is enabled only after email verification.",
-        "pt": "Selecione seu idioma e preencha o formulário obrigatório. O acesso só é liberado após a validação do e-mail.",
-        "fr": "Veuillez sélectionner votre langue et remplir le formulaire obligatoire. L’accès est activé uniquement après validation de l’e-mail."
+        "en": "Sign in securely with Google or ORCID, then complete your research profile.",
+        "pt": "Entre com segurança usando Google ou ORCID e complete seu perfil de pesquisa.",
+        "fr": "Connectez-vous en toute sécurité avec Google ou ORCID, puis complétez votre profil de recherche."
     },
     "data_use_notice": {
-        "en": "By using this platform, you acknowledge that uploaded/entered data may be collected for model training improvements, and contact data may be used for potential future collaborations.",
-        "pt": "Ao usar esta plataforma, você reconhece que os dados enviados/inseridos podem ser coletados para melhorias de treinamento do modelo, e os dados de contato podem ser usados para potenciais colaborações futuras.",
-        "fr": "En utilisant cette plateforme, vous reconnaissez que les données soumises/saisies peuvent être collectées pour améliorer l’entraînement du modèle, et que les données de contact peuvent être utilisées pour d’éventuelles collaborations futures."
+        "en": "Uploaded files are automatically retained as exact copies. Backup filenames include the upload date and the uploader's email.",
+        "pt": "Os arquivos enviados são retidos automaticamente como cópias exatas. O nome do backup inclui a data do envio e o e-mail de quem carregou.",
+        "fr": "Les fichiers téléchargés sont automatiquement conservés sous forme de copies exactes. Le nom de la sauvegarde inclut la date et l’e-mail de l’utilisateur."
     },
-    "onboarding_card_instructions_title": {"en": "Instructions", "pt": "Instruções", "fr": "Instructions"},
-    "onboarding_card_profile_title": {"en": "1) Profile", "pt": "1) Perfil", "fr": "1) Profil"},
-    "onboarding_card_verify_title": {"en": "2) Access Verification", "pt": "2) Verificação de Acesso", "fr": "2) Vérification d’Accès"},
+    "onboarding_card_instructions_title": {"en": "Secure access", "pt": "Acesso seguro", "fr": "Accès sécurisé"},
+    "onboarding_card_profile_title": {"en": "Research profile", "pt": "Perfil de pesquisa", "fr": "Profil de recherche"},
     "onboarding_card_instructions_body": {
-        "en": "Complete all required profile fields and provide your email. If your email is already in the validated database, you can enter directly. Otherwise, send and verify the OTP code to unlock access.",
-        "pt": "Preencha todos os campos obrigatórios do perfil e informe seu e-mail. Se o e-mail já estiver na base validada, você poderá entrar diretamente. Caso contrário, envie e valide o código OTP para liberar o acesso.",
-        "fr": "Remplissez tous les champs obligatoires du profil et fournissez votre e-mail. Si votre e-mail est déjà dans la base validée, vous pouvez entrer directement. Sinon, envoyez et validez le code OTP pour débloquer l’accès."
+        "en": "Authentication is performed by your selected identity provider. The platform never receives or stores your password.",
+        "pt": "A autenticação é realizada pelo provedor de identidade escolhido. A plataforma nunca recebe nem armazena sua senha.",
+        "fr": "L’authentification est effectuée par le fournisseur d’identité choisi. La plateforme ne reçoit ni ne stocke jamais votre mot de passe."
+    },
+    "login_google": {"en": "Continue with Google", "pt": "Continuar com Google", "fr": "Continuer avec Google"},
+    "login_orcid": {"en": "Continue with ORCID", "pt": "Continuar com ORCID", "fr": "Continuer avec ORCID"},
+    "login_required": {
+        "en": "Authentication is required to use the modeling platform.",
+        "pt": "É necessário autenticar-se para utilizar a plataforma de modelagem.",
+        "fr": "Une authentification est requise pour utiliser la plateforme de modélisation."
+    },
+    "login_config_error": {
+        "en": "Authentication is not configured. Ask the administrator to configure the OIDC secrets.",
+        "pt": "A autenticação não está configurada. Solicite ao administrador a configuração dos segredos OIDC.",
+        "fr": "L’authentification n’est pas configurée. Demandez à l’administrateur de configurer les secrets OIDC."
+    },
+    "signed_in_as": {"en": "Signed in as", "pt": "Autenticado como", "fr": "Connecté en tant que"},
+    "logout_button": {"en": "Sign out", "pt": "Sair", "fr": "Se déconnecter"},
+    "profile_notice": {
+        "en": "Profile information is kept only for the current application session. Persistent profile storage will be added with the production database.",
+        "pt": "As informações do perfil permanecem apenas na sessão atual da aplicação. O armazenamento persistente será adicionado com o banco de dados de produção.",
+        "fr": "Les informations du profil sont conservées uniquement pendant la session actuelle. Le stockage persistant sera ajouté avec la base de données de production."
     },
     "contact_opt_out": {
         "en": "I do not wish to be contacted for future collaborations.",
@@ -687,7 +588,7 @@ TEXTS = {
         "pt": "Breve descrição do(s) experimento(s)",
         "fr": "Brève description de(s) expérience(s)"
     },
-    "form_email": {"en": "Email", "pt": "E-mail", "fr": "E-mail"},
+    "form_email": {"en": "Contact email", "pt": "E-mail de contato", "fr": "E-mail de contact"},
     "form_submit": {"en": "Continue", "pt": "Continuar", "fr": "Continuer"},
     "required_fields_error": {
         "en": "All fields are mandatory.",
@@ -695,54 +596,24 @@ TEXTS = {
         "fr": "Tous les champs sont obligatoires."
     },
     "email_invalid": {
-        "en": "Please enter a valid email address.",
-        "pt": "Informe um e-mail válido.",
-        "fr": "Veuillez saisir une adresse e-mail valide."
+        "en": "Enter a valid contact email.",
+        "pt": "Informe um e-mail de contato válido.",
+        "fr": "Saisissez un e-mail de contact valide."
     },
-    "otp_send_button": {"en": "Send verification code", "pt": "Enviar código de verificação", "fr": "Envoyer le code de vérification"},
-    "enter_button": {"en": "Enter", "pt": "Entrar", "fr": "Entrer"},
-    "verify_enter_button": {"en": "Verify code and enter", "pt": "Verificar código e entrar", "fr": "Vérifier le code et entrer"},
-    "otp_sent_success": {
-        "en": "Verification code sent. Please check your inbox.",
-        "pt": "Código de verificação enviado. Verifique sua caixa de entrada.",
-        "fr": "Code de vérification envoyé. Veuillez vérifier votre boîte de réception."
+    "upload_saved": {
+        "en": "An exact copy of the uploaded file was saved.",
+        "pt": "Uma cópia exata do arquivo enviado foi salva.",
+        "fr": "Une copie exacte du fichier téléchargé a été enregistrée."
     },
-    "otp_send_fail": {
-        "en": "Failed to send verification code: {0}",
-        "pt": "Falha ao enviar código de verificação: {0}",
-        "fr": "Échec de l’envoi du code de vérification : {0}"
+    "upload_duplicate": {
+        "en": "An identical file already exists. The original was kept without being overwritten.",
+        "pt": "Já existe um arquivo idêntico. O original foi mantido sem sobrescrita.",
+        "fr": "Un fichier identique existe déjà. L’original a été conservé sans être écrasé."
     },
-    "smtp_missing": {
-        "en": "SMTP settings are not configured. Contact the administrator.",
-        "pt": "Configurações SMTP não encontradas. Contate o administrador.",
-        "fr": "Les paramètres SMTP ne sont pas configurés. Contactez l’administrateur."
-    },
-    "otp_code_label": {"en": "Verification code", "pt": "Código de verificação", "fr": "Code de vérification"},
-    "otp_verify_button": {"en": "Validate email", "pt": "Validar e-mail", "fr": "Valider l’e-mail"},
-    "otp_invalid": {
-        "en": "Invalid or expired code.",
-        "pt": "Código inválido ou expirado.",
-        "fr": "Code invalide ou expiré."
-    },
-    "otp_validated": {
-        "en": "Email successfully validated.",
-        "pt": "E-mail validado com sucesso.",
-        "fr": "E-mail validé avec succès."
-    },
-    "welcome_back_verified": {
-        "en": "Email previously validated. Access granted.",
-        "pt": "E-mail já validado anteriormente. Acesso liberado.",
-        "fr": "E-mail déjà validé précédemment. Accès autorisé."
-    },
-    "returning_user_hint": {
-        "en": "If this email has already used the platform, verification will not be required.",
-        "pt": "Se este e-mail já utilizou a plataforma, a verificação não será necessária.",
-        "fr": "Si cet e-mail a déjà utilisé la plateforme, la vérification ne sera pas nécessaire."
-    },
-    "access_blocked_until_validation": {
-        "en": "Access remains blocked until email validation is completed.",
-        "pt": "O acesso permanece bloqueado até concluir a validação do e-mail.",
-        "fr": "L’accès reste bloqué jusqu’à la validation de l’e-mail."
+    "upload_save_error": {
+        "en": "The uploaded file could not be backed up: {0}",
+        "pt": "Não foi possível salvar o backup do arquivo enviado: {0}",
+        "fr": "La sauvegarde du fichier téléchargé a échoué : {0}"
     },
     "plot_font_label": {"en": "Plot Font", "pt": "Fonte dos Gráficos", "fr": "Police des Graphiques"},
     "seed_mode_label": {"en": "Random Seed Mode", "pt": "Modo da Seed Aleatória", "fr": "Mode de Seed Aléatoire"},
@@ -1309,186 +1180,153 @@ def render_developer_footer_card():
     render_html_iframe(footer_css + footer_html, height=280, scrolling=False)
 
 def render_access_gate():
-    """
-    Mandatory onboarding + email verification gate.
-    Returns selected language code once access is granted.
-    """
+    """Require OIDC authentication, then collect a session-only research profile."""
     if "gate_lang_selector" not in st.session_state:
         st.session_state.gate_lang_selector = list(LANGUAGES.keys())[0]
-    if "access_granted" not in st.session_state:
-        st.session_state.access_granted = False
-
-    if st.session_state.access_granted:
-        lang_key = st.session_state.get("gate_lang_selector", list(LANGUAGES.keys())[0])
-        lang = LANGUAGES.get(lang_key, "en")
-        st.session_state["lang"] = lang
-        return lang
 
     title_col, lang_col = st.columns([6, 1])
     with title_col:
-        current_gate_lang = LANGUAGES.get(st.session_state.get("gate_lang_selector", list(LANGUAGES.keys())[0]), "en")
-        st.title(TEXTS["onboarding_title"][current_gate_lang])
+        current_lang = LANGUAGES.get(
+            st.session_state.get("gate_lang_selector", list(LANGUAGES.keys())[0]),
+            "en",
+        )
+        st.title(TEXTS["onboarding_title"][current_lang])
     with lang_col:
         lang_key = st.selectbox(
             "Language / Idioma / Langue",
             list(LANGUAGES.keys()),
             key="gate_lang_selector",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
+
     lang = LANGUAGES[lang_key]
     st.session_state["lang"] = lang
 
-    st.info(TEXTS["onboarding_subtitle"][lang])
+    if not is_user_logged_in():
+        st.info(TEXTS["onboarding_subtitle"][lang])
+        st.caption(TEXTS["onboarding_card_instructions_body"][lang])
+        st.caption(TEXTS["data_use_notice"][lang])
+
+        google_col, orcid_col = st.columns(2)
+        with google_col:
+            if st.button(
+                TEXTS["login_google"][lang],
+                width="stretch",
+                key="login_google_button",
+            ):
+                try:
+                    st.login("google")
+                except Exception:
+                    st.error(TEXTS["login_config_error"][lang])
+        with orcid_col:
+            if st.button(
+                TEXTS["login_orcid"][lang],
+                width="stretch",
+                key="login_orcid_button",
+            ):
+                try:
+                    st.login("orcid")
+                except Exception:
+                    st.error(TEXTS["login_config_error"][lang])
+
+        st.warning(TEXTS["login_required"][lang])
+        st.markdown("---")
+        render_developer_footer_card()
+        st.stop()
+
+    identity = get_authenticated_identity()
+    identity_key = f"{identity['issuer']}|{identity['subject']}"
+    if st.session_state.get("profile_identity_key") != identity_key:
+        st.session_state["profile_identity_key"] = identity_key
+        st.session_state["access_granted"] = False
+        st.session_state["user_profile"] = {}
+        st.session_state["gate_first_name"] = identity["first_name"]
+        st.session_state["gate_last_name"] = identity["last_name"]
+        st.session_state["gate_email"] = identity["email"]
+        st.session_state["gate_institution"] = ""
+        st.session_state["gate_country"] = "Other"
+        st.session_state["gate_experiment_description"] = ""
+        st.session_state["gate_contact_opt_out"] = False
+
+    if st.session_state.get("access_granted"):
+        return lang
+
+    display_identity = identity["display_name"] or identity["email"] or identity["subject"]
+    st.success(
+        f"{TEXTS['signed_in_as'][lang]}: **{display_identity}** "
+        f"({identity['provider']})"
+    )
+    if st.button(TEXTS["logout_button"][lang], key="gate_logout_button"):
+        for key in ("user_profile", "access_granted", "profile_identity_key"):
+            st.session_state.pop(key, None)
+        st.logout()
+
+    st.info(TEXTS["profile_notice"][lang])
     st.caption(TEXTS["data_use_notice"][lang])
-    pending_profile = st.session_state.get("pending_profile", {})
-    for k, default in [
-        ("gate_first_name", pending_profile.get("first_name", "")),
-        ("gate_last_name", pending_profile.get("last_name", "")),
-        ("gate_institution", pending_profile.get("institution", "")),
-        ("gate_country", pending_profile.get("country", "Other")),
-        ("gate_experiment_description", pending_profile.get("experiment_description", "")),
-        ("gate_email", pending_profile.get("email", "")),
-        ("gate_contact_opt_out", bool(pending_profile.get("contact_opt_out", False))),
-    ]:
-        if k not in st.session_state:
-            st.session_state[k] = default
 
-    col_info, col_profile, col_verify = st.columns([1, 1, 1], gap="large")
-    with col_info:
-        with st.container(border=True):
-            st.markdown(f"#### {TEXTS['onboarding_card_instructions_title'][lang]}")
-            st.markdown(TEXTS["onboarding_card_instructions_body"][lang])
-            st.caption(TEXTS["returning_user_hint"][lang])
-
-    with col_profile:
-        with st.container(border=True):
-            st.markdown(f"#### {TEXTS['onboarding_card_profile_title'][lang]}")
+    with st.form("research_profile_form"):
+        st.markdown(f"#### {TEXTS['onboarding_card_profile_title'][lang]}")
+        name_col, surname_col = st.columns(2)
+        with name_col:
             st.text_input(TEXTS["form_first_name"][lang], key="gate_first_name")
+        with surname_col:
             st.text_input(TEXTS["form_last_name"][lang], key="gate_last_name")
+
+        st.text_input(
+            TEXTS["form_email"][lang],
+            key="gate_email",
+            disabled=bool(identity["email"]),
+        )
+
+        institution_col, country_col = st.columns(2)
+        with institution_col:
             st.text_input(TEXTS["form_institution"][lang], key="gate_institution")
+        with country_col:
             country_value = st.session_state.get("gate_country", "Other")
             if country_value not in COUNTRY_OPTIONS:
                 st.session_state["gate_country"] = "Other"
             st.selectbox(TEXTS["form_country"][lang], COUNTRY_OPTIONS, key="gate_country")
-            st.text_area(TEXTS["form_description"][lang], key="gate_experiment_description")
-            st.checkbox(TEXTS["contact_opt_out"][lang], key="gate_contact_opt_out")
 
-    with col_verify:
-        with st.container(border=True):
-            st.markdown(f"#### {TEXTS['onboarding_card_verify_title'][lang]}")
-            st.text_input(TEXTS["form_email"][lang], key="gate_email")
-            email_norm = normalize_email(st.session_state.get("gate_email", ""))
-            pending_email = normalize_email(st.session_state.get("otp_requested_email", ""))
-            if pending_email and pending_email != email_norm:
-                for key in ("pending_otp_hash", "pending_otp_expires", "pending_profile", "otp_requested_email", "gate_otp_input"):
-                    if key in st.session_state:
-                        del st.session_state[key]
-            known_email = validate_email_format(email_norm) and is_email_already_validated(email_norm)
-            awaiting_code = (
-                ("pending_otp_hash" in st.session_state)
-                and normalize_email(st.session_state.get("otp_requested_email", "")) == email_norm
-            )
+        st.text_area(TEXTS["form_description"][lang], key="gate_experiment_description")
+        st.checkbox(TEXTS["contact_opt_out"][lang], key="gate_contact_opt_out")
+        submitted = st.form_submit_button(
+            TEXTS["form_submit"][lang],
+            width="stretch",
+        )
 
-            known_profile = load_verified_profiles().get(email_norm, None) if known_email else None
-            if known_profile:
-                if not st.session_state.get("gate_first_name", "").strip():
-                    st.session_state["gate_first_name"] = known_profile.get("first_name", "")
-                if not st.session_state.get("gate_last_name", "").strip():
-                    st.session_state["gate_last_name"] = known_profile.get("last_name", "")
-                if not st.session_state.get("gate_institution", "").strip():
-                    st.session_state["gate_institution"] = known_profile.get("institution", "")
-                if not st.session_state.get("gate_experiment_description", "").strip():
-                    st.session_state["gate_experiment_description"] = known_profile.get("experiment_description", "")
-                if st.session_state.get("gate_country", "Other") == "Other" and known_profile.get("country") in COUNTRY_OPTIONS:
-                    st.session_state["gate_country"] = known_profile.get("country")
+    if submitted:
+        profile = {
+            **identity,
+            "email": normalize_email(st.session_state.get("gate_email", "")),
+            "first_name": str(st.session_state.get("gate_first_name", "")).strip(),
+            "last_name": str(st.session_state.get("gate_last_name", "")).strip(),
+            "institution": str(st.session_state.get("gate_institution", "")).strip(),
+            "country": str(st.session_state.get("gate_country", "")).strip(),
+            "experiment_description": str(
+                st.session_state.get("gate_experiment_description", "")
+            ).strip(),
+            "contact_opt_out": bool(
+                st.session_state.get("gate_contact_opt_out", False)
+            ),
+        }
+        required = (
+            profile["first_name"],
+            profile["last_name"],
+            profile["institution"],
+            profile["country"],
+            profile["experiment_description"],
+            profile["email"],
+            profile["subject"],
+        )
+        if not all(required):
+            st.error(TEXTS["required_fields_error"][lang])
+        elif not validate_email_format(profile["email"]):
+            st.error(TEXTS["email_invalid"][lang])
+        else:
+            st.session_state["user_profile"] = profile
+            st.session_state["access_granted"] = True
+            st.rerun()
 
-            def _build_profile_from_gate():
-                return {
-                    "first_name": str(st.session_state.get("gate_first_name", "")).strip(),
-                    "last_name": str(st.session_state.get("gate_last_name", "")).strip(),
-                    "institution": str(st.session_state.get("gate_institution", "")).strip(),
-                    "country": str(st.session_state.get("gate_country", "")).strip(),
-                    "experiment_description": str(st.session_state.get("gate_experiment_description", "")).strip(),
-                    "email": normalize_email(st.session_state.get("gate_email", "")),
-                    "contact_opt_out": bool(st.session_state.get("gate_contact_opt_out", False))
-                }
-
-            def _validate_required_profile(profile):
-                required = [
-                    profile.get("first_name", ""),
-                    profile.get("last_name", ""),
-                    profile.get("institution", ""),
-                    profile.get("country", ""),
-                    profile.get("experiment_description", ""),
-                    profile.get("email", "")
-                ]
-                if not all(bool(str(x).strip()) for x in required):
-                    return False
-                return True
-
-            if known_email:
-                if st.button(TEXTS["enter_button"][lang], width="stretch", key="gate_enter_btn"):
-                    profile = _build_profile_from_gate()
-                    if not _validate_required_profile(profile):
-                        st.error(TEXTS["required_fields_error"][lang])
-                        st.stop()
-                    if not validate_email_format(profile["email"]):
-                        st.error(TEXTS["email_invalid"][lang])
-                        st.stop()
-                    st.session_state["user_profile"] = profile
-                    st.session_state["access_granted"] = True
-                    append_usage_registry("validated_access", profile, {"source": "previously_validated"})
-                    st.success(TEXTS["welcome_back_verified"][lang])
-                    st.rerun()
-            else:
-                if not awaiting_code:
-                    if st.button(TEXTS["otp_send_button"][lang], width="stretch", key="gate_send_otp_btn"):
-                        profile = _build_profile_from_gate()
-                        if not _validate_required_profile(profile):
-                            st.error(TEXTS["required_fields_error"][lang])
-                            st.stop()
-                        if not validate_email_format(profile["email"]):
-                            st.error(TEXTS["email_invalid"][lang])
-                            st.stop()
-
-                        otp_code = f"{random.randint(0, 999999):06d}"
-                        ok, err = send_otp_email(profile["email"], otp_code, lang)
-                        if not ok:
-                            err_msg = TEXTS["smtp_missing"][lang] if err == "SMTP not configured" else err
-                            st.error(TEXTS["otp_send_fail"][lang].format(err_msg))
-                            st.stop()
-
-                        st.session_state["pending_profile"] = profile
-                        st.session_state["pending_otp_hash"] = hashlib.sha256(otp_code.encode("utf-8")).hexdigest()
-                        st.session_state["pending_otp_expires"] = datetime.now().timestamp() + 600
-                        st.session_state["otp_requested_email"] = profile["email"]
-                        append_usage_registry("otp_sent", profile, {"valid_for_sec": 600})
-                        st.success(TEXTS["otp_sent_success"][lang])
-                        st.rerun()
-                else:
-                    st.text_input(TEXTS["otp_code_label"][lang], key="gate_otp_input")
-                    if st.button(TEXTS["verify_enter_button"][lang], width="stretch", key="gate_verify_enter_btn"):
-                        otp_input = str(st.session_state.get("gate_otp_input", "")).strip()
-                        otp_hash = hashlib.sha256(otp_input.encode("utf-8")).hexdigest()
-                        not_expired = datetime.now().timestamp() <= float(st.session_state.get("pending_otp_expires", 0))
-                        if not_expired and otp_hash == st.session_state.get("pending_otp_hash"):
-                            profile = _build_profile_from_gate()
-                            st.session_state["user_profile"] = profile
-                            st.session_state["access_granted"] = True
-                            append_usage_registry("otp_validated", profile, {"status": "ok"})
-                            for key in ("pending_otp_hash", "pending_otp_expires", "pending_profile", "otp_requested_email", "gate_otp_input"):
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            st.success(TEXTS["otp_validated"][lang])
-                            st.rerun()
-                        else:
-                            profile = _build_profile_from_gate()
-                            append_usage_registry("otp_validation_failed", profile, {"status": "invalid_or_expired"})
-                            st.error(TEXTS["otp_invalid"][lang])
-
-    st.warning(TEXTS["access_blocked_until_validation"][lang])
-    st.markdown("---")
-    render_developer_footer_card()
     st.stop()
 
 # ==============================================================================
@@ -1853,6 +1691,14 @@ def main():
     st.session_state["lang"] = lang
     st.session_state["gate_lang_selector"] = main_lang_key
 
+    identity = get_authenticated_identity()
+    account_label = identity["display_name"] or identity["email"] or identity["subject"]
+    st.sidebar.caption(f"{TEXTS['signed_in_as'][lang]}: {account_label}")
+    if st.sidebar.button(TEXTS["logout_button"][lang], key="sidebar_logout_button"):
+        for key in ("user_profile", "access_granted", "profile_identity_key"):
+            st.session_state.pop(key, None)
+        st.logout()
+
     st.title(TEXTS['app_title'][lang])
     st.markdown(f"### {TEXTS['main_section_adjustments_results'][lang]}")
 
@@ -1987,11 +1833,13 @@ def main():
     max_phases = st.sidebar.number_input(TEXTS['max_phases'][lang], 1, 10, 5, key="max_phases_input")
 
     # Reset analysis state if a new file is uploaded
+    new_upload_received = False
     if file is not None:
-        file_hash = hashlib.md5(file.getvalue()).hexdigest()
+        file_hash = hashlib.sha256(file.getvalue()).hexdigest()
         if st.session_state.uploaded_file_hash != file_hash:
             st.session_state.analysis_run = False
             st.session_state.uploaded_file_hash = file_hash
+            new_upload_received = True
 
     # --- Outlier handling configuration ---
     st.sidebar.markdown("---")
@@ -2057,7 +1905,18 @@ def main():
             else:
                 df = pd.read_excel(file)
 
-            save_uploaded_data(df, st.session_state.get("user_profile", {}))
+            if new_upload_received:
+                try:
+                    _, was_saved = save_uploaded_file(
+                        file,
+                        st.session_state.get("user_profile", {}),
+                    )
+                    if was_saved:
+                        st.success(TEXTS["upload_saved"][lang])
+                    else:
+                        st.info(TEXTS["upload_duplicate"][lang])
+                except OSError as exc:
+                    st.warning(TEXTS["upload_save_error"][lang].format(exc))
 
             t_flat, y_flat, replicates = process_data(df)
             if not replicates:

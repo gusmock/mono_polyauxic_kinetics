@@ -1,0 +1,6 @@
+.streamlit/secrets.toml
+.env
+.venv/
+__pycache__/
+*.py[cod]
+data/

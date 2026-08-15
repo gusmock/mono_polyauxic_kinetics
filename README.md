@@ -70,11 +70,11 @@ $$ y(x)=y_{i}+(y_{f}-y_{i})\cdot\sum_{j=1}^{n}p_{j}\cdot e^{-e^{\frac{r_{max,j}\
 
 ## 💻 Installation
 
-To run the platform locally, you need Python 3.8+ installed.
+To run the platform locally, you need Python 3.9+ installed.
 
 1. **Clone the repository:**
 ```bash
-git clone [https://github.com/gusmock/mono_polyauxic_kinetics.git](https://github.com/gusmock/mono_polyauxic_kinetics.git)
+git clone https://github.com/gusmock/mono_polyauxic_kinetics.git
 cd mono_polyauxic_kinetics
 
 ```
@@ -87,7 +87,13 @@ pip install -r requirements.txt
 ```
 
 
-*Required packages: `streamlit`, `pandas`, `numpy`, `scipy`, `matplotlib`, `openpyxl`.*
+3. **Configure authentication:**
+
+Create Google and ORCID OIDC credentials and configure Streamlit secrets as
+described in [AUTHENTICATION.md](AUTHENTICATION.md). The application will not
+start an authenticated session without these credentials.
+
+*Required packages include `streamlit[auth]`, `Authlib`, `pandas`, `numpy`, `scipy`, `matplotlib`, and `openpyxl`.*
 
 ## 🚀 Usage
 
@@ -107,6 +113,10 @@ streamlit run app.py
 ## 📂 Data Format
 
 The application accepts `.csv` or `.xlsx` files. To ensure correct replicate detection, your data must be structured in **column pairs**.
+
+Uploaded files are automatically copied to `data/uploads/`. Backup filenames
+contain the upload date, uploader email, and original filename. Identical
+content is detected with SHA-256 and the existing file is never overwritten.
 
 * **Structure:** Time column followed immediately by Response column.
 * **Replicates:** Add additional pairs of columns for biological replicates. The system automatically groups them.

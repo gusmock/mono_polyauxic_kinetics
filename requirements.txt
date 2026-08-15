@@ -1,8 +1,8 @@
-streamlit
+streamlit[auth]>=1.42
+Authlib>=1.3.2
 pandas
 numpy
 scipy
 matplotlib
 openpyxl
 xlsxwriter
-streamlit_tour
