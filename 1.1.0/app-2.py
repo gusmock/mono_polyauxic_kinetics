@@ -41,7 +41,7 @@ def get_user_identifier():
 
     detected_id = None
 
-    # 2. Try to obtain the real IP via headers (useful for Streamlit Cloud/Docker)
+    # 2. Try to obtain the real IP via trusted proxy headers.
     try:
         headers = st.context.headers
         if headers and "X-Forwarded-For" in headers:
