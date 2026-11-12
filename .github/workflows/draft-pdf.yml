@@ -1,5 +1,7 @@
-name: Draft PDF
-on: [push]
+# LEGADO / LEGACY: geração do artigo da aplicação Streamlit original.
+name: Legacy Streamlit paper PDF
+# Historical manuscript pipeline; application pushes use native-python validation.
+on: [workflow_dispatch]
 
 jobs:
   paper:

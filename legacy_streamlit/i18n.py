@@ -525,7 +525,9 @@ _ADDITIONS = {
         "Paramètres modifiés. Relancez l’analyse pour ces conditions.",
     ),
 }
-TEXTS.update({key: dict(zip(("en", "pt", "fr"), values)) for key, values in _ADDITIONS.items()})
+TEXTS.update(
+    {key: dict(zip(("en", "pt", "fr"), values, strict=False)) for key, values in _ADDITIONS.items()}
+)
 
 TEXTS["busy"] = {
     "en": "Two analyses are already running. Try again shortly.",

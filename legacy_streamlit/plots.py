@@ -18,6 +18,7 @@ from .core import (
 )
 from .i18n import TEXTS
 from .labels import get_full_model_label
+from .plots_data import observation_frame as build_all_data_df
 
 PLOT_LOCK = threading.RLock()
 AVAILABLE_MPL_FONT_NAMES = {font.name for font in fm.fontManager.ttflist}
@@ -101,9 +102,6 @@ def style_axes_fonts(ax, font_name=None):
             txt.set_fontname(font_name)
 
 
-from .plots_data import observation_frame as build_all_data_df
-
-
 def plot_raw_data(replicates, lang, x_label, y_label):
     """Plots raw data before analysis."""
     fig, ax = plt.subplots(figsize=(5.4, 2.2))
@@ -180,7 +178,7 @@ def plot_metrics_summary(results_list, model_name, lang):
     ax1.plot(phases, aic, "o--", label="AIC")
     ax1.plot(phases, aicc, "s-", label="AICc")
     ax1.plot(phases, bic, "^:", label="BIC")
-    for x, y, is_first_order in zip(phases, aicc, phase1_structure):
+    for x, y, is_first_order in zip(phases, aicc, phase1_structure, strict=False):
         marker = "D" if is_first_order else "o"
         face = "tab:blue" if is_first_order else "white"
         ax1.scatter([x], [y], marker=marker, s=70, c=face, edgecolors="black", zorder=5)
@@ -191,7 +189,7 @@ def plot_metrics_summary(results_list, model_name, lang):
     ax1.grid(True, alpha=0.3)
 
     ax2.plot(phases, r2_adj, "o-", label="Adjusted R²")
-    for x, y, is_first_order in zip(phases, r2_adj, phase1_structure):
+    for x, y, is_first_order in zip(phases, r2_adj, phase1_structure, strict=False):
         marker = "D" if is_first_order else "o"
         face = "tab:blue" if is_first_order else "white"
         ax2.scatter([x], [y], marker=marker, s=70, c=face, edgecolors="black", zorder=5)

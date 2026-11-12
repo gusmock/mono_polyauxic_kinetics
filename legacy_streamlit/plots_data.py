@@ -7,7 +7,7 @@ def observation_frame(replicates):
     rows = [
         {"replicate": rep["name"], "observation": j + 1, "t": float(t), "y": float(y)}
         for rep in replicates
-        for j, (t, y) in enumerate(zip(rep["t"], rep["y"]))
+        for j, (t, y) in enumerate(zip(rep["t"], rep["y"], strict=False))
     ]
     return (
         pd.DataFrame(rows, columns=["replicate", "observation", "t", "y"])

@@ -12,7 +12,9 @@ reproduction references; this maintenance build contains documented corrections.
 ## Install and run
 
 Python **3.12 or later** is required by the pinned numerical dependencies.
-Python 3.12 is the tested version. Use a dedicated native virtual environment.
+Python 3.12 is the tested version. **`git pull` updates source only: also install
+the new requirements and restart the service. Python 3.9 environments must be
+recreated with Python 3.12.** Use a dedicated native virtual environment.
 
 ```bash
 python3.12 -m venv .venv
@@ -75,5 +77,5 @@ Historical `1.1.0/` and `Codeocean_capsule_V1.0.0/` are not runtime dependencies
 ```bash
 .venv/bin/python -m pip install pytest==9.1.1 ruff==0.16.3
 .venv/bin/python -m pytest -c tests/legacy_streamlit/pytest.ini tests/legacy_streamlit
-.venv/bin/python -m ruff check app.py legacy_streamlit tests/legacy_streamlit scripts/check_legacy_frontend.py
+.venv/bin/python -m ruff check --config legacy_streamlit/ruff.toml app.py legacy_streamlit tests/legacy_streamlit scripts/check_legacy_frontend.py
 ```

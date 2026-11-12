@@ -73,6 +73,30 @@ Resultados históricos devem ser preservados com sua versão; não são reescrit
 
 ## Instalação institucional
 
+**O `git pull` deve ser feito na branch `main` do repositório público.** Ele
+atualiza o código, mas não instala pacotes nem troca o Python do serviço.
+Se o ambiente ainda utilizar Python 3.9, criar um novo ambiente Python 3.12,
+instalar os requisitos e apontar o `ExecStart` do serviço para o novo executável.
+Não basta reinstalar os requisitos dentro de um ambiente Python 3.9.
+
+Exemplo de preparação, preservando o ambiente antigo para retorno:
+
+```bash
+git pull --ff-only origin main
+python3.12 -m venv venv-py312
+venv-py312/bin/python -m pip install --upgrade pip
+venv-py312/bin/python -m pip install --upgrade -r requirements.txt
+venv-py312/bin/python -m pip check
+venv-py312/bin/python scripts/check_legacy_frontend.py
+```
+
+Ajustar o serviço para usar o caminho absoluto de `venv-py312/bin/python -m
+streamlit run app.py`, mantendo diretório de trabalho, porta e proxy existentes.
+Após editar a unidade: `systemctl daemon-reload` e
+`systemctl restart streamlit-mono_polyauxic_kinetics`.
+A informática deve executar essas etapas com as permissões administrativas
+habituais; o programa não altera a unidade nem reinicia serviços automaticamente.
+
 1. Confirmar Python 3.12, diretório do checkout e executável utilizado pelo
    serviço `streamlit-mono_polyauxic_kinetics`. O Python do shell pode ser diferente.
 2. Preservar o checkout anterior e registrar `python -m pip freeze` do ambiente

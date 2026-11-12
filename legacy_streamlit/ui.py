@@ -48,7 +48,7 @@ def _axis(text, fallback, lang):
 def _render_results(bundle, replicates, lang, x_label, y_label, content_hash):
     best = {name: family["selected"] for name, family in bundle["families"].items()}
     tabs = st.tabs(list(MODELS))
-    for tab, (name, family) in zip(tabs, bundle["families"].items()):
+    for tab, (name, family) in zip(tabs, bundle["families"].items(), strict=False):
         with tab:
             if family["warning"]:
                 st.warning(TEXTS[family["warning"]][lang])
