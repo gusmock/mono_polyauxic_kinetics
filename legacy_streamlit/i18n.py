@@ -380,6 +380,40 @@ TEXTS = {
 
 # New strings are kept together so all supported languages can be reviewed.
 _ADDITIONS = {
+    "progress": (
+        "Fitting {0}: {1}/{2} phases · {3:.1f} s elapsed. Completed fits appear below; model selection follows at the end.",
+        "Ajustando {0}: {1}/{2} fases · {3:.1f} s decorridos. Ajustes concluídos aparecem abaixo; a seleção ocorre ao final.",
+        "Ajustement {0} : {1}/{2} phases · {3:.1f} s écoulées. Les ajustements terminés apparaissent ci-dessous; la sélection suit à la fin.",
+    ),
+    "analysis_duration": (
+        "Analysis time: {0:.1f} s (results retained in this session).",
+        "Tempo de análise: {0:.1f} s (resultados conservados nesta sessão).",
+        "Durée de l’analyse : {0:.1f} s (résultats conservés dans cette session).",
+    ),
+    "authorship": ("Developed by", "Autoria e desenvolvimento", "Auteur et développement"),
+    "automatic": ("Automatic", "Automático", "Automatique"),
+    "detected_format": (
+        "CSV interpretation: column separator `{0}`; decimal separator `{1}`.",
+        "Leitura do CSV: separador de colunas `{0}`; separador decimal `{1}`.",
+        "Lecture CSV : séparateur de colonnes `{0}`; séparateur décimal `{1}`.",
+    ),
+    "mixed_decimal": (
+        "Mixed decimal conventions. Use one decimal separator throughout the file, or explicitly select the decimal convention.",
+        "Convenções decimais misturadas. Use um único separador decimal no arquivo ou selecione explicitamente a convenção decimal.",
+        "Conventions décimales mélangées. Utilisez un seul séparateur dans le fichier ou sélectionnez explicitement la convention décimale.",
+    ),
+    "parameters_header": (
+        "Parameter estimates and standard errors",
+        "Parâmetros estimados e erros padrão",
+        "Paramètres estimés et erreurs-types",
+    ),
+    "parameter_help": (
+        "Values are shown as estimate ± standard error (6 significant digits). Fixed parameters are not estimated; N/A means the parameter is absent from the model. An unavailable standard error is not zero.",
+        "Valores apresentados como estimativa ± erro padrão (6 algarismos significativos). Parâmetros fixos não são estimados; N/A indica parâmetro ausente no modelo. Erro padrão não estimável não é zero.",
+        "Valeurs affichées : estimation ± erreur-type (6 chiffres significatifs). Les paramètres fixes ne sont pas estimés; N/A indique un paramètre absent du modèle. Une erreur-type non estimable n’est pas zéro.",
+    ),
+    "fixed_parameter": ("fixed", "fixo", "fixe"),
+    "not_estimable": ("not estimable", "não estimável", "non estimable"),
     "privacy": (
         "Open access. No registration. Uploaded data and results remain only in this session; download results before closing it.",
         "Acesso livre, sem cadastro. Dados enviados e resultados ficam apenas nesta sessão; baixe os resultados antes de fechá-la.",

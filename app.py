@@ -1,4 +1,9 @@
-"""Public, anonymous Streamlit entry point."""
+"""Polyauxic Modeling Platform — Prof. Dr. Gustavo Mockaitis.
+
+GBMA / FEAGRI / UNICAMP, University of Campinas, Campinas, SP, Brazil.
+Scientific reference: https://doi.org/10.1007/s11538-026-01621-7
+Public, anonymous Streamlit entry point.
+"""
 
 import sys
 

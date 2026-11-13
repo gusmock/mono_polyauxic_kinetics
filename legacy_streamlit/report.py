@@ -34,6 +34,7 @@ def generate_excel_report(
             audit.update(analysis["config"])
             audit.update(analysis.get("input_settings", {}))
             audit["created_utc"] = analysis.get("created_utc", "")
+            audit["duration_seconds"] = analysis.get("duration_seconds", "")
             audit["warnings"] = json.dumps(analysis["warnings"])
             candidates = []
             for name, family in analysis["families"].items():

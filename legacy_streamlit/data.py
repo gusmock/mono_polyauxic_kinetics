@@ -2,6 +2,7 @@
 
 import csv
 import io
+import re
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -25,7 +26,57 @@ class InputDataError(ValueError):
         super().__init__(f"{code}: {location}" if location else code)
 
 
-def read_upload(content, filename, *, delimiter="auto", decimal="."):
+def _detect_delimiter(text):
+    """Inspect complete records, so decimal commas cannot override a paired header."""
+    candidates = []
+    for separator in (",", ";", "\t"):
+        try:
+            reader = csv.reader(io.StringIO(text), delimiter=separator, strict=True)
+            header = next(row for row in reader if any(cell.strip() for cell in row))
+            if 2 <= len(header) <= 2 * MAX_REPLICATES and len(header) % 2 == 0:
+                candidates.append(separator)
+        except (csv.Error, StopIteration):
+            continue
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        consistent = []
+        for separator in candidates:
+            try:
+                widths = {
+                    len(row)
+                    for row in csv.reader(io.StringIO(text), delimiter=separator, strict=True)
+                    if any(cell.strip() for cell in row)
+                }
+                if len(widths) == 1:
+                    consistent.append(separator)
+            except csv.Error:
+                continue
+        if len(consistent) == 1:
+            return consistent[0]
+        raise InputDataError("delimiter")
+    # Preserve the usual column diagnostics for malformed/unpaired headers.
+    try:
+        return csv.Sniffer().sniff(text, delimiters=",;\t").delimiter
+    except csv.Error as exc:
+        raise InputDataError("delimiter") from exc
+
+
+def _detect_decimal(df):
+    marks = set()
+    for value in df.to_numpy().flat:
+        # XLSX numeric cells already carry their value, regardless of locale.
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if re.fullmatch(r"[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][+-]?\d+)?", value):
+            marks.update(mark for mark in (".", ",") if mark in value)
+    if len(marks) > 1:
+        raise InputDataError("mixed_decimal")
+    return marks.pop() if marks else "."
+
+
+def read_upload(content, filename, *, delimiter="auto", decimal="auto", return_format=False):
     if not content or len(content) > MAX_UPLOAD_BYTES:
         raise InputDataError("file_size")
     suffix = Path(filename).suffix.lower()
@@ -36,10 +87,7 @@ def read_upload(content, filename, *, delimiter="auto", decimal="."):
             except UnicodeDecodeError as exc:
                 raise InputDataError("encoding") from exc
             if delimiter == "auto":
-                try:
-                    delimiter = csv.Sniffer().sniff(text[:8192], delimiters=",;\t").delimiter
-                except csv.Error as exc:
-                    raise InputDataError("delimiter") from exc
+                delimiter = _detect_delimiter(text)
             if delimiter not in (",", ";", "\t"):
                 raise InputDataError("delimiter")
             reader = csv.reader(io.StringIO(text), delimiter=delimiter, strict=True)
@@ -110,7 +158,14 @@ def read_upload(content, filename, *, delimiter="auto", decimal="."):
     frame = pd.DataFrame(
         [row + [None] * (len(header) - len(row)) for row in rows[1:]], columns=header
     )
-    return process_data(frame, decimal=decimal)
+    decimal = _detect_decimal(frame) if decimal == "auto" else decimal
+    result = process_data(frame, decimal=decimal)
+    if return_format:
+        return (
+            *result,
+            {"delimiter": delimiter if suffix == ".csv" else "xlsx", "decimal": decimal},
+        )
+    return result
 
 
 def _is_number(value):
@@ -121,9 +176,11 @@ def _is_number(value):
         return False
 
 
-def process_data(df, decimal="."):
+def process_data(df, decimal="auto"):
     """Paired blanks are missing observations; partial, nonnumeric and infinite pairs are errors."""
     df = df.reset_index(drop=True)
+    if decimal == "auto":
+        decimal = _detect_decimal(df)
     if decimal not in (".", ","):
         raise InputDataError("decimal")
     if not 2 <= df.shape[1] <= 2 * MAX_REPLICATES or df.shape[1] % 2:

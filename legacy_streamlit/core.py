@@ -1,5 +1,9 @@
 """Public scientific core. Reference equations: doi:10.1007/s11538-026-01621-7.
 
+Author: Prof. Dr. Gustavo Mockaitis — GBMA / FEAGRI / UNICAMP.
+Interdisciplinary Research Group of Biotechnology Applied to the Agriculture
+and Environment, School of Agricultural Engineering, University of Campinas.
+
 The returned theta layout remains [yi, yf, n logits, n rates, n lags].
 Only independent parameters are optimized. The last logit is the zero reference;
 fixed asymptotes and the unused first-order lag are excluded from estimation.

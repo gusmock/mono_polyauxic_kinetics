@@ -1,6 +1,7 @@
-# Manutenção do Streamlit — 12/11/2026
+# Manutenção do Streamlit — 12–13/11/2026
 
-Build: `streamlit-20261112.1`.
+Build atual: `streamlit-20261113.1` (correção das regressões da interface).
+Build inicial da manutenção: `streamlit-20261112.1`.
 Escopo: aplicação pública `gusmock/mono_polyauxic_kinetics`, derivada do commit
 `2bc20a9f5e3e1b75b3ed862cbbccdba414772950`. O código da suíte institucional e os
 arquivos históricos de reprodução não integram esta refatoração.
@@ -38,7 +39,8 @@ A verificação é específica dessas bibliotecas; não substitui um scanner ger
 - Resultados conservados apenas na sessão: idioma, fonte, eixos e downloads
   não repetem o cálculo. Dados, configurações científicas ou interpretação do
   arquivo alterados invalidam o resultado anterior.
-- Leitura limitada de CSV/XLSX, separador decimal explícito, rejeição de erros
+- Leitura limitada de CSV/XLSX, separadores de colunas e decimal automáticos
+  com opção de escolha manual, rejeição de erros
   em pares, infinitos, fórmulas, macros, links externos e descompactação excessiva.
   Nenhuma linha parcialmente inválida é descartada silenciosamente.
 - Ordenação estável mantém a identidade das observações com tempos repetidos
@@ -60,7 +62,8 @@ A verificação é específica dessas bibliotecas; não substitui um scanner ger
   ajuste, mas continua sendo considerada na comparação de ambas.
 - A restrição de assíntota final zero foi retirada: ela não implementava uma
   cinética decrescente válida com essas equações e taxas positivas.
-- Removidos scripts externos de badges. Mantidas referências por links.
+- Removidos scripts externos de badges. Recuperados o cartão autoral, foto,
+  afiliação, sete perfis profissionais e referências completas por links.
 - Exportação com dados brutos, candidatos, parâmetros numéricos, SE, resíduos,
   exclusões, opções, semente, horário UTC, SHA-256 da entrada e build. Strings
   não são convertidas em fórmulas ou links executáveis no Excel.
@@ -144,7 +147,7 @@ A notificação ao responsável e o encerramento dependem da verificação exter
 - [Moment 2.31.0](https://github.com/moment/moment/releases/tag/2.31.0)
 - [Equações de referência](https://doi.org/10.1007/s11538-026-01621-7)
 
-## Verificação desta revisão
+## Verificação inicial (12/11/2026)
 
 - **45 testes passaram** em Python 3.12: CSV/XLSX e limites, erros de entrada,
   recuperação de parâmetros em uma e duas fases, primeira ordem, mudança de
@@ -163,3 +166,91 @@ A notificação ao responsável e o encerramento dependem da verificação exter
 
 Os testes sintéticos exercitam os casos descritos. Não constituem validação
 universal da identificabilidade, do número de fases ou do método de outliers.
+
+## Correções solicitadas pelo autor (13/11/2026)
+
+Relato recebido diretamente: perda das informações autorais, detecção automática
+incompleta, parâmetros/erros padrão pouco visíveis, demora e diferenças de
+comportamento. Nenhuma issue aberta encontrada no repositório público na consulta.
+As correções abaixo pertencem exclusivamente ao legado público; não alteram
+versão, build ou encerramento da suíte institucional rc.3.
+
+| Item | Regressão constatada | Correção |
+| --- | --- | --- |
+| Autoria | Rodapé reduzido ao nome e siglas | Nome/título, foto, afiliação completa, localização, sete perfis e quatro referências científicas restaurados |
+| Importação | Separador decimal manual, embora o delimitador já tivesse modo automático | Delimitador e decimal automáticos por padrão, inclusive valores textuais do XLSX; opções manuais preservadas |
+| Resultados | Tabelas dentro de seção recolhida; quatro casas decimais ocultavam incertezas pequenas | Estimativas e erros padrão diretamente visíveis, seis algarismos significativos, identificação de valores fixos e não estimáveis |
+| Outliers | Padrão alterado de robusto/FDR para nenhuma remoção | Padrão original robusto/FDR, Q = 1%, restaurado; as três opções continuam disponíveis |
+| Acompanhamento | Só havia resultados após todos os ajustes | Progresso por família/fase, prévia dos candidatos concluídos e tempo da análise registrados |
+| Seleção | Destaques e nomes das abas simplificados | Equações nos nomes das abas e destaques dos candidatos selecionados recuperados |
+
+A importação é testada com vírgula, ponto e vírgula e tabulação como delimitadores,
+ponto e vírgula decimais, cabeçalhos entre aspas, notação científica, linhas
+vazias e réplicas de comprimentos diferentes. Convenções decimais misturadas
+exigem correção ou escolha explícita; não se infere separador de milhares.
+A convenção efetivamente usada também integra a auditoria do Excel.
+
+Os testes da interface comparam os valores exibidos com o resultado numérico de
+cada candidato, incluindo troca de candidato sem recalcular, três idiomas,
+erros padrão pequenos, créditos e referências. Os parâmetros não ficam dentro
+de expansores. Erro padrão ausente continua sinalizado como não estimável;
+não foi substituído por zero nem recalculado por uma fórmula antiga inválida.
+
+### Comparação de desempenho
+
+Comparação no mesmo computador e ambiente Python 3.12, semente 42, robusto/FDR
+com Q = 1%, entre o núcleo do commit original
+`2bc20a9f5e3e1b75b3ed862cbbccdba414772950` e o publicado na manutenção
+`6d84db845242aa3543cdb36cfdbc478a05c14c7b`. A revisão de 13/11 não altera o
+algoritmo de otimização desse segundo núcleo. Medidas exploratórias únicas,
+sem execução simultânea dos dois programas; não são limites de desempenho.
+
+Dados sintéticos: 65 tempos igualmente espaçados de 0 a 30, duas fases,
+`y_i=1`, `y_f=20`, `p=(0.4, 0.6)`, `r_max=(1.5, 1.2)`, `lambda=(2, 14)`;
+ruído normal com desvio 0.08 e semente 10. No caso de 195 observações,
+cada tempo aparece três vezes, com ruídos independentes.
+
+Os tempos abaixo somam os candidatos sigmoides de 1 a 5 fases, cada um com
+pré-ajuste robusto e ajuste final, na família indicada. Não incluem renderização,
+transferência de arquivos, ajustes híbridos adicionais ou carga do servidor.
+
+| Caso | Original | Manutenção publicada |
+| --- | ---: | ---: |
+| Gompertz, 65 observações | 17.361 s | 12.773 s |
+| Boltzmann, 65 observações | 21.783 s | 13.752 s |
+| Gompertz, 195 observações | 12.801 s | 11.431 s |
+
+Não se reproduziu piora geral nesses casos. Houve candidatos mais lentos:
+por exemplo, Gompertz de 3 fases/65 observações passou de 1.975 s a 3.053 s.
+A busca estocástica e a parametrização independente podem mudar a trajetória
+em modelos com fases excedentes. No ajuste de duas fases dos dados gerados
+com duas fases, a SSE concordou entre as versões em menos de 4 × 10⁻⁸ nos
+três casos. Isso não comprova equivalência de todos os resultados nem o tempo
+na instalação institucional. Para reproduzir uma lentidão específica, são
+necessários o arquivo utilizado, as opções e a revisão em execução.
+
+### Diferenças científicas preservadas e explicitadas
+
+A manutenção não é numericamente idêntica ao código anterior. Permanecem as
+correções descritas acima: amplitude da primeira ordem, eliminação do parâmetro
+redundante, contagem dos parâmetros independentes/variância, covariância pelo
+Jacobiano e bloqueio de comparação entre candidatos que removem observações
+diferentes. Elas podem alterar erros padrão, critérios e seleção de fases.
+O botão de assíntota final zero continua ausente porque as equações anteriores
+não implementavam corretamente uma curva decrescente. A revisão de 13/11
+não introduz novas mudanças nesses métodos nem reduz o orçamento de otimização
+para produzir uma aparência de maior velocidade.
+
+Na comparação adicional da sequência completa de ajustes numéricos (ambas as
+famílias, máximo de 5 fases, mesmos 65 dados Gompertz), foram produzidos os mesmos
+11 candidatos estruturais, incluindo a alternativa de primeira ordem. A execução
+original levou **50.632 s** e a manutenção **37.440 s**. São tempos de uma execução
+por versão nesse computador, sem renderização ou rede, e não uma medição da
+instalação institucional. O acompanhamento da execução foi corrigido sem alterar
+o núcleo matemático nesta revisão.
+
+Verificação da correção: **59 testes passaram** em Python 3.12, incluindo fluxo
+real de widgets nos três idiomas, parâmetros por candidato, leitura automática,
+créditos, progresso, isolamento de sessões e exportação. Ruff aprovado. O
+verificador dos arquivos JavaScript instalados confirmou novamente DOMPurify
+3.4.17 e Moment 2.31.0. A automação do repositório repete esses testes em Linux.

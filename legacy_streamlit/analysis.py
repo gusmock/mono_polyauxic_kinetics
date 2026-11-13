@@ -36,7 +36,7 @@ MODELS = {"Gompertz": gompertz_term_eq32, "Boltzmann": boltzmann_term_eq31}
 @dataclass(frozen=True)
 class AnalysisConfig:
     max_phases: int = 5
-    outlier_method: str = "none"
+    outlier_method: str = "rout"
     rout_q: float = 1.0
     force_yi: bool = False
     seed: int = 42
@@ -50,7 +50,7 @@ class AnalysisConfig:
             raise ValueError("Invalid ROUT Q")
 
 
-def analysis_key(content, config, delimiter="auto", decimal="."):
+def analysis_key(content, config, delimiter="auto", decimal="auto"):
     settings = json.dumps([asdict(config), delimiter, decimal], sort_keys=True).encode()
     return sha256(content + b"\0" + settings).hexdigest()
 
@@ -143,14 +143,17 @@ def select_candidates(results):
     return by_phase[index], by_phase, criterion, None
 
 
-def _run_analysis(t, y, config, *, time_budget=180.0):
+def _run_analysis(t, y, config, *, time_budget=180.0, on_progress=None):
     deadline = time.monotonic() + time_budget
     candidates = {name: [] for name in MODELS}
     warnings = []
     first_order = None
     timed_out = False
-    for name, function in MODELS.items():
+    for family_index, (name, function) in enumerate(MODELS.items()):
         for n in range(1, config.max_phases + 1):
+            completed = family_index * config.max_phases + n - 1
+            if on_progress is not None:
+                on_progress(name, n, completed, None)
             options = {
                 "force_yi": config.force_yi,
                 "rout_q": config.rout_q,
@@ -165,6 +168,8 @@ def _run_analysis(t, y, config, *, time_budget=180.0):
                     warnings.append((name, n, "no_fit"))
                     continue
                 candidates[name].append(standard)
+                if on_progress is not None:
+                    on_progress(name, n, completed, standard)
                 if should_test_first_order_variant(standard, tol=1e-6 * max(1.0, float(np.ptp(t)))):
                     if n == 1 and first_order is not None:
                         hybrid = deepcopy(first_order)
@@ -180,12 +185,16 @@ def _run_analysis(t, y, config, *, time_budget=180.0):
                         )
                     if hybrid is not None:
                         candidates[name].append(hybrid)
+                        if on_progress is not None:
+                            on_progress(name, n, completed, hybrid)
                         if n == 1:
                             first_order = deepcopy(hybrid)
             except AnalysisTimeout:
                 warnings.append((name, n, "timeout"))
                 timed_out = True
                 break
+            if on_progress is not None:
+                on_progress(name, n, completed + 1, None)
         if timed_out:
             break
     families = {}
@@ -203,10 +212,10 @@ def _run_analysis(t, y, config, *, time_budget=180.0):
     return {"families": families, "config": asdict(config), "warnings": warnings}
 
 
-def run_analysis(t, y, config, *, time_budget=180.0):
+def run_analysis(t, y, config, *, time_budget=180.0, on_progress=None):
     if not ANALYSIS_SLOTS.acquire(blocking=False):
         raise AnalysisBusy("The service is busy; retry later")
     try:
-        return _run_analysis(t, y, config, time_budget=time_budget)
+        return _run_analysis(t, y, config, time_budget=time_budget, on_progress=on_progress)
     finally:
         ANALYSIS_SLOTS.release()

@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import secrets
+import time
 from datetime import UTC, datetime
 
 import numpy as np
@@ -12,6 +13,7 @@ from matplotlib.mathtext import MathTextParser
 
 from . import BUILD
 from .analysis import MODELS, AnalysisBusy, AnalysisConfig, analysis_key, run_analysis
+from .attribution import render_attribution
 from .core import gompertz_term_eq32, polyauxic_model
 from .data import InputDataError, read_upload
 from .i18n import LANGUAGES, TEXTS
@@ -20,6 +22,7 @@ from .plots import (
     PLOT_FONT_OPTIONS,
     PLOT_LOCK,
     display_single_fit,
+    format_estimate,
     plot_final_summary,
     plot_metrics_summary,
     plot_raw_data,
@@ -47,7 +50,7 @@ def _axis(text, fallback, lang):
 
 def _render_results(bundle, replicates, lang, x_label, y_label, content_hash):
     best = {name: family["selected"] for name, family in bundle["families"].items()}
-    tabs = st.tabs(list(MODELS))
+    tabs = st.tabs([TEXTS["tab_gompertz"][lang], TEXTS["tab_boltzmann"][lang]])
     for tab, (name, family) in zip(tabs, bundle["families"].items(), strict=False):
         with tab:
             if family["warning"]:
@@ -82,6 +85,7 @@ def _render_results(bundle, replicates, lang, x_label, y_label, content_hash):
                         ("y_i", "y_f"),
                         "r_max",
                         lang,
+                        force_yi=bundle["config"]["force_yi"],
                     )
             if family["results"]:
                 rows = []
@@ -93,9 +97,33 @@ def _render_results(bundle, replicates, lang, x_label, y_label, content_hash):
                             **r["metrics"],
                             "converged": r["converged"],
                             "selected": r is family["selected"],
+                            "best_for_phase": any(
+                                r is candidate for candidate in family["by_phase"]
+                            ),
                         }
                     )
-                st.dataframe(pd.DataFrame(rows), hide_index=True)
+                summary = pd.DataFrame(rows)
+                st.subheader(TEXTS["table_title"][lang])
+                st.dataframe(
+                    summary.style.apply(
+                        lambda row: (
+                            [
+                                "background-color: #d7e8ff; color: #111; font-weight: bold"
+                                if row["selected"]
+                                else (
+                                    "background-color: #d4edda; color: #111"
+                                    if row["best_for_phase"]
+                                    else ""
+                                )
+                            ]
+                            * len(row)
+                        ),
+                        axis=1,
+                    ),
+                    hide_index=True,
+                )
+                st.caption(TEXTS["legend_final_best"][lang])
+                st.caption(TEXTS["legend_phase_best"][lang])
             if family["selected"]:
                 st.info(TEXTS["selection_logic_body"][lang].format(family["criterion"]))
                 st.success(
@@ -160,16 +188,24 @@ def main():
     delimiter = st.sidebar.selectbox(
         TEXTS["separator"][lang],
         ["auto", ";", ",", "\t"],
-        format_func=lambda s: "Tab" if s == "\t" else s,
+        format_func=lambda s: (
+            TEXTS["automatic"][lang] if s == "auto" else ("Tab" if s == "\t" else s)
+        ),
         key="csv_separator",
     )
-    decimal = st.sidebar.selectbox(TEXTS["decimal"][lang], [".", ","], key="decimal_separator")
+    decimal = st.sidebar.selectbox(
+        TEXTS["decimal"][lang],
+        ["auto", ".", ","],
+        format_func=lambda s: TEXTS["automatic"][lang] if s == "auto" else s,
+        key="decimal_separator",
+    )
     max_phases = st.sidebar.number_input(
         TEXTS["max_phases"][lang], 1, 10, 5, key="max_phases_input"
     )
     method = st.sidebar.selectbox(
         TEXTS["outlier_method_label"][lang],
         ["none", "simple", "rout"],
+        index=2,
         format_func=lambda k: TEXTS["outlier_" + k][lang],
         key="outlier_method_selector",
     )
@@ -228,12 +264,7 @@ def main():
         )
     with st.expander(TEXTS["instructions_header"][lang]):
         st.markdown(TEXTS["instructions_list"][lang])
-    st.divider()
-    st.markdown("Gustavo Mockaitis · GBMA · FEAGRI · UNICAMP")
-    st.markdown(
-        "[Reference article](https://doi.org/10.1007/s11538-026-01621-7) · "
-        "[Source code](https://github.com/gusmock/mono_polyauxic_kinetics)"
-    )
+    render_attribution(lang)
     st.caption(BUILD)
 
 
@@ -265,7 +296,9 @@ def _data_workflow(
             st.info(TEXTS["stale"][lang])
     st.session_state["analysis_key"] = key
     try:
-        t, y, replicates = read_upload(content, filename, delimiter=delimiter, decimal=decimal)
+        t, y, replicates, detected = read_upload(
+            content, filename, delimiter=delimiter, decimal=decimal, return_format=True
+        )
     except InputDataError as exc:
         st.session_state.pop("analysis_result", None)
         st.error(
@@ -276,6 +309,13 @@ def _data_workflow(
     with PLOT_LOCK:
         plot_raw_data(replicates, lang, x_label, y_label)
     st.success(TEXTS["data_loaded"][lang].format(len(replicates), len(t)))
+    if detected["delimiter"] != "xlsx":
+        st.caption(
+            TEXTS["detected_format"][lang].format(
+                "Tab" if detected["delimiter"] == "\t" else detected["delimiter"],
+                detected["decimal"],
+            )
+        )
     if st.button(TEXTS["run_button"][lang], key="run_analysis_button"):
         st.session_state.pop("analysis_result", None)
         if seed_mode == "random":
@@ -288,10 +328,47 @@ def _data_workflow(
             + seed_mode
         )
         try:
-            with st.spinner(TEXTS["optimizing"][lang].format(max_phases)):
-                result = run_analysis(t, y, config)
+            started = time.monotonic()
+            progress = st.progress(0.0, text=TEXTS["optimizing"][lang].format(max_phases))
+            preview = st.empty()
+            completed_rows = []
+
+            def show_progress(name, phases, completed, candidate):
+                progress.progress(
+                    completed / (len(MODELS) * max_phases),
+                    text=TEXTS["progress"][lang].format(
+                        name, phases, max_phases, time.monotonic() - started
+                    ),
+                )
+                if candidate is not None:
+                    completed_rows.append(
+                        {
+                            TEXTS["full_model_col"][lang]: get_full_model_label(
+                                candidate, name, lang
+                            ),
+                            "F": phases,
+                            "y_i": format_estimate(
+                                candidate["theta"][0], candidate["se"][0], lang, fixed=force_yi
+                            ),
+                            "y_f": format_estimate(candidate["theta"][1], candidate["se"][1], lang),
+                            "SSE": candidate["metrics"]["SSE"],
+                        }
+                    )
+                    preview.dataframe(pd.DataFrame(completed_rows), hide_index=True)
+
+            try:
+                result = run_analysis(t, y, config, on_progress=show_progress)
+            finally:
+                progress.empty()
+                preview.empty()
+            result["duration_seconds"] = time.monotonic() - started
             result["created_utc"] = datetime.now(UTC).isoformat()
-            result["input_settings"] = {"delimiter": delimiter, "decimal": decimal}
+            result["input_settings"] = {
+                "delimiter": delimiter,
+                "decimal": decimal,
+                "resolved_delimiter": detected["delimiter"],
+                "resolved_decimal": detected["decimal"],
+            }
             st.session_state["analysis_result"] = result
         except AnalysisBusy:
             st.warning(TEXTS["busy"][lang])
@@ -301,6 +378,8 @@ def _data_workflow(
     bundle = st.session_state.get("analysis_result")
     if bundle is not None:
         st.caption(TEXTS["seed_used_msg"][lang].format(bundle["config"]["seed"]))
+        if "duration_seconds" in bundle:
+            st.caption(TEXTS["analysis_duration"][lang].format(bundle["duration_seconds"]))
         _render_results(
             bundle, replicates, lang, x_label, y_label, hashlib.sha256(content).hexdigest()
         )

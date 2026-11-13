@@ -11,12 +11,51 @@ from legacy_streamlit.plots_data import observation_frame
 
 
 def test_decimal_comma_and_semicolon_utf8_bom():
-    t, y, reps = read_upload(
-        "\ufefftempo;resposta\n0,0;1,5\n1,5;2,5\n".encode(), "Data.CSV", decimal=","
-    )
+    t, y, reps = read_upload("\ufefftempo;resposta\n0,0;1,5\n1,5;2,5\n".encode(), "Data.CSV")
     np.testing.assert_array_equal(t, [0.0, 1.5])
     np.testing.assert_array_equal(y, [1.5, 2.5])
     assert len(reps) == 1
+
+
+@pytest.mark.parametrize("separator", [",", ";", "\t"])
+@pytest.mark.parametrize("decimal", [".", ","])
+def test_delimiter_and_decimal_are_both_automatic(separator, decimal):
+    import csv
+
+    content = io.StringIO()
+    writer = csv.writer(content, delimiter=separator)
+    writer.writerow(["time", "response"])
+    writer.writerows(
+        [[v.replace(".", decimal) for v in row] for row in [["0.0", "1.5e-3"], ["1.5", "2.5"]]]
+    )
+    t, y, _, detected = read_upload(content.getvalue().encode(), "data.csv", return_format=True)
+    np.testing.assert_array_equal(t, [0, 1.5])
+    np.testing.assert_array_equal(y, [0.0015, 2.5])
+    assert detected == {"delimiter": separator, "decimal": decimal}
+
+
+def test_auto_separator_handles_quoted_headers_blank_lines_and_paired_missing_values():
+    content = b'"time, h";"response; mL";t2;y2\n0;1,5;0;1,6\n\n1;2,5;;\n2;3,5;2;3,6\n'
+    t, y, reps = read_upload(content, "data.csv")
+    assert len(reps) == 2
+    np.testing.assert_array_equal(t, [0, 0, 1, 2, 2])
+    np.testing.assert_allclose(y, [1.5, 1.6, 2.5, 3.5, 3.6])
+
+
+def test_mixed_decimal_conventions_require_an_explicit_choice():
+    content = b"t;y\n0;1,5\n1;2.5\n"
+    with pytest.raises(InputDataError, match="mixed_decimal"):
+        read_upload(content, "data.csv")
+    # Explicit comma interpretation also accepts literal dot-decimal numbers.
+    _, y, _ = read_upload(content, "data.csv", delimiter=";", decimal=",")
+    np.testing.assert_array_equal(y, [1.5, 2.5])
+    with pytest.raises(InputDataError, match="numeric"):
+        read_upload(content, "data.csv", delimiter=";", decimal=".")
+
+
+def test_ambiguous_column_separator_is_not_silently_selected():
+    with pytest.raises(InputDataError, match="delimiter"):
+        read_upload(b"time,response;other\n0,1;2\n1,2;3", "data.csv")
 
 
 @pytest.mark.parametrize(
@@ -74,6 +113,12 @@ def test_xlsx_roundtrip_and_no_formula_evaluation():
     np.testing.assert_array_equal(y, [1, 2])
     with pytest.raises(InputDataError, match="formula"):
         read_upload(xlsx([["t", "y"], [0, 1], [1, "=1+1"]]), "data.xlsx")
+
+
+def test_xlsx_numeric_cells_and_text_decimal_comma_are_automatic():
+    t, y, _ = read_upload(xlsx([["t", "y"], [0.0, "1,5"], [1.25, 2.5]]), "data.xlsx")
+    np.testing.assert_array_equal(t, [0, 1.25])
+    np.testing.assert_array_equal(y, [1.5, 2.5])
 
 
 def test_zip_bomb_rejected_before_workbook_parser():

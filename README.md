@@ -33,19 +33,25 @@ rescan remains necessary after deployment. See the
 ## Data and results
 
 Upload UTF-8 CSV or XLSX with a header row and 1–5 pairs of time/response
-columns. Choose the decimal separator and, if necessary, the CSV delimiter.
+columns. Column separators (comma, semicolon or tab) and decimal separators
+(dot or comma) are detected automatically. Manual overrides remain available.
+The interface shows the interpreted format; mixed decimal conventions require
+an explicit choice or correction of the file. Thousands separators are unsupported.
 Limits: 5 MB, 5,000 rows and 10,000 paired observations. Blank pairs are allowed;
 partial pairs, nonnumeric/infinite values, negative times and formulas are
 rejected with an explanation. Keep physical units consistent across replicates.
 
 The synthetic example is available without a file. Set the maximum number of
 phases and run the analysis. Figures support configurable fonts, axis labels
-and SVG downloads. Excel exports include numeric parameters and standard
+and SVG downloads. Parameter estimates and their standard errors are visible
+directly below each candidate's plot, with six significant digits. Fixed and
+unestimable parameters are labelled explicitly. Excel exports include numeric parameters and standard
 errors, original observations, residuals, exclusions, all candidates, criteria,
 seed, input hash and build identifier. English, Portuguese and French are supported.
 
 Data and results stay in session memory. Download them before closing the page.
-Changing display settings does not repeat fitting; changing data or scientific
+Progress and completed fits appear during computation. The elapsed analysis time
+is recorded in the interface and export. Changing display settings does not repeat fitting; changing data or scientific
 settings invalidates previous results. Two fits can execute concurrently, with
 a 180-second budget per analysis. Reduce the phase limit if the budget expires.
 
@@ -55,7 +61,8 @@ The equations describe **increasing** responses. A zero final asymptote is no
 longer offered as a substitute for a decreasing-response model. A first-order
 phase is considered when the fitted first lag is approximately zero.
 
-No automatic outlier removal is the default. The optional robust/FDR procedure
+The original robust/FDR outlier option is again the default, with Q = 1%.
+Users can explicitly select no removal or simple MAD. The robust/FDR procedure
 retains the legacy Charbonnier + MAD + Benjamini–Hochberg approach; it is labelled
 as a legacy approximation, not as a newly validated implementation of ROUT.
 Candidates retaining different observations are not ranked automatically.
@@ -66,6 +73,17 @@ parameter. Fixed asymptotes, the reference logit and the unused first-order lag
 are not counted as estimated mean-model parameters. Standard errors use a
 residual Jacobian and are withheld for rank deficiency, active bounds or failed
 convergence. They are local approximations, not profile-likelihood intervals.
+
+## Author
+
+**Prof. Dr. Gustavo Mockaitis — GBMA / FEAGRI / UNICAMP.**
+Interdisciplinary Research Group of Biotechnology Applied to the Agriculture and
+Environment, School of Agricultural Engineering, University of Campinas.
+Campinas, SP, Brazil. [ORCID](https://orcid.org/0000-0002-4231-1056) ·
+[Lattes](http://lattes.cnpq.br/1400402042483439) ·
+[Institutional profile](http://feagri.unicamp.br/mockaitis).
+The application also preserves the author's photo, professional profiles and
+full article, preprint, Zenodo and Code Ocean references.
 
 ## Code and tests
 

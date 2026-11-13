@@ -158,3 +158,19 @@ def test_concurrency_limit_does_not_share_or_start_excess_jobs():
     finally:
         ANALYSIS_SLOTS.release()
         ANALYSIS_SLOTS.release()
+
+
+def test_progress_exposes_completed_candidates_before_final_selection():
+    events = []
+    t = np.linspace(0, 15, 25)
+    y = core.polyauxic_model(t, [1.0, 12.0, 0.0, 2.0, 2.0], core.gompertz_term_eq32, 1)
+    result = run_analysis(
+        t, y, AnalysisConfig(max_phases=1), on_progress=lambda *event: events.append(event)
+    )
+    assert AnalysisConfig().outlier_method == "rout"
+    assert events[0] == ("Gompertz", 1, 0, None)
+    assert events[-1] == ("Boltzmann", 1, 2, None)
+    completed = [(name, candidate) for name, _, _, candidate in events if candidate is not None]
+    assert {name for name, _ in completed} == {"Gompertz", "Boltzmann"}
+    for name, candidate in completed:
+        assert any(candidate is r for r in result["families"][name]["results"])

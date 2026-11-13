@@ -247,6 +247,8 @@ def display_single_fit(
     param_labels,
     rate_label,
     lang,
+    *,
+    force_yi=False,
 ):
     """Displays detailed results for a single fit."""
     n = res["n_phases"]
@@ -433,41 +435,51 @@ def display_single_fit(
         ].map(_fmt_mixed)
         st.dataframe(df_overview, hide_index=True, width="stretch")
 
-    with st.expander(TEXTS["details_expander"][lang], expanded=False):
+    st.subheader(TEXTS["parameters_header"][lang])
+    st.caption(TEXTS["parameter_help"][lang])
+    df_glob = pd.DataFrame(
+        {
+            TEXTS["table_col_param"][lang]: [yi_name, yf_name],
+            f"{TEXTS['table_col_value'][lang]} ± {TEXTS['table_col_se'][lang]}": [
+                format_estimate(y_i, y_i_se, lang, fixed=force_yi),
+                format_estimate(y_f, y_f_se, lang),
+            ],
+        }
+    )
+    st.dataframe(df_glob, hide_index=True, width="stretch")
 
-        def _fmt_pm(v, se_v):
-            if isinstance(v, (int, float, np.integer, np.floating)) and np.isfinite(v):
-                if isinstance(se_v, (int, float, np.integer, np.floating)) and np.isfinite(se_v):
-                    return f"{float(v):.4f} ± {float(se_v):.4f}"
-                return f"{float(v):.4f}"
-            return str(v)
-
-        df_glob = pd.DataFrame(
+    rows = []
+    for i, ph in enumerate(phases):
+        lambda_display = (
+            "N/A"
+            if (use_first_order_phase1 and ph.get("phase_id", -1) == 0)
+            else format_estimate(ph["lambda"], ph["lambda_se"], lang)
+        )
+        rows.append(
             {
-                TEXTS["table_col_param"][lang]: [yi_name, yf_name],
-                f"{TEXTS['table_col_value'][lang]} ± {TEXTS['table_col_se'][lang]}": [
-                    _fmt_pm(y_i, y_i_se),
-                    _fmt_pm(y_f, y_f_se),
-                ],
+                TEXTS["table_col_phase"][lang]: i + 1,
+                f"p ± {TEXTS['table_col_se'][lang]}": format_estimate(
+                    ph["p"], ph["SE p"], lang, fixed=n == 1
+                ),
+                f"{rate_label} ± {TEXTS['table_col_se'][lang]}": format_estimate(
+                    ph["r_max"], ph["r_max_se"], lang
+                ),
+                f"λ ± {TEXTS['table_col_se'][lang]}": lambda_display,
             }
         )
-        st.dataframe(df_glob, hide_index=True, width="stretch")
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
-        rows = []
-        for i, ph in enumerate(phases):
-            lambda_display = (
-                "N/A"
-                if (use_first_order_phase1 and ph.get("phase_id", -1) == 0)
-                else _fmt_pm(ph["lambda"], ph["lambda_se"])
-            )
-            rows.append(
-                {
-                    TEXTS["table_col_phase"][lang]: i + 1,
-                    "p ± SE": _fmt_pm(ph["p"], ph["SE p"]),
-                    f"{rate_label} ± {TEXTS['table_col_se'][lang]}": _fmt_pm(
-                        ph["r_max"], ph["r_max_se"]
-                    ),
-                    "λ ± SE": lambda_display,
-                }
-            )
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+
+def format_estimate(value, standard_error, lang, *, fixed=False):
+    """Keep small uncertainties visible and distinguish fixed/unestimable values."""
+    if not np.isfinite(value):
+        return "N/A"
+    estimate = f"{float(value):.6g}"
+    if fixed:
+        return f"{estimate} ({TEXTS['fixed_parameter'][lang]})"
+    error = (
+        f"{float(standard_error):.6g}"
+        if np.isfinite(standard_error)
+        else TEXTS["not_estimable"][lang]
+    )
+    return f"{estimate} ± {error}"
