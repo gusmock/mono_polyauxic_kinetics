@@ -42,6 +42,10 @@ def test_export_is_numeric_auditable_and_does_not_create_formulas():
     data = book["Gom_1_S_Data"]
     assert data.max_row == 26 and data["E2"].data_type == "n"
     assert book["Gom_1_S_Parameters"]["C2"].data_type == "n"
+    candidate_headers = [c.value for c in book["Candidates"][1]]
+    assert {"uncertainty_status", "active_constraints", "optimizer_refinement"} <= set(
+        candidate_headers
+    )
 
 
 def test_security_checker_detects_old_and_new_embedded_versions(tmp_path):

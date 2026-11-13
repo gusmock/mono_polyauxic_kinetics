@@ -52,8 +52,10 @@ seed, input hash and build identifier. English, Portuguese and French are suppor
 Data and results stay in session memory. Download them before closing the page.
 Progress and completed fits appear during computation. The elapsed analysis time
 is recorded in the interface and export. Changing display settings does not repeat fitting; changing data or scientific
-settings invalidates previous results. Two fits can execute concurrently, with
-a 180-second budget per analysis. Reduce the phase limit if the budget expires.
+settings invalidates previous results. Two analyses can execute concurrently.
+Each optimization has a 120-second budget. The complete analysis is no longer
+cut off after 180 seconds; callers may explicitly request an overall time budget.
+Progress remains visible while the requested candidates are processed.
 
 ## Scientific scope
 
@@ -68,11 +70,19 @@ as a legacy approximation, not as a newly validated implementation of ROUT.
 Candidates retaining different observations are not ranked automatically.
 
 Selection preserves the first-local-minimum policy within each family.
+The search again uses the original full coordinates, population, bounds and
+DE/L-BFGS-B strategy. A failed refinement near coincident lag times can use
+SLSQP with explicit chronological constraints; the diagnostic records which
+refinement succeeded. The redundant reference logit is removed after fitting
+when estimating covariance, rather than changing the stochastic search.
 AIC/AICc/BIC use the independent fitted parameters plus one residual-variance
 parameter. Fixed asymptotes, the reference logit and the unused first-order lag
 are not counted as estimated mean-model parameters. Standard errors use a
-residual Jacobian and are withheld for rank deficiency, active bounds or failed
-convergence. They are local approximations, not profile-likelihood intervals.
+residual Jacobian and are withheld for rank deficiency or failed convergence.
+When a constraint is active and the covariance is computable, standard errors
+remain visible with a warning that the local linear approximation ignores the
+constraint. They are not validated confidence intervals. Constraints, conditioning
+and optimizer diagnostics are included in the Excel export.
 
 ## Author
 

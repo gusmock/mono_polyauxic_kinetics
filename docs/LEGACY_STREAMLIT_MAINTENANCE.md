@@ -1,6 +1,7 @@
 # Manutenção do Streamlit — 12–13/11/2026
 
-Build atual: `streamlit-20261113.1` (correção das regressões da interface).
+Build atual: `streamlit-20261113.2` (compatibilidade da busca e incertezas).
+Build anterior: `streamlit-20261113.1` (correção das regressões da interface).
 Build inicial da manutenção: `streamlit-20261112.1`.
 Escopo: aplicação pública `gusmock/mono_polyauxic_kinetics`, derivada do commit
 `2bc20a9f5e3e1b75b3ed862cbbccdba414772950`. O código da suíte institucional e os
@@ -30,7 +31,10 @@ O verificador `scripts/check_legacy_frontend.py` falha diante de versões antiga
 ausentes ou implementações reconhecidas cuja versão não possa ser determinada.
 A verificação é específica dessas bibliotecas; não substitui um scanner geral.
 
-## Correções
+## Correções da refatoração inicial (12/11/2026)
+
+As decisões de busca numérica, exibição das incertezas e orçamento total abaixo
+foram revistas no build `streamlit-20261113.2`, conforme registro ao final.
 
 - Removidos login, cadastro, coleta de perfil e gravação automática de uploads.
   Arquivos antigos existentes no servidor não são apagados.
@@ -237,7 +241,7 @@ redundante, contagem dos parâmetros independentes/variância, covariância pelo
 Jacobiano e bloqueio de comparação entre candidatos que removem observações
 diferentes. Elas podem alterar erros padrão, critérios e seleção de fases.
 O botão de assíntota final zero continua ausente porque as equações anteriores
-não implementavam corretamente uma curva decrescente. A revisão de 13/11
+não implementavam corretamente uma curva decrescente. A revisão `streamlit-20261113.1`
 não introduz novas mudanças nesses métodos nem reduz o orçamento de otimização
 para produzir uma aparência de maior velocidade.
 
@@ -254,3 +258,75 @@ real de widgets nos três idiomas, parâmetros por candidato, leitura automátic
 créditos, progresso, isolamento de sessões e exportação. Ruff aprovado. O
 verificador dos arquivos JavaScript instalados confirmou novamente DOMPurify
 3.4.17 e Moment 2.31.0. A automação do repositório repete esses testes em Linux.
+
+## Compatibilidade da busca e incertezas — build streamlit-20261113.2
+
+O autor confirmou em 13/11/2026 a prioridade de **compatibilidade com a estratégia
+de busca anterior**, mantendo a atualização de dependências, acesso livre e
+os diagnósticos de incerteza. A reprodução com dados autorizados revelou duas
+regressões: a mudança das coordenadas da evolução diferencial podia levar a
+outro mínimo, e um único parâmetro no limite eliminava todos os erros padrão.
+Os dados experimentais, seus resultados e os arquivos de reprodução ficam fora
+de ambos os repositórios. Os testes publicados usam exclusivamente dados sintéticos.
+
+### Busca e seleção
+
+- Restaurados a dimensão e as coordenadas originais da busca, os limites dos
+  logits `[-10, 10]`, a população inicial de 50 indivíduos, a distribuição e a
+  semente, `best1bin`, até 3.000 gerações, o polimento da evolução diferencial e
+  o refinamento L-BFGS-B. Restaurada a tolerância absoluta `1e-6` do teste da
+  primeira fase para considerar a alternativa de primeira ordem.
+- A referência do softmax é normalizada **depois** do ajuste. O parâmetro
+  redundante, os valores fixos e o lag não usado na primeira ordem continuam
+  fora da contagem estatística e da covariância. A busca original e a estimativa
+  da incerteza têm finalidades distintas.
+- Se o segundo polimento falhar em uma solução já convergente da evolução
+  diferencial, a solução convergente é conservada. Se ambos falharem,
+  tenta-se um refinamento SLSQP com a ordem dos lags como restrição explícita.
+  Isso trata a descontinuidade da penalidade antiga perto de lags coincidentes.
+  O resultado só é aceito se convergir, respeitar a ordem e não piorar o objetivo
+  além da tolerância numérica. A exportação registra o refinamento utilizado.
+- Não se restaurou a aceitação silenciosa de resultados sem convergência ou de
+  comparações entre observações diferentes. Permanecem os avisos e os bloqueios
+  quando não há estimativa válida.
+- Removido o corte padrão de 180 segundos da **análise inteira**, que prejudicava
+  a conclusão de todas as fases em processadores mais lentos. Cada otimização
+  mantém seu limite cooperativo de 120 segundos. Um chamador da API pode ainda
+  fornecer explicitamente `time_budget` para limitar a análise completa.
+  O progresso e os resultados já calculados continuam sendo apresentados.
+
+Essa restauração da estratégia não promete identidade bit a bit: a correção da
+amplitude da primeira ordem, os diagnósticos, a covariância, a contagem estatística
+correta e o refinamento de recuperação permanecem. Não se reduziu a precisão nem
+se descartaram réplicas para diminuir artificialmente o tempo.
+
+### Erros padrão
+
+Com convergência e Jacobiano de posto completo, a covariância local é calculada
+por SVD nos parâmetros independentes. Quando há uma restrição ativa ou uma fronteira a menos de um passo das
+diferenças finitas do Jacobiano, os erros
+padrão calculáveis são apresentados e identificados como aproximações lineares
+locais que **desconsideram a restrição**. Não representam intervalos de confiança
+validados sob restrição. Rank deficiente ou ausência de convergência continuam
+produzindo a indicação de erro não estimável. Valores fixos e o lag ausente da
+primeira ordem são diferenciados de erros padrão iguais a zero.
+
+O Excel inclui `uncertainty_status`, condicionamento do Jacobiano, restrições
+ativas, estratégia de busca e refinamento. Assim, o aviso não se perde no download.
+
+Referências metodológicas:
+
+- [SciPy: covariance and linear approximation in curve_fit](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html)
+- [SciPy: SLSQP and constrained convergence](https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html)
+
+### Verificação
+
+**66 testes passaram** em Python 3.12 na validação local, incluindo o fluxo de
+interface nos três idiomas. Acrescentados: regressão de busca contra um ajuste
+sintético do código original; erro padrão em limite comparado a um Jacobiano
+analítico independente; recuperação de falha do refinamento; manutenção de uma
+análise completa que ultrapassa 180 segundos sem orçamento total explícito;
+aviso de aproximação na interface; e diagnósticos correspondentes no Excel.
+Resultados de uma versão anterior são invalidados automaticamente ao mudar
+o build, evitando exibir cálculos antigos com os novos diagnósticos. Ruff
+aprovado. A automação do GitHub repete os testes em Linux.

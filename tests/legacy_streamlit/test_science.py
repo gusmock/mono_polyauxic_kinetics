@@ -97,6 +97,14 @@ def test_fingerprint_includes_scientific_and_parse_settings():
     assert analysis_key(b"a", c) != analysis_key(b"a", c, decimal=",")
 
 
+def test_new_build_invalidates_previous_numerical_results(monkeypatch):
+    from legacy_streamlit import analysis
+
+    previous = analysis_key(b"data", AnalysisConfig())
+    monkeypatch.setattr(analysis, "BUILD", "synthetic-next-build")
+    assert analysis_key(b"data", AnalysisConfig()) != previous
+
+
 def test_timeout_does_not_select_partial_results():
     t = np.linspace(0, 15, 25)
     y = 1 + 10 / (1 + np.exp(-t + 5))
@@ -174,3 +182,99 @@ def test_progress_exposes_completed_candidates_before_final_selection():
     assert {name for name, _ in completed} == {"Gompertz", "Boltzmann"}
     for name, candidate in completed:
         assert any(candidate is r for r in result["families"][name]["results"])
+
+
+def test_legacy_search_recovers_historical_noisy_three_phase_fit():
+    # Public synthetic benchmark, not experimental data. Reference: original
+    # public commit 2bc20a9, seed 42, same noisy two-phase signal fitted with 3 phases.
+    t = np.linspace(0, 30, 65)
+    theta = [1.0, 20.0, np.log(0.4 / 0.6), 0.0, 1.5, 1.2, 2.0, 14.0]
+    y = core.polyauxic_model(t, theta, core.gompertz_term_eq32, 2)
+    y += np.random.default_rng(10).normal(0, 0.08, len(t))
+    result = run_fit_with_outlier_strategy(t, y, core.gompertz_term_eq32, 3, "rout")
+    assert result is not None
+    assert result["metrics"]["SSE"] == pytest.approx(0.21977902897374363, abs=5e-4)
+    assert not result["outliers"].any()
+
+
+def test_active_bound_retains_explicitly_approximate_errors_with_analytic_check():
+    t = np.linspace(0, 4, 30)
+    y = core.polyauxic_model(t, [5.0, 100.0, 0.0, 8.0, 2.0], core.boltzmann_term_eq31, 1)
+    r = core.fit_model_auto(t, y, core.boltzmann_term_eq31, 1)
+    assert r["converged"] and r["jacobian_rank"] == 4
+    assert 1 in r["active_bounds"]  # yf reaches the legacy search bound.
+    assert r["uncertainty_status"] == "approximate_at_boundary"
+    assert not r["uncertainty_reliable"]
+    assert np.isfinite(r["se"][[0, 1, 3, 4]]).all()
+    # Independent analytic derivatives of the one-phase Boltzmann equation.
+    yi, yf, _, rate, lag = r["theta"]
+    delta = yf - yi
+    a = 4 * rate * (lag - t) / delta
+    s = 1 / (1 + np.exp(a + 2))
+    q = s * (1 - s)
+    jac = np.column_stack((1 - s - q * a, s + q * a, -4 * q * (lag - t), -4 * rate * q))
+    _, singular, vt = np.linalg.svd(jac, full_matrices=False)
+    cov = r["metrics"]["SSE"] / (len(t) - 4) * (vt.T / singular**2) @ vt
+    np.testing.assert_allclose(r["se"][[0, 1, 3, 4]], np.sqrt(np.diag(cov)), rtol=0.01)
+
+
+def test_failed_legacy_refinement_recovers_with_explicit_lag_constraints(monkeypatch):
+    from scipy.optimize import OptimizeResult
+
+    t = np.linspace(0, 20, 45)
+    truth = np.array([1.0, 12.0, 0.0, 0.0, 2.0, 1.0, 2.0, 7.0])
+    y = core.polyauxic_model(t, truth, core.gompertz_term_eq32, 2)
+    y += np.random.default_rng(7).normal(0, 0.02, len(t))
+    initial = np.array([1.2, 11.5, 0.1, -0.1, 1.8, 1.2, 2.0, 5.0])
+    initial /= np.r_[y.max(), y.max(), 1, 1, y.max() / t.max(), y.max() / t.max(), t.max(), t.max()]
+    real_minimize = core.minimize
+
+    def unsuccessful_search(fun, bounds, **kwargs):
+        return OptimizeResult(
+            x=initial.copy(), fun=fun(initial), success=False, message="iteration limit"
+        )
+
+    def failed_refinement(fun, x, **kwargs):
+        if kwargs["method"] == "L-BFGS-B":
+            return OptimizeResult(x=x.copy(), fun=fun(x), success=False, message="ABNORMAL")
+        return real_minimize(fun, x, **kwargs)
+
+    monkeypatch.setattr(core, "differential_evolution", unsuccessful_search)
+    monkeypatch.setattr(core, "minimize", failed_refinement)
+    result = core.fit_model_auto(t, y, core.gompertz_term_eq32, 2)
+    assert result["converged"]
+    assert result["optimizer_refinement"].startswith("SLSQP")
+    assert np.all(np.diff(result["theta"][6:]) >= -1e-7)
+    assert result["metrics"]["SSE"] < 0.05
+
+
+@pytest.mark.parametrize("budget,complete", [(None, True), (180.0, False)])
+def test_slow_complete_analysis_is_not_cut_off_without_explicit_overall_budget(
+    monkeypatch, budget, complete
+):
+    from legacy_streamlit import analysis
+
+    elapsed = [0.0]
+    monkeypatch.setattr(analysis.time, "monotonic", lambda: elapsed[0])
+
+    def slow_fit(t, y, function, n, method, **options):
+        elapsed[0] += 100.0  # Each fit is within its own 120-second budget.
+        deadline = options["deadline"]
+        if deadline is not None and elapsed[0] > deadline:
+            raise core.AnalysisTimeout("overall budget expired")
+        r = candidate([False] * len(t), score=10 / n, n=n)
+        r["theta"] = np.ones(2 + 3 * n)  # No optional first-order candidate.
+        return r
+
+    monkeypatch.setattr(analysis, "run_fit_with_outlier_strategy", slow_fit)
+    r = run_analysis(
+        np.arange(30.0), np.arange(30.0), AnalysisConfig(max_phases=2), time_budget=budget
+    )
+    if complete:
+        assert elapsed[0] == 400.0
+        assert all(
+            len(f["results"]) == 2 and f["selected"] is not None for f in r["families"].values()
+        )
+    else:
+        assert all(f["selected"] is None for f in r["families"].values())
+        assert r["warnings"][-1][2] == "timeout"

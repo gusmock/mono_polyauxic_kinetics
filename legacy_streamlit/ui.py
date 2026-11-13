@@ -17,7 +17,7 @@ from .attribution import render_attribution
 from .core import gompertz_term_eq32, polyauxic_model
 from .data import InputDataError, read_upload
 from .i18n import LANGUAGES, TEXTS
-from .labels import get_full_model_label, normalize_axis_math_label
+from .labels import boundary_parameter_labels, get_full_model_label, normalize_axis_math_label
 from .plots import (
     PLOT_FONT_OPTIONS,
     PLOT_LOCK,
@@ -69,7 +69,13 @@ def _render_results(bundle, replicates, lang, x_label, y_label, content_hash):
                     key=f"candidate_{name}",
                 )
                 result = family["results"][candidate_index]
-                if not result["uncertainty_reliable"]:
+                if result.get("uncertainty_status") == "approximate_at_boundary":
+                    st.warning(
+                        TEXTS["uncertainty_boundary"][lang].format(
+                            ", ".join(boundary_parameter_labels(result))
+                        )
+                    )
+                elif not result["uncertainty_reliable"]:
                     st.warning(TEXTS["uncertainty"][lang])
                 if not result["converged"]:
                     st.warning(TEXTS["no_convergence"][lang])

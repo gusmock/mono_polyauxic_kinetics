@@ -162,3 +162,20 @@ def normalize_axis_math_label(label_text):
     text = re.sub(r"\^(-?\d+)", r"^{\1}", text)
 
     return f"${text}$"
+
+
+def boundary_parameter_labels(result):
+    """Readable model constraints shared by the interface and exported diagnostics."""
+    n = result["n_phases"]
+    names = (
+        ["y_i", "y_f"]
+        + [f"z_{j + 1}" for j in range(n)]
+        + [f"r_max_{j + 1}" for j in range(n)]
+        + [f"lambda_{j + 1}" for j in range(n)]
+    )
+    labels = [names[index] for index in result.get("active_bounds", [])]
+    if result.get("active_order_constraint"):
+        labels.append("lambda_1 ≤ lambda_2 ≤ …")
+    if result.get("active_weight_span"):
+        labels.append("p_max/p_min")
+    return labels

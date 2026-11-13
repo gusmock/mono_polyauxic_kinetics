@@ -9,6 +9,7 @@ from hashlib import sha256
 
 import numpy as np
 
+from . import BUILD
 from .core import (
     AnalysisTimeout,
     boltzmann_term_eq31,
@@ -51,7 +52,7 @@ class AnalysisConfig:
 
 
 def analysis_key(content, config, delimiter="auto", decimal="auto"):
-    settings = json.dumps([asdict(config), delimiter, decimal], sort_keys=True).encode()
+    settings = json.dumps([BUILD, asdict(config), delimiter, decimal], sort_keys=True).encode()
     return sha256(content + b"\0" + settings).hexdigest()
 
 
@@ -143,8 +144,10 @@ def select_candidates(results):
     return by_phase[index], by_phase, criterion, None
 
 
-def _run_analysis(t, y, config, *, time_budget=180.0, on_progress=None):
-    deadline = time.monotonic() + time_budget
+def _run_analysis(t, y, config, *, time_budget=None, on_progress=None):
+    # Preserve completion of the requested candidates on slower institutional CPUs.
+    # Each optimizer retains its 120 s limit; a caller may set an overall budget.
+    deadline = time.monotonic() + time_budget if time_budget is not None else None
     candidates = {name: [] for name in MODELS}
     warnings = []
     first_order = None
@@ -170,7 +173,7 @@ def _run_analysis(t, y, config, *, time_budget=180.0, on_progress=None):
                 candidates[name].append(standard)
                 if on_progress is not None:
                     on_progress(name, n, completed, standard)
-                if should_test_first_order_variant(standard, tol=1e-6 * max(1.0, float(np.ptp(t)))):
+                if should_test_first_order_variant(standard, tol=1e-6):
                     if n == 1 and first_order is not None:
                         hybrid = deepcopy(first_order)
                     else:
@@ -212,7 +215,7 @@ def _run_analysis(t, y, config, *, time_budget=180.0, on_progress=None):
     return {"families": families, "config": asdict(config), "warnings": warnings}
 
 
-def run_analysis(t, y, config, *, time_budget=180.0, on_progress=None):
+def run_analysis(t, y, config, *, time_budget=None, on_progress=None):
     if not ANALYSIS_SLOTS.acquire(blocking=False):
         raise AnalysisBusy("The service is busy; retry later")
     try:

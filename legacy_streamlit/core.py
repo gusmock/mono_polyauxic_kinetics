@@ -5,8 +5,9 @@ Interdisciplinary Research Group of Biotechnology Applied to the Agriculture
 and Environment, School of Agricultural Engineering, University of Campinas.
 
 The returned theta layout remains [yi, yf, n logits, n rates, n lags].
-Only independent parameters are optimized. The last logit is the zero reference;
-fixed asymptotes and the unused first-order lag are excluded from estimation.
+The legacy search coordinates are retained for compatibility. After fitting,
+the last logit is the zero reference; only independent parameters enter the
+covariance and parameter count. Fixed/unused parameters are excluded from it.
 """
 
 import time
@@ -402,69 +403,62 @@ def _fit(
     y_scale = max(float(np.max(np.abs(y_data))), np.finfo(float).eps)
     t_norm, y_norm = t_data / t_scale, y_data / y_scale
     scales = np.r_[y_scale, y_scale, np.ones(n), np.full(n, y_scale / t_scale), np.full(n, t_scale)]
-    fixed = {2 + n - 1: 0.0}  # Remove softmax translation invariance.
-    if force_yi:
-        fixed[0] = 0.0
-    if use_first_order_phase1:
-        fixed[2 + 2 * n] = 0.0
-    free = np.array([i for i in range(2 + 3 * n) if i not in fixed])
-    all_bounds = (
-        [(0.0, 1.5), (0.0, 2.0)] + [(-20.0, 20.0)] * n + [(0.0, 500.0)] * n + [(0.0, 1.2)] * n
+
+    # Preserve the original search coordinates, initialization, bounds and polishing.
+    # Removing a logit DURING the stochastic search changed its trajectory and fits.
+    # Redundancy is instead removed AFTER fitting, for covariance and parameter counts.
+    bounds = (
+        [(0.0, 1e-10 if force_yi else 1.5), (0.0, 2.0)]
+        + [(-10.0, 10.0)] * n
+        + [(0.0, 500.0)] * n
+        + [(0.0, 1.2)] * n
     )
-    bounds = [all_bounds[i] for i in free]
-    lower, upper = np.array(bounds).T
     guess = smart_initial_guess(t_data, y_data, n) / scales
     guess[2 : 2 + n] = 0.0
-    template = np.zeros(2 + 3 * n)
-    for i, value in fixed.items():
-        template[i] = value
-
-    def expand(values):
-        theta = template.copy()
-        theta[free] = values
-        return theta
-
-    def predict(values):
-        return evaluate_polyauxic_model(
-            t_norm, expand(values), model_func, n, use_first_order_phase1
-        )
+    if force_yi:
+        guess[0] = 0.0
+    rng = np.random.default_rng(random_seed)
+    population = np.tile(guess, (50, 1))
+    population *= rng.uniform(0.8, 1.2, population.shape)
+    population[:, 2 : 2 + n] = rng.uniform(-2.0, 2.0, (50, n))
+    if force_yi:
+        population[:, 0] = 0.0
 
     calls = 0
+    min_allowed = -0.1 * np.max(np.abs(y_norm))
 
-    def loss(values):
+    def loss(theta, *, ordering_penalty=True):
         nonlocal calls
         calls += 1
         if calls % 64 == 1 and time.monotonic() > deadline:
             raise AnalysisTimeout("Analysis time limit reached")
-        theta = expand(values)
-        prediction = predict(values)
-        residual = y_norm - prediction
-        # Chronological lags, positive amplitude and the original lower-response penalty.
+        # These penalties and their strict ordering tolerance match the legacy search.
         lag = theta[2 + 2 * n :]
-        penalty = 1e6 * np.sum(np.maximum(0.0, -np.diff(lag)) ** 2)
-        penalty += 1e6 * max(0.0, theta[0] - theta[1] + 1e-9) ** 2
-        penalty += 1e6 * np.sum(np.maximum(0.0, -0.1 * np.max(np.abs(y_norm)) - prediction) ** 2)
-        base = np.sum(2 * (np.hypot(1.0, residual) - 1)) if robust else np.sum(residual**2)
+        differences = np.diff(lag)
+        penalty = 0.0
+        if ordering_penalty and np.any(differences <= 0):
+            penalty += 1e6 * np.sum(np.maximum(0.0, -differences + 1e-6) ** 2)
+        prediction = evaluate_polyauxic_model(t_norm, theta, model_func, n, use_first_order_phase1)
+        if np.any(prediction < min_allowed):
+            penalty += 1e6 * np.sum(np.maximum(0.0, min_allowed - prediction) ** 2)
+        residual = y_norm - prediction
+        base = np.sum(2 * (np.sqrt(1.0 + residual**2) - 1)) if robust else np.sum(residual**2)
         return float(base + penalty)
 
-    rng = np.random.default_rng(random_seed)
-    population = np.tile(guess[free], (50, 1)) * rng.uniform(0.8, 1.2, (50, len(free)))
-    for j, index in enumerate(free):
-        if 2 <= index < 2 + n:
-            population[:, j] = rng.uniform(-2.0, 2.0, 50)
-    population = np.clip(population, lower, upper)
-    population[0] = np.clip(guess[free], lower, upper)
     de = differential_evolution(
         loss,
         bounds,
         maxiter=3000,
+        popsize=50,
         init=population,
+        strategy="best1bin",
         seed=random_seed,
-        polish=False,
+        polish=True,
         tol=1e-6,
-        atol=1e-12,
     )
     local = minimize(loss, de.x, method="L-BFGS-B", bounds=bounds, tol=1e-10)
+    # A second polish can report a line-search failure at an already exact fit.
+    # In that case retain the converged DE/polish solution, never a failed refinement.
     chosen = (
         local
         if local.success
@@ -472,7 +466,44 @@ def _fit(
         and local.fun <= de.fun + max(1e-12, abs(de.fun) * 1e-8)
         else de
     )
-    theta_norm = expand(chosen.x)
+    refinement = "L-BFGS-B" if chosen is local else "DE/polish"
+    if not chosen.success:
+        # Near coincident lag times, the legacy penalty is discontinuous and can
+        # make L-BFGS-B report ABNORMAL. Refine the same candidate with explicit
+        # chronological constraints instead of discarding it or hiding the failure.
+        initial = local if np.isfinite(local.fun) and local.fun <= de.fun else de
+        constrained = minimize(
+            lambda parameters: loss(parameters, ordering_penalty=False),
+            initial.x,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=(
+                [
+                    {
+                        "type": "ineq",
+                        "fun": lambda parameters: np.diff(parameters[2 + 2 * n :]),
+                    }
+                ]
+                if n > 1
+                else []
+            ),
+            options={"ftol": 1e-10, "maxiter": 1000},
+        )
+        if (
+            constrained.success
+            and np.isfinite(constrained.fun)
+            and constrained.fun <= initial.fun + max(1e-12, abs(initial.fun) * 1e-8)
+            and np.all(np.diff(constrained.x[2 + 2 * n :]) >= -1e-7)
+        ):
+            chosen = constrained
+            refinement = "SLSQP (chronological constraints)"
+    theta_norm = chosen.x.copy()
+    search_theta = theta_norm.copy()
+    theta_norm[2 : 2 + n] -= theta_norm[2 + n - 1]
+    if force_yi:
+        theta_norm[0] = 0.0
+    if use_first_order_phase1:
+        theta_norm[2 + 2 * n] = 0.0
     theta = theta_norm * scales
     prediction = evaluate_polyauxic_model(t_data, theta, model_func, n, use_first_order_phase1)
     if not np.all(np.isfinite(prediction)) or theta[1] <= theta[0]:
@@ -488,43 +519,82 @@ def _fit(
         "n_parameters": k,
         "optimizer_message": str(chosen.message),
         "random_seed": random_seed,
+        "search_strategy": "legacy_full_coordinates",
+        "optimizer_refinement": refinement,
     }
     if robust:
         return result
-    # Residual Jacobian avoids the old singular penalized Hessian and its missing
-    # factor of two. Do not turn negative covariance diagonals into plausible SEs.
+    fixed = {2 + n - 1}
+    if force_yi:
+        fixed.add(0)
+    if use_first_order_phase1:
+        fixed.add(2 + 2 * n)
+    free = np.array([i for i in range(len(theta)) if i not in fixed])
+
+    def predict(parameters):
+        return evaluate_polyauxic_model(t_norm, parameters, model_func, n, use_first_order_phase1)
+
     jac = np.empty((len(t_data), len(free)))
-    for j in range(len(free)):
-        step = 1e-5 * max(1.0, abs(chosen.x[j]))
-        high, low = chosen.x.copy(), chosen.x.copy()
-        high[j] += step
-        low[j] -= step
+    for j, index in enumerate(free):
+        step = 1e-5 * max(1.0, abs(theta_norm[index]))
+        high, low = theta_norm.copy(), theta_norm.copy()
+        high[index] += step
+        low[index] -= step
         jac[:, j] = (predict(high) - predict(low)) / (2 * step)
     se = np.full(len(theta), np.nan)
-    for i in fixed:
-        se[i] = 0.0
+    for index in fixed:
+        se[index] = 0.0
     se_p = np.full(n, np.nan)
     rank = int(np.linalg.matrix_rank(jac))
-    at_bound = np.isclose(chosen.x, lower, rtol=0, atol=1e-7) | np.isclose(
-        chosen.x, upper, rtol=0, atol=1e-7
+    lower, upper = np.array(bounds).T
+    # Warn when the covariance's finite-difference step crosses a search bound,
+    # including a solution just inside it rather than exactly on the boundary.
+    boundary_tolerance = 1e-5 * np.maximum(1.0, np.abs(search_theta))
+    at_bound = np.isclose(search_theta, lower, rtol=0, atol=boundary_tolerance) | np.isclose(
+        search_theta, upper, rtol=0, atol=boundary_tolerance
     )
-    reliable = rank == len(free) and not np.any(at_bound) and result["converged"]
-    if reliable:
+    # A common logit shift is not a physical parameter boundary.
+    at_bound[2 : 2 + n] = False
+    for index in fixed:
+        at_bound[index] = False
+    weight_span_bound = np.ptp(search_theta[2 : 2 + n]) >= 20.0 - 1e-7
+    ordered_lags = theta_norm[2 + 2 * n :]
+    if use_first_order_phase1:
+        ordered_lags = ordered_lags[1:]
+    order_boundary = bool(len(ordered_lags) > 1 and np.any(np.diff(ordered_lags) <= 1e-6))
+    boundary = bool(np.any(at_bound) or weight_span_bound or order_boundary)
+    available = rank == len(free) and result["converged"]
+    condition = float(np.linalg.cond(jac))
+    if available:
         _, singular, vt = np.linalg.svd(jac, full_matrices=False)
-        variance = np.sum((y_norm - predict(chosen.x)) ** 2) / (len(y_norm) - k)
+        variance = np.sum((y_norm - predict(theta_norm)) ** 2) / (len(y_norm) - k)
         covariance = variance * (vt.T / singular**2) @ vt
         se[free] = np.sqrt(np.maximum(0.0, np.diag(covariance))) * scales[free]
         full_cov = np.zeros((len(theta), len(theta)))
         full_cov[np.ix_(free, free)] = covariance
-        se_p = calculate_p_errors(theta[2 : 2 + n], full_cov[2 : 2 + n, 2 : 2 + n])
+        se_p = calculate_p_errors(theta_norm[2 : 2 + n], full_cov[2 : 2 + n, 2 : 2 + n])
     if n == 1:
         se_p[0] = 0.0
     if use_first_order_phase1:
         se[2 + 2 * n] = np.nan
+    status = (
+        "unavailable_convergence"
+        if not result["converged"]
+        else "unavailable_rank"
+        if not available
+        else "approximate_at_boundary"
+        if boundary
+        else "local_linearization"
+    )
     result.update(
         se=se,
         se_p=se_p,
-        uncertainty_reliable=reliable,
+        uncertainty_reliable=available and not boundary,
+        uncertainty_status=status,
+        jacobian_condition=condition,
+        active_bounds=np.flatnonzero(at_bound).tolist(),
+        active_order_constraint=order_boundary,
+        active_weight_span=bool(weight_span_bound),
         jacobian_rank=rank,
         metrics=calculate_metrics(y_data, prediction, k),
         outliers=np.zeros(len(y_data), dtype=bool),

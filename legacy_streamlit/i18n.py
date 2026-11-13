@@ -447,14 +447,19 @@ _ADDITIONS = {
         "Observations insuffisantes pour des critères d’information finis.",
     ),
     "timeout": (
-        "Computation limit reached (180 s). Partial results are exploratory; reduce the number of phases and rerun. No automatic selection was made.",
-        "Limite de cálculo atingido (180 s). Os resultados parciais são exploratórios; reduza o número de fases e repita. Não houve seleção automática.",
-        "Limite de calcul atteinte (180 s). Les résultats partiels sont exploratoires; réduisez les phases et relancez. Aucune sélection automatique.",
+        "Computation limit reached. Partial results are exploratory; reduce the number of phases and rerun. No automatic selection was made.",
+        "Limite de cálculo atingido. Os resultados parciais são exploratórios; reduza o número de fases e repita. Não houve seleção automática.",
+        "Limite de calcul atteinte. Les résultats partiels sont exploratoires; réduisez les phases et relancez. Aucune sélection automatique.",
     ),
     "uncertainty": (
-        "Standard errors unavailable: a bound, rank deficiency or incomplete convergence prevents a reliable local covariance estimate.",
-        "Erros-padrão indisponíveis: limite ativo, deficiência de posto ou convergência incompleta impedem uma estimativa local confiável da covariância.",
-        "Erreurs-types indisponibles : une borne, un défaut de rang ou une convergence incomplète empêche une covariance locale fiable.",
+        "Standard errors unavailable: rank deficiency or incomplete convergence prevents a local covariance estimate.",
+        "Erros padrão não estimáveis: deficiência de posto ou convergência incompleta impedem estimar a covariância local.",
+        "Erreurs-types non estimables : un défaut de rang ou une convergence incomplète empêche une covariance locale.",
+    ),
+    "uncertainty_boundary": (
+        "Active or nearby constraint: {0}. Displayed standard errors are local linear approximations that ignore this constraint. They are not validated confidence intervals; inspect the affected parameters and extrapolation.",
+        "Restrição ativa ou próxima: {0}. Os erros padrão exibidos são aproximações lineares locais que desconsideram essa restrição. Não são intervalos de confiança validados; examine os parâmetros afetados e a extrapolação.",
+        "Contrainte active ou proche : {0}. Les erreurs-types affichées sont des approximations linéaires locales qui ignorent cette contrainte. Ce ne sont pas des intervalles de confiance validés; examinez les paramètres concernés et l’extrapolation.",
     ),
     "scope": (
         "Increasing responses; time ≥ 0. Use consistent units in every replicate. A zero final asymptote is not a decreasing-kinetics model.",

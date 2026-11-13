@@ -11,7 +11,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 
 from legacy_streamlit.analysis import run_analysis
 from legacy_streamlit.attribution import PROFILE_LINKS
-from legacy_streamlit.core import gompertz_term_eq32, polyauxic_model
+from legacy_streamlit.core import boltzmann_term_eq31, gompertz_term_eq32, polyauxic_model
 from legacy_streamlit.i18n import LANGUAGES, TEXTS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -165,6 +165,21 @@ def test_tiny_standard_errors_and_unavailable_errors_remain_distinct():
     assert format_estimate(2, np.nan, "pt") == "2 ± não estimável"
     assert format_estimate(0, 0, "pt", fixed=True) == "0 (fixo)"
     assert format_estimate(2, 0, "pt") == "2 ± 0"
+
+
+def test_boundary_uncertainties_are_visible_and_identified_as_approximate():
+    t = np.linspace(0, 4, 30)
+    y = polyauxic_model(t, [5.0, 100.0, 0.0, 8.0, 2.0], boltzmann_term_eq31, 1)
+    content = pd.DataFrame({"t": t, "y": y}).to_csv(index=False).encode()
+    at = AppTest.from_file(ROOT / "app.py", default_timeout=60).run()
+    at.number_input(key="max_phases_input").set_value(1)
+    at.get("file_uploader")[0].set_value(("synthetic_boundary.csv", content, "text/csv")).run()
+    at.button(key="run_analysis_button").click().run()
+    assert not at.exception and not at.error
+    result = at.session_state["analysis_result"]["families"]["Boltzmann"]["selected"]
+    assert result is not None and result["uncertainty_status"] == "approximate_at_boundary"
+    assert any("local linear approximations" in w.value for w in at.warning)
+    assert_visible_parameters(at, "en")
 
 
 def test_upload_change_and_removal_discard_previous_results():

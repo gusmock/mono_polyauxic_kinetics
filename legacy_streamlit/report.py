@@ -5,7 +5,7 @@ import io
 import numpy as np
 import pandas as pd
 
-from .labels import get_full_model_label
+from .labels import boundary_parameter_labels, get_full_model_label
 
 
 def generate_excel_report(
@@ -53,6 +53,11 @@ def generate_excel_report(
                             "converged": res["converged"],
                             "jacobian_rank": res["jacobian_rank"],
                             "uncertainty_reliable": res["uncertainty_reliable"],
+                            "uncertainty_status": res.get("uncertainty_status", ""),
+                            "jacobian_condition": res.get("jacobian_condition", np.nan),
+                            "active_constraints": "; ".join(boundary_parameter_labels(res)),
+                            "search_strategy": res.get("search_strategy", ""),
+                            "optimizer_refinement": res.get("optimizer_refinement", ""),
                             **res["metrics"],
                         }
                     )
@@ -117,7 +122,7 @@ def generate_excel_report(
                         se_v
                     ):
                         return f"{float(v):.6g} ± {float(se_v):.6g}"
-                    return f"{float(v):.6g}"
+                    return f"{float(v):.6g} ± N/A"
                 return str(v)
 
             # --- Global Parameters Sheet ---
